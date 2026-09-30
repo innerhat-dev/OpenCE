@@ -84,6 +84,11 @@ python3 -m unittest tools.test_macos_preflight
 python3 -m unittest tools.test_visibility_queries
 ```
 
+Packaging creates the Mac app icon from the existing
+`port/ios/Assets.xcassets/AppIcon.appiconset/AppIcon.png` artwork. The built-in
+macOS `sips` and `iconutil` tools generate the standard and Retina sizes and
+embed `AppIcon.icns` in the bundle before signing.
+
 The shared settings are read from `config.toml` in the save directory, with
 `HALO_*` environment overrides still supported. The Mac host keeps its
 `HALO_WINDOWED` setting and 480-line render scale; the upstream desktop-only

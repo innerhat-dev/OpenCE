@@ -8,6 +8,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -17,6 +18,7 @@ LLVM = Path(os.environ.get("HALO_MACOS_LLVM_BIN", "/opt/homebrew/opt/llvm/bin"))
 SDL = Path(os.environ.get("HALO_MACOS_SDL_PREFIX", "/opt/homebrew/opt/sdl3"))
 ANGLE = Path(os.environ.get("HALO_MACOS_ANGLE_DIR", str(BUILD / "angle/dist")))
 GL = BUILD / "toolchain/gl"
+APP_ICON = "AppIcon.icns"
 
 
 def run(*args):
@@ -69,6 +71,23 @@ def build_host():
         *(f"-Wl,-rpath,{directory}" for directory in frameworks), "-o", BUILD / "halo")
 
 
+def package_icon(resources):
+    source = require(ROOT / "port/ios/Assets.xcassets/AppIcon.appiconset/AppIcon.png")
+    with tempfile.TemporaryDirectory(prefix="halo-macos-icon-") as temporary:
+        iconset = Path(temporary) / "AppIcon.iconset"
+        iconset.mkdir()
+        for size in (16, 32, 128, 256, 512):
+            for scale in (1, 2):
+                pixels = size * scale
+                suffix = "@2x" if scale == 2 else ""
+                target = iconset / f"icon_{size}x{size}{suffix}.png"
+                subprocess.run(["/usr/bin/sips", "-z", str(pixels), str(pixels),
+                                str(source), "--out", str(target)],
+                               check=True, stdout=subprocess.DEVNULL)
+        run("/usr/bin/iconutil", "--convert", "icns", "--output",
+            resources / APP_ICON, iconset)
+
+
 def package(data_root):
     app = BUILD / "Halo CE Universal.app"
     contents = app / "Contents"
@@ -112,9 +131,11 @@ def package(data_root):
     if data_link.is_symlink():
         data_link.unlink()
     (resources / "GameDataPath.txt").write_text(str(require(data_root.resolve())) + "\n")
+    package_icon(resources)
     info = {
         "CFBundleExecutable": "halo", "CFBundleIdentifier": "local.halo.ce-universal",
         "CFBundleName": "Halo CE Universal", "CFBundleDisplayName": "Halo CE Universal",
+        "CFBundleIconFile": APP_ICON,
         "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.2.0",
         "CFBundleVersion": "2", "LSMinimumSystemVersion": "14.0",
         "CFBundleURLTypes": [{"CFBundleURLName": "Halo multiplayer invite",
