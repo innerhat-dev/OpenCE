@@ -101,6 +101,10 @@ int posix_socket_recvfrom(int socket, void *buffer, int length, int flags,
 int posix_socket_shutdown(int socket, int how);
 int posix_socket_set_nonblocking(int socket, int nonblocking);
 int posix_socket_bytes_available(int socket, posix_ulong *count);
+/* a stream socket sends each write at once (no Nagle delay): the game's
+connections carry small messages every tick, which would otherwise wait on
+the other end's delayed acknowledgement */
+int posix_socket_set_nodelay(int socket);
 /* Winsock option levels and names are translated for SOL_SOCKET options */
 int posix_socket_setsockopt(int socket, int level, int name, const void *value, int length);
 int posix_socket_getsockopt(int socket, int level, int name, void *value, int *length);
@@ -114,5 +118,43 @@ int posix_socket_select(int *read, int *read_count, int *write, int *write_count
 posix_ulong posix_local_ipv4_address(void);
 /* fills buffer with cryptographically random bytes */
 void posix_random_bytes(void *buffer, posix_ulong size);
+/* the IPv4 address (network byte order) of host, a name or a dotted quad,
+or 0 if it cannot be resolved; may block while a name is looked up */
+posix_ulong posix_resolve_ipv4(const char *host);
+
+/* ---------- UPnP (internet play, p2p.c; posix_upnp.c, with
+port/third_party/miniupnpc) */
+
+/* asks the local network's router (its UPnP Internet Gateway Device) to
+forward UDP port (network byte order) of the router's to the same port of
+this machine; blocks for a few seconds. 1 on success, with the router's
+internet address and the port it forwards (network byte order); else 0 and
+why in error. Asking again for the same port renews the forwarding. */
+int posix_upnp_forward_udp(unsigned short port, posix_ulong *external_address, unsigned short *external_port,
+	char *error, int error_size);
+/* stops the router forwarding that port (network byte order) of its, which
+posix_upnp_forward_udp set up; blocks */
+void posix_upnp_stop_forwarding_udp(unsigned short external_port);
+
+/* ---------- the process and the desktop (internet play, p2p.c) */
+
+/* copies the command line argument at index (0 is the program) into buffer;
+returns 0 if there is none (always, on Android) */
+int posix_command_line_argument(int index, char *buffer, posix_ulong size);
+posix_ulong posix_process_id(void);
+/* registers this executable as the desktop's handler of links with this
+scheme (scheme://...); returns 0 where there is no such thing (Android,
+whose app declares its links in its manifest) */
+int posix_register_url_scheme(const char *scheme, const char *description);
+
+/* a connection to the Discord desktop client's local socket or pipe, or -1
+if none is running (always, on Android) */
+int posix_discord_connect(void);
+/* writes all of buffer; returns length, or -1 if the connection failed */
+int posix_discord_write(int handle, const void *buffer, int length);
+/* reads what has arrived, without waiting: the bytes read, 0 if nothing has,
+or -1 if the connection closed */
+int posix_discord_read(int handle, void *buffer, int length);
+void posix_discord_close(int handle);
 
 #endif

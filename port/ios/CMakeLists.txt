@@ -9,18 +9,22 @@ set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory("${HALO_ROOT}/build/android/third_party/SDL3" "sdl")
 file(GLOB HOST_SOURCES "${HALO_ROOT}/port/macos/host/*.c")
+file(GLOB MINIUPNPC_SOURCES "${HALO_ROOT}/port/third_party/miniupnpc/src/*.c")
 list(FILTER HOST_SOURCES EXCLUDE REGEX "host_(main|loader)\\.c$")
-add_executable(Halo MACOSX_BUNDLE ${HOST_SOURCES} host/host_loader.c host/host_main.m host/host_controls.m
+add_executable(Halo MACOSX_BUNDLE ${HOST_SOURCES} ${MINIUPNPC_SOURCES} host/host_loader.c host/host_main.m host/host_controls.m
     "${HALO_ROOT}/port/macos/host/entry.s" "${HALO_BUILD}/host/host_import_table.c"
     "${HALO_BUILD}/embed/guest_image.s")
 target_sources(Halo PRIVATE Assets.xcassets)
 set_source_files_properties(Assets.xcassets PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 target_compile_definitions(Halo PRIVATE HALO_IOS=1 HALO_MACOS=1 _DARWIN_C_SOURCE=1)
+target_compile_definitions(Halo PRIVATE MINIUPNP_STATICLIB MINIUPNPC_SET_SOCKET_TIMEOUT
+    MINIUPNPC_GET_SRC_ADDR _BSD_SOURCE _DEFAULT_SOURCE)
 target_compile_options(Halo PRIVATE -O2 -g -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
     "$<$<COMPILE_LANGUAGE:OBJC>:-fobjc-arc>")
 target_include_directories(Halo PRIVATE "${HALO_ROOT}" "${HALO_ROOT}/port/macos/host"
     "${HALO_ROOT}/port/android/include" "${HALO_ROOT}/port/linux/src"
-    "${HALO_ROOT}/build/macos/toolchain/gl" "${HALO_BUILD}/embed")
+    "${HALO_ROOT}/build/macos/toolchain/gl" "${HALO_BUILD}/embed"
+    "${HALO_ROOT}/port/third_party/miniupnpc/include" "${HALO_ROOT}/port/third_party/miniupnpc/src")
 if(CMAKE_OSX_SYSROOT MATCHES "simulator")
     set(ANGLE_PLATFORM ios-arm64-simulator)
 else()

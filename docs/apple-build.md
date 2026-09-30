@@ -85,7 +85,7 @@ git clone https://github.com/XboxDev/extract-xiso.git build/tools/extract-xiso
 cmake -S build/tools/extract-xiso -B build/tools/extract-xiso/build
 cmake --build build/tools/extract-xiso/build
 build/tools/extract-xiso/build/extract-xiso \
-  -x "/path/to/your/Halo.xiso.iso" -d build/game-extracted
+  -x -d build/game-extracted "/path/to/your/Halo.xiso.iso"
 mkdir -p assets
 cp -R build/game-extracted/maps assets/
 

@@ -83,7 +83,13 @@ static SDL_MetalView metal_view;
 
 /* ---------- general */
 
-int host_sdl_init(uint32_t flags) { return SDL_Init((SDL_InitFlags)flags); }
+int host_sdl_init(uint32_t flags) {
+    if (!SDL_Init((SDL_InitFlags)flags))
+        return 0;
+    SDL_SetEventEnabled(SDL_EVENT_DROP_FILE, true);
+    SDL_SetEventEnabled(SDL_EVENT_DROP_TEXT, true);
+    return 1;
+}
 
 int host_sdl_set_hint(const char *name, const char *value) { return SDL_SetHint(name, value); }
 
@@ -229,10 +235,38 @@ int host_sdl_poll_event(void *event) {
 
     if (!SDL_PollEvent(&host_event))
         return 0;
+    /* Cocoa sends opened URLs as drop-file events. Consume the native
+       string here; the guest's 32-bit SDL event cannot hold that pointer. */
+    if (host_event.type == SDL_EVENT_DROP_FILE || host_event.type == SDL_EVENT_DROP_TEXT) {
+        if (host_invite_received(host_event.drop.data))
+            host_logf(HOST_LOG_INFO, "Internet play: opened invite queued for this game");
+        memset(event, 0, sizeof(host_event));
+        return 1;
+    }
     /* the layouts agree except for the pointers of text, drop and user
     events, which the guest does not read */
     memcpy(event, &host_event, sizeof(host_event));
     return 1;
+}
+
+int host_sdl_set_clipboard_text(const char *text) {
+    return SDL_SetClipboardText(text);
+}
+
+void host_sdl_get_clipboard_text(char *buffer, uint32_t size) {
+    char *text = SDL_GetClipboardText();
+    SDL_strlcpy(buffer, text ? text : "", size);
+    SDL_free(text);
+}
+
+int host_sdl_show_toast(const char *message, int duration, int gravity, int x, int y) {
+    (void)duration; (void)gravity; (void)x; (void)y;
+    host_logf(HOST_LOG_INFO, "%s", message);
+    return 1;
+}
+
+int host_sdl_show_simple_message_box(uint32_t flags, const char *title, const char *message) {
+    return SDL_ShowSimpleMessageBox(flags, title, message, metal_window);
 }
 
 /* ---------- gamepads */

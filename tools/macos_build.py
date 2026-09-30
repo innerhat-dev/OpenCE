@@ -10,6 +10,8 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from tools.linux_build import MINIUPNPC_DEFINES, MINIUPNPC_DIR, miniupnpc_sources
 BUILD = ROOT / "build/macos"
 LLVM = Path(os.environ.get("HALO_MACOS_LLVM_BIN", "/opt/homebrew/opt/llvm/bin"))
 SDL = Path(os.environ.get("HALO_MACOS_SDL_PREFIX", "/opt/homebrew/opt/sdl3"))
@@ -51,8 +53,10 @@ def build_host():
     flags = ["-arch", "arm64", "-O2", "-g", "-DHALO_MACOS=1", "-D_DARWIN_C_SOURCE",
              "-Wall", "-Wextra", "-Wno-unused-function", "-Wno-unused-parameter",
              "-I.", "-Iport/macos/host", "-Iport/android/include", "-Iport/linux/src",
-             f"-I{SDL / 'include'}", f"-I{GL}"]
+             f"-I{SDL / 'include'}", f"-I{GL}",
+             f"-I{MINIUPNPC_DIR / 'include'}", f"-I{MINIUPNPC_DIR / 'src'}", *MINIUPNPC_DEFINES]
     sources = sorted((ROOT / "port/macos/host").glob("*.c"))
+    sources += miniupnpc_sources()
     sources += [BUILD / "host/host_import_table.c", ROOT / "port/macos/host/entry.s"]
     objects = []
     for source in sources:
@@ -111,8 +115,11 @@ def package(data_root):
     info = {
         "CFBundleExecutable": "halo", "CFBundleIdentifier": "local.halo.ce-universal",
         "CFBundleName": "Halo CE Universal", "CFBundleDisplayName": "Halo CE Universal",
-        "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.1.0",
-        "CFBundleVersion": "1", "LSMinimumSystemVersion": "14.0",
+        "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.2.0",
+        "CFBundleVersion": "2", "LSMinimumSystemVersion": "14.0",
+        "CFBundleURLTypes": [{"CFBundleURLName": "Halo multiplayer invite",
+                              "CFBundleURLSchemes": ["halo"], "CFBundleTypeRole": "Viewer"}],
+        "NSLocalNetworkUsageDescription": "Connect to players hosting Halo multiplayer games.",
         "NSHighResolutionCapable": True,
         "NSHumanReadableCopyright": "Local experimental Apple Silicon port",
     }
@@ -126,6 +133,8 @@ def package(data_root):
         (ROOT / "port/macos/licenses/ANGLE.txt", "ANGLE.txt"),
         (SDL / "share/licenses/SDL3/LICENSE.txt", "SDL3.txt"),
         (ROOT / "build/android/third_party/musl-1.2.5/COPYRIGHT", "musl.txt"),
+        (ROOT / "port/third_party/kcp/LICENSE", "KCP.txt"),
+        (ROOT / "port/third_party/miniupnpc/LICENSE", "miniupnpc.txt"),
     ):
         if source.exists():
             shutil.copy2(source, licenses / name)

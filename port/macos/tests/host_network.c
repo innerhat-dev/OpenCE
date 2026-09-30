@@ -66,6 +66,9 @@ int main(void) {
     }
     assert(posix_socket_sendto(client, "", 0, 0, &server_address, sizeof(server_address)) == 0);
     receive_packet(server, &client_address, "", 0);
+    const char connected[] = "default connected peer";
+    assert(posix_socket_sendto(client, connected, sizeof(connected), 0, NULL, 0) == sizeof(connected));
+    receive_packet(server, &client_address, connected, sizeof(connected));
 
     /* The fallback must never redirect a different destination to the connected peer. */
     assert(posix_socket_sendto(client, update, sizeof(update), 0,

@@ -211,15 +211,6 @@ typedef char verify_rasterizer_model_begin_parameters_size[
 	sizeof(struct rasterizer_model_begin_parameters) == 0xCC ? 1 : -1];
 
 /* January scenario flag layout consumed by the King map scan. */
-struct scenario_netgame_flag
-{
-	real_point3d position;
-	real facing;
-	short type;
-	short team_index;
-	byte unused[0x80];
-};
-
 typedef char verify_scenario_netgame_flag_size[
 	sizeof(struct scenario_netgame_flag) == 0x94 ? 1 : -1];
 typedef char verify_scenario_netgame_flags_offset[
@@ -1155,3 +1146,26 @@ struct game_engine king_engine =
 	NULL,
 	NULL,
 };
+
+#ifdef HALO_LINUX
+/* the distributed netcode (port/linux/game/network_distributed.c): the game
+type's state the host sends its clients, which take it as it is (the
+scores and the hill, which moves) */
+long game_engine_king_write_network_state(
+	byte *buffer,
+	long size)
+{
+	if (size < (long)sizeof(king_globals))
+		return 0;
+	csmemcpy(buffer, &king_globals, sizeof(king_globals));
+	return sizeof(king_globals);
+}
+
+void game_engine_king_read_network_state(
+	byte const *buffer,
+	long size)
+{
+	if (size == (long)sizeof(king_globals))
+		csmemcpy(&king_globals, buffer, sizeof(king_globals));
+}
+#endif

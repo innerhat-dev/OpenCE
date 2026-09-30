@@ -239,7 +239,11 @@ int host_sdl_rumble_gamepad(uint32_t gamepad, uint32_t low, uint32_t high, uint3
 
 /* SDL calls audio_callback on its own audio thread, which cannot run guest
 code; it passes each request to the stream's thread (audio_thread), which
-can, and waits for it to be done */
+can, and waits for it to be done. SDL holds the stream's lock throughout, so
+the audio the guest puts into the stream meanwhile (from audio_thread) is
+kept in the binding's buffer instead, and put in by audio_callback once the
+guest is done: audio_thread putting it in itself would wait for the lock
+forever */
 struct audio_binding
 {
 	uint32_t handle;
@@ -251,7 +255,13 @@ struct audio_binding
 	int pending;
 	int additional;
 	int total;
+	unsigned char *buffer;
+	int buffer_length;
+	int buffer_size;
 };
+
+/* the binding whose callback this thread is running, if any */
+static __thread struct audio_binding *calling_back;
 
 static void *audio_thread(void *context)
 {
@@ -267,7 +277,9 @@ static void *audio_thread(void *context)
 		additional = binding->additional;
 		total = binding->total;
 		pthread_mutex_unlock(&binding->lock);
+		calling_back = binding;
 		host_call_guest(binding->callback, binding->userdata, binding->handle, (uint32_t)additional, (uint32_t)total);
+		calling_back = NULL;
 		pthread_mutex_lock(&binding->lock);
 		binding->pending = 0;
 		pthread_cond_signal(&binding->done);
@@ -279,7 +291,6 @@ static void SDLCALL audio_callback(void *userdata, SDL_AudioStream *stream, int 
 {
 	struct audio_binding *binding = userdata;
 
-	(void)stream;
 	pthread_mutex_lock(&binding->lock);
 	binding->additional = additional;
 	binding->total = total;
@@ -288,6 +299,32 @@ static void SDLCALL audio_callback(void *userdata, SDL_AudioStream *stream, int 
 	while (binding->pending)
 		pthread_cond_wait(&binding->done, &binding->lock);
 	pthread_mutex_unlock(&binding->lock);
+	if (binding->buffer_length)
+	{
+		SDL_PutAudioStreamData(stream, binding->buffer, binding->buffer_length);
+		binding->buffer_length = 0;
+	}
+}
+
+/* audio the guest puts into its stream during the stream's callback, for
+audio_callback to put in; 1 on success */
+static int audio_keep(struct audio_binding *binding, const void *data, int length)
+{
+	if (length < 0)
+		return 0;
+	if (binding->buffer_length + length > binding->buffer_size)
+	{
+		int size = (binding->buffer_length + length) * 2;
+		unsigned char *buffer = SDL_realloc(binding->buffer, (size_t)size);
+
+		if (!buffer)
+			return 0;
+		binding->buffer = buffer;
+		binding->buffer_size = size;
+	}
+	memcpy(binding->buffer + binding->buffer_length, data, (size_t)length);
+	binding->buffer_length += length;
+	return 1;
 }
 
 uint32_t host_sdl_open_audio_stream(uint32_t device, const void *spec, uint32_t callback, uint32_t userdata)
@@ -318,7 +355,11 @@ int host_sdl_put_audio_stream_data(uint32_t stream, const void *data, int length
 {
 	SDL_AudioStream *object = handle_get(stream, _handle_audio);
 
-	return object ? SDL_PutAudioStreamData(object, data, length) : 0;
+	if (!object)
+		return 0;
+	if (calling_back && calling_back->handle == stream)
+		return audio_keep(calling_back, data, length);
+	return SDL_PutAudioStreamData(object, data, length);
 }
 
 int host_sdl_resume_audio_stream_device(uint32_t stream)
@@ -326,4 +367,31 @@ int host_sdl_resume_audio_stream_device(uint32_t stream)
 	SDL_AudioStream *object = handle_get(stream, _handle_audio);
 
 	return object ? SDL_ResumeAudioStreamDevice(object) : 0;
+}
+
+/* ---------- the clipboard (internet play's invite links) */
+
+int host_sdl_set_clipboard_text(const char *text)
+{
+	return SDL_SetClipboardText(text) ? 1 : 0;
+}
+
+void host_sdl_get_clipboard_text(char *buffer, uint32_t size)
+{
+	char *text = SDL_GetClipboardText();
+
+	SDL_strlcpy(buffer, text ? text : "", size);
+	SDL_free(text);
+}
+
+int host_sdl_show_toast(const char *message, int duration, int gravity, int x, int y)
+{
+	return SDL_ShowAndroidToast(message, duration, gravity, x, y) ? 1 : 0;
+}
+
+/* ---------- a message for the player (a host of another network version) */
+
+int host_sdl_show_simple_message_box(uint32_t flags, const char *title, const char *message)
+{
+	return SDL_ShowSimpleMessageBox((SDL_MessageBoxFlags)flags, title, message, NULL) ? 1 : 0;
 }

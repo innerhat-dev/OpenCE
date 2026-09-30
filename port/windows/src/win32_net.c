@@ -150,6 +150,13 @@ int posix_socket_set_nonblocking(int socket, int nonblocking)
 	return succeed(ioctlsocket((SOCKET)socket, FIONBIO, &value));
 }
 
+int posix_socket_set_nodelay(int socket)
+{
+	BOOL value = TRUE;
+
+	return succeed(setsockopt((SOCKET)socket, IPPROTO_TCP, TCP_NODELAY, (const char *)&value, sizeof(value)));
+}
+
 int posix_socket_bytes_available(int socket, posix_ulong *count)
 {
 	u_long available = 0;
@@ -325,4 +332,21 @@ posix_ulong posix_local_ipv4_address(void)
 void posix_random_bytes(void *buffer, posix_ulong size)
 {
 	BCryptGenRandom(NULL, buffer, size, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+}
+
+posix_ulong posix_resolve_ipv4(const char *host)
+{
+	struct addrinfo hints, *results;
+	posix_ulong address = 0;
+
+	start_winsock();
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_DGRAM;
+	if (getaddrinfo(host, NULL, &hints, &results) != 0)
+		return 0;
+	if (results && results->ai_addr && results->ai_addr->sa_family == AF_INET)
+		address = ((struct sockaddr_in *)results->ai_addr)->sin_addr.s_addr;
+	freeaddrinfo(results);
+	return address;
 }

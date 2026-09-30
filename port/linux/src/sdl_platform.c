@@ -13,8 +13,11 @@ and the debug keyboard that the game's console reads.
 #include "sdl_platform.h"
 #include "gl.h"
 #include "port_config.h"
+#include "p2p.h"
+#include "xiso.h"
 
 #include <SDL3/SDL.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -39,10 +42,20 @@ static pthread_mutex_t input_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct platform_keystroke keystroke_queue[KEYSTROKE_QUEUE_SIZE];
 static unsigned long keystroke_head, keystroke_count;
 
+#ifndef HALO_ANDROID
+/* updater.c's: the desktop self-updater */
+void updater_start(void);
+void updater_poll(SDL_Window *window);
+#endif
+
 BOOL platform_sdl_initialize(void)
 {
 	if (platform_sdl_started)
 		return TRUE;
+	/* a copy of the game started to open an invite link hands it to the
+	one already running, and goes */
+	if (p2p_hand_off_invite())
+		exit(EXIT_SUCCESS);
 	SDL_SetHint(SDL_HINT_APP_NAME, "Halo");
 #ifdef HALO_ANDROID
 	/* landscape only; the back key arrives as a key event (xinput_sdl.c)
@@ -59,8 +72,222 @@ BOOL platform_sdl_initialize(void)
 		return FALSE;
 	}
 	platform_sdl_started = TRUE;
+#ifndef HALO_ANDROID
+	/* found (or offered to the player, platform_offer_game_data) before the
+	game's window opens */
+	platform_data_root();
+	/* (a new version looked for meanwhile, updater_poll asking about it) */
+	updater_start();
+#endif
 	return TRUE;
 }
+
+#ifndef HALO_ANDROID
+/* ---------- first start without game data (xbox_files.c) */
+
+struct data_extraction
+{
+	pthread_mutex_t lock;
+	char image[1024];
+	char destination[1024];
+	char file[256];
+	unsigned long long done;
+	unsigned long long total;
+	BOOL finished;
+	BOOL succeeded;
+	char error[512];
+};
+
+static void data_extraction_progress(void *context, const char *file, unsigned long long done,
+	unsigned long long total)
+{
+	struct data_extraction *extraction = context;
+
+	pthread_mutex_lock(&extraction->lock);
+	snprintf(extraction->file, sizeof(extraction->file), "%s", file);
+	extraction->done = done;
+	extraction->total = total;
+	pthread_mutex_unlock(&extraction->lock);
+}
+
+static void *data_extraction_thread(void *context)
+{
+	struct data_extraction *extraction = context;
+	BOOL succeeded = xiso_extract_maps(extraction->image, extraction->destination, data_extraction_progress,
+		extraction, extraction->error, sizeof(extraction->error)) != 0;
+
+	pthread_mutex_lock(&extraction->lock);
+	extraction->succeeded = succeeded;
+	extraction->finished = TRUE;
+	pthread_mutex_unlock(&extraction->lock);
+	return NULL;
+}
+
+/* copies the maps, showing how far it has got; closing the window quits */
+static BOOL data_extract(const char *image, const char *destination, char *error, int error_size)
+{
+	static struct data_extraction extraction;
+	SDL_Window *window;
+	SDL_Renderer *renderer = NULL;
+	pthread_t thread;
+	BOOL finished = FALSE;
+
+	memset(&extraction, 0, sizeof(extraction));
+	pthread_mutex_init(&extraction.lock, NULL);
+	snprintf(extraction.image, sizeof(extraction.image), "%s", image);
+	snprintf(extraction.destination, sizeof(extraction.destination), "%s", destination);
+	if (pthread_create(&thread, NULL, data_extraction_thread, &extraction) != 0)
+	{
+		snprintf(error, (size_t)error_size, "Could not start the extraction.");
+		return FALSE;
+	}
+	/* (waited for through extraction.finished; the Windows port's threads
+	cannot be joined) */
+	pthread_detach(thread);
+	window = SDL_CreateWindow("Halo", 640, 150, 0);
+	if (window)
+	{
+		renderer = SDL_CreateRenderer(window, NULL);
+		if (renderer)
+			SDL_SetRenderVSync(renderer, 1);
+	}
+	while (!finished)
+	{
+		SDL_Event event;
+		char file[256];
+		unsigned long long done, total;
+
+		while (SDL_PollEvent(&event))
+		{
+			if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
+			{
+				platform_log("extraction cancelled");
+				exit(EXIT_SUCCESS);
+			}
+		}
+		pthread_mutex_lock(&extraction.lock);
+		finished = extraction.finished;
+		snprintf(file, sizeof(file), "%s", extraction.file);
+		done = extraction.done;
+		total = extraction.total;
+		pthread_mutex_unlock(&extraction.lock);
+		if (renderer)
+		{
+			char line[320];
+			SDL_FRect bar = { 20.0f, 100.0f, 600.0f, 24.0f };
+			float fraction = total ? (float)((double)done / (double)total) : 0.0f;
+
+			SDL_SetRenderDrawColor(renderer, 12, 16, 20, 255);
+			SDL_RenderClear(renderer);
+			SDL_SetRenderDrawColor(renderer, 230, 230, 230, 255);
+			SDL_SetRenderScale(renderer, 2.0f, 2.0f);
+			SDL_RenderDebugText(renderer, 10.0f, 10.0f, "Extracting the maps folder...");
+			SDL_SetRenderScale(renderer, 1.0f, 1.0f);
+			snprintf(line, sizeof(line), "%s  (%llu of %llu MB)", file, done >> 20, total >> 20);
+			SDL_RenderDebugText(renderer, 20.0f, 70.0f, line);
+			SDL_SetRenderDrawColor(renderer, 60, 66, 72, 255);
+			SDL_RenderFillRect(renderer, &bar);
+			bar.w *= fraction;
+			SDL_SetRenderDrawColor(renderer, 90, 160, 90, 255);
+			SDL_RenderFillRect(renderer, &bar);
+			SDL_RenderPresent(renderer);
+		}
+		SDL_Delay(16);
+	}
+	if (renderer)
+		SDL_DestroyRenderer(renderer);
+	if (window)
+		SDL_DestroyWindow(window);
+	if (!extraction.succeeded)
+		snprintf(error, (size_t)error_size, "%s", extraction.error);
+	return extraction.succeeded;
+}
+
+struct data_image_choice
+{
+	SDL_AtomicInt done;
+	char path[1024];
+};
+
+static void SDLCALL data_image_chosen(void *userdata, const char * const *files, int filter)
+{
+	struct data_image_choice *choice = userdata;
+
+	(void)filter;
+	if (files && files[0])
+		snprintf(choice->path, sizeof(choice->path), "%s", files[0]);
+	SDL_SetAtomicInt(&choice->done, 1);
+}
+
+/* the disc image the player picks; FALSE if they pick none */
+static BOOL data_choose_image(char *path, int size)
+{
+	static const SDL_DialogFileFilter filters[] =
+	{
+		{ "Xbox disc images", "iso;xiso" },
+		{ "All files", "*" },
+	};
+	static struct data_image_choice choice;
+
+	memset(&choice, 0, sizeof(choice));
+	SDL_ShowOpenFileDialog(data_image_chosen, &choice, NULL, filters, 2, NULL, false);
+	/* the dialog answers through events (and on some systems another
+	thread) */
+	while (!SDL_GetAtomicInt(&choice.done))
+		SDL_WaitEventTimeout(NULL, 50);
+	if (!choice.path[0])
+		return FALSE;
+	snprintf(path, (size_t)size, "%s", choice.path);
+	return TRUE;
+}
+
+BOOL platform_offer_game_data(const char *destination)
+{
+	static const SDL_MessageBoxButtonData buttons[] =
+	{
+		{ SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Yes" },
+		{ SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "No" },
+	};
+	char message[1400];
+
+	/* not for runs nobody is watching */
+	if (config_boolean("debug.hidden_window") || config_real("debug.exit_after") > 0.0 ||
+		!SDL_Init(SDL_INIT_VIDEO))
+	{
+		return FALSE;
+	}
+	snprintf(message, sizeof(message),
+		"Halo's game data (its maps folder) was not found.\n\n"
+		"Extract the maps folder from an Xbox disc image (.iso) of Halo: Combat Evolved? "
+		"It is copied to %s/maps (about 2 GB).\n\n"
+		"(Or put the maps folder there yourself, or set paths.data in config.toml.)",
+		destination);
+	for (;;)
+	{
+		SDL_MessageBoxData question = { SDL_MESSAGEBOX_INFORMATION, NULL, "Halo", message, 2, buttons, NULL };
+		char image[1024];
+		char error[512];
+		int answer = 0;
+
+		if (!SDL_ShowMessageBox(&question, &answer) || answer != 1)
+		{
+			platform_log("no game data: quitting");
+			exit(EXIT_SUCCESS);
+		}
+		/* no image picked: ask again */
+		if (!data_choose_image(image, sizeof(image)))
+			continue;
+		platform_log("extracting the maps folder from %s to %s", image, destination);
+		if (data_extract(image, destination, error, sizeof(error)))
+		{
+			platform_log("extracted the maps folder");
+			return TRUE;
+		}
+		platform_log("extraction failed: %s", error);
+		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Halo", error, NULL);
+	}
+}
+#endif
 
 int halo_interpolation_enabled(void)
 {
@@ -341,6 +568,103 @@ BOOL platform_next_keystroke(struct platform_keystroke *keystroke)
 	return result;
 }
 
+/* ---------- internet play's invite links (p2p.c) */
+
+#ifdef HALO_ANDROID
+/* SDL declares it for Android builds only, which the guest is not
+(guest/runtime/guest_sdl.c passes it to the host) */
+bool SDL_ShowAndroidToast(const char *message, int duration, int gravity, int xoffset, int yoffset);
+#endif
+
+/* puts a new invite on the clipboard, and joins one found there when the
+game comes to the front */
+static void platform_invite_clipboard(BOOL look)
+{
+	/* the last clipboard text looked at, so each invite is joined once */
+	static char seen[256];
+	const char *invite = p2p_take_clipboard_text();
+
+	if (invite)
+	{
+		SDL_SetClipboardText(invite);
+		snprintf(seen, sizeof(seen), "%s", invite);
+		platform_log("Internet play: the invite link is on the clipboard");
+#ifdef HALO_ANDROID
+		SDL_ShowAndroidToast("Hosting: the invite link is on the clipboard", 1, -1, 0, 0);
+#endif
+	}
+	if (look && config_boolean("network.join_from_clipboard"))
+	{
+		char *text = SDL_GetClipboardText();
+
+		if (text && strcmp(text, seen) && strlen(text) < sizeof(seen))
+		{
+			snprintf(seen, sizeof(seen), "%s", text);
+			if (p2p_join_invite(text))
+			{
+#ifdef HALO_ANDROID
+				SDL_ShowAndroidToast("Joining the invite on the clipboard", 1, -1, 0, 0);
+#endif
+			}
+		}
+		SDL_free(text);
+	}
+}
+
+/* ---------- messages for the player */
+
+/* a message waiting for the event pump to show it (on the window's thread,
+between frames) */
+static pthread_mutex_t platform_message_lock = PTHREAD_MUTEX_INITIALIZER;
+static char platform_message_title[80];
+static char platform_message_text[600];
+static BOOL platform_message_pending;
+
+/* shows the player a message in a box of its own (the network code's: a
+host of another version), and logs it */
+void platform_show_message(const char *title, const char *message)
+{
+	platform_log("%s: %s", title, message);
+	/* (a run nobody watches: the log only) */
+	if (config_boolean("debug.hidden_window") || config_boolean("debug.null_renderer"))
+		return;
+	pthread_mutex_lock(&platform_message_lock);
+	snprintf(platform_message_title, sizeof(platform_message_title), "%s", title);
+	snprintf(platform_message_text, sizeof(platform_message_text), "%s", message);
+	platform_message_pending = TRUE;
+	pthread_mutex_unlock(&platform_message_lock);
+}
+
+static void platform_show_pending_message(void)
+{
+	char title[sizeof(platform_message_title)];
+	char text[sizeof(platform_message_text)];
+	BOOL pending;
+
+	pthread_mutex_lock(&platform_message_lock);
+	pending = platform_message_pending;
+	platform_message_pending = FALSE;
+	memcpy(title, platform_message_title, sizeof(title));
+	memcpy(text, platform_message_text, sizeof(text));
+	pthread_mutex_unlock(&platform_message_lock);
+	if (!pending)
+		return;
+#ifdef HALO_ANDROID
+	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, title, text, NULL);
+#else
+	{
+		/* (a box cannot show above a fullscreen game) */
+		int fullscreen = (SDL_GetWindowFlags(platform_window) & SDL_WINDOW_FULLSCREEN) != 0;
+
+		if (fullscreen)
+			SDL_SetWindowFullscreen(platform_window, false);
+		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, title, text, platform_window);
+		if (fullscreen)
+			SDL_SetWindowFullscreen(platform_window, true);
+	}
+#endif
+}
+
 /* ---------- events */
 
 void platform_pump_events(void)
@@ -349,6 +673,8 @@ void platform_pump_events(void)
 	opens, as closing it does (tools/pgo_train.py) */
 	static Uint64 exit_ticks = (Uint64)-1;
 	SDL_Event event;
+	static BOOL looked_at_clipboard;
+	BOOL look_at_clipboard = !looked_at_clipboard;
 
 	if (!platform_window || SDL_GetCurrentThreadID() != platform_event_thread)
 		return;
@@ -363,6 +689,10 @@ void platform_pump_events(void)
 		platform_log("exiting after debug.exit_after");
 		exit(EXIT_SUCCESS);
 	}
+	platform_show_pending_message();
+#ifndef HALO_ANDROID
+	updater_poll(platform_window);
+#endif
 	pthread_mutex_lock(&input_lock);
 	while (SDL_PollEvent(&event))
 	{
@@ -463,6 +793,7 @@ void platform_pump_events(void)
 			break;
 		case SDL_EVENT_WINDOW_FOCUS_GAINED:
 			input_state.focused = TRUE;
+			look_at_clipboard = TRUE;
 #if !defined(HALO_ANDROID) || defined(HALO_MACOS)
 			if (!input_state.mouse_released && !input_state.ui_pointer)
 				platform_mouse_capture(TRUE);
@@ -476,6 +807,8 @@ void platform_pump_events(void)
 		}
 	}
 	pthread_mutex_unlock(&input_lock);
+	looked_at_clipboard = TRUE;
+	platform_invite_clipboard(look_at_clipboard);
 }
 
 #ifndef HALO_ANDROID

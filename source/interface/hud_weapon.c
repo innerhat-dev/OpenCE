@@ -61,6 +61,7 @@ symbols in this file:
 #include "game/player_control.h"
 #include "game/players.h"
 #include "interface/hud_draw.h"
+#include "interface/hud.h"
 #include "interface/hud_definitions.h"
 #include "interface/hud_weapon.h"
 #include "interface/unit_hud_interface_definition.h"
@@ -375,17 +376,6 @@ struct weapon_hud_crosshair_item
 	long unused[8];
 };
 
-struct hud_weapon_defaults_definition
-{
-	struct tag_reference default_weapon_hud;
-};
-
-struct hud_weapon_globals_definition
-{
-	byte reserved000[0x2C0];
-	struct hud_weapon_defaults_definition defaults;
-};
-
 typedef char weapon_hud_state_size_assert[
 	sizeof(struct weapon_hud_state) == 0x28 ? 1 : -1];
 typedef char crosshair_state_size_assert[
@@ -409,7 +399,7 @@ typedef char weapon_hud_crosshairs_element_size_assert[
 typedef char weapon_hud_crosshair_item_size_assert[
 	sizeof(struct weapon_hud_crosshair_item) == 0x6C ? 1 : -1];
 typedef char hud_weapon_globals_default_weapon_hud_index_offset_assert[
-	offsetof(struct hud_weapon_globals_definition, defaults.default_weapon_hud.index) == 0x2CC ? 1 : -1];
+	offsetof(struct hud_globals_definition, defaults.default_weapon_hud.index) == 0x2CC ? 1 : -1];
 
 /* ---------- prototypes */
 
@@ -448,7 +438,6 @@ static void render_weapon_hud(
 /* ---------- globals */
 
 static struct weapon_hud_globals *weapon_hud_globals = NULL;
-extern struct hud_weapon_globals_definition *hud_globals;
 
 /* ---------- public code */
 
@@ -480,6 +469,21 @@ void hud_initialize_weapon_interface_for_new_map(
 		weapon_hud_globals,
 		NONE,
 		sizeof(*weapon_hud_globals));
+#ifdef HALO_LINUX
+	/* port: no crosshair drawn until hud_update_weapon has worked out its
+	states (each tick). Drawn from the states above, all NONE, the default
+	weapon HUD's aim crosshair has frame NONE (crosshairs_draw's assertion,
+	and a sprite before the first in a release build): a distributed client's
+	player takes its unit when the host's word of it arrives, between ticks,
+	and without its weapons until the next word of what it carries, so a
+	frame could draw that crosshair before the next tick updated it. */
+	{
+		short local_player_index;
+
+		for (local_player_index = 0; local_player_index < MAXIMUM_NUMBER_OF_LOCAL_PLAYERS; local_player_index++)
+			weapon_hud_globals->crosshair_states[local_player_index].render_flags = 0;
+	}
+#endif
 
 	return;
 }
@@ -1187,6 +1191,20 @@ static void crosshairs_draw(
 								}
 
 							draw_crosshair:
+#ifdef HALO_LINUX
+								/* port: a frame that is not one of the item's sprites draws
+								nothing, rather than a sprite outside its sequence: a state not
+								yet worked out has none, and the states are worked out each tick
+								for the weapon then held, while a distributed client's weapons
+								change when the host's word arrives, between ticks, so a frame
+								can draw one weapon's crosshairs from another's states (the aim
+								state's 1 on the no-weapon crosshair's single sprite) */
+								if (frame_index < 0 ||
+									(sequence && frame_index >= sequence->sprites.count))
+								{
+									continue;
+								}
+#endif
 								match_vassert(
 									"c:\\halo\\SOURCE\\interface\\hud_weapon.c",
 									0x4A5,

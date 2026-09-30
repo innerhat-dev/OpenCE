@@ -1,4 +1,7 @@
 /* The shared Winsock adapter with Darwin sockaddr layout translation. */
+#ifndef HALO_MACOS
+#define HALO_MACOS 1
+#endif
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -31,6 +34,10 @@ static int darwin_connect(int fd, const struct sockaddr *a, socklen_t n) {
 }
 static ssize_t darwin_sendto(int fd, const void *p, size_t n, int f, const struct sockaddr *a,
                              socklen_t an) {
+    /* A connected socket can omit its destination. Preserve NULL: a
+       non-NULL zero-length sockaddr makes Darwin reject the send. */
+    if (!a)
+        return sendto(fd, p, n, f, NULL, an);
     struct sockaddr_storage s = input_address(a, an);
     ssize_t r = sendto(fd, p, n, f, (void *)&s, an);
     if (r < 0 && errno == EISCONN) {
@@ -86,15 +93,22 @@ static ssize_t darwin_getrandom(void *p, size_t n, unsigned f) {
 }
 static int darwin_socket(int family, int type, int protocol) {
     int fd = socket(family, type & ~0x80000, protocol);
-    if (fd >= 0)
+    if (fd >= 0) {
         fcntl(fd, F_SETFD, FD_CLOEXEC);
+        /* PR #22: Darwin uses SO_NOSIGPIPE in place of MSG_NOSIGNAL. */
+        int enabled = 1;
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &enabled, sizeof(enabled));
+    }
     return fd;
 }
 static int darwin_accept4(int fd, struct sockaddr *a, socklen_t *n, int flags) {
     (void)flags;
     int r = darwin_accept(fd, a, n);
-    if (r >= 0)
+    if (r >= 0) {
         fcntl(r, F_SETFD, FD_CLOEXEC);
+        int enabled = 1;
+        setsockopt(r, SOL_SOCKET, SO_NOSIGPIPE, &enabled, sizeof(enabled));
+    }
     return r;
 }
 #define SOCK_CLOEXEC 0x80000

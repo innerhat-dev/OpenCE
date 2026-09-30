@@ -38,6 +38,8 @@ void host_logf(int priority, const char *format, ...) __attribute__((format(prin
 /* guest services also used inside the host (host_main.c) */
 void host_exit(int code) __attribute__((noreturn));
 int host_errno(void);
+/* Queue an OS invite in this instance's save folder for the P2P thread. */
+int host_invite_received(const char *text);
 
 /* logs, shows the message to the player and terminates */
 void host_fatal(const char *format, ...) __attribute__((format(printf, 1, 2), noreturn));

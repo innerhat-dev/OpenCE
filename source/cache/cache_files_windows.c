@@ -848,6 +848,10 @@ short cache_files_precache_map_status(
 			status = _cached_map_file_success;
 			break;
 
+		/* status is left unassigned only by this default arm. Not reached unassigned: the
+		 * arm's assertion failure calls system_exit, which does not return in January
+		 * (0x47c960 jumps to halt_and_catch_fire 0x4f21c0, which loops or calls exit).
+		 * Source-policy approval pending (2026-09-27 audit). */
 		default:
 			match_vassert("c:\\halo\\SOURCE\\cache\\cache_files_windows.c", 1013, FALSE, NULL);
 			break;
@@ -1016,14 +1020,14 @@ static void cache_files_open_cache_files(
 			char *cache_map_name = cached_map_file_get(map_file_index)->header.name;
 
 			cached_map_file_read_header(map_file_index);
-			if (strcmp(map_file->header.build, CACHE_FILE_BUILD_STRING) != 0
-#ifdef HALO_LINUX
-				&& strcmp(map_file->header.build, "01.10.12.2276") != 0
-#endif
-				)
+#ifndef HALO_LINUX
+			/* (the native builds keep a copied map whatever build made it;
+			the checksum below still has to match the original's) */
+			if (strcmp(map_file->header.build, CACHE_FILE_BUILD_STRING) != 0)
 			{
 				valid = FALSE;
 			}
+#endif
 			if (cache_file_read_header_from_dvd(cache_map_name, &dvd_header) &&
 				map_file->header.checksum == dvd_header.checksum &&
 				valid)
@@ -1222,6 +1226,10 @@ static short cached_map_files_find_free_map(
 			last_map_file_index = 2;
 			break;
 
+		/* first_map_file_index and last_map_file_index are left unassigned only by this default arm. Not reached unassigned: the
+		 * arm's assertion failure calls system_exit, which does not return in January
+		 * (0x47c960 jumps to halt_and_catch_fire 0x4f21c0, which loops or calls exit).
+		 * Source-policy approval pending (2026-09-27 audit). */
 		default:
 			match_vassert("c:\\halo\\SOURCE\\cache\\cache_files_windows.c", 1172, FALSE, NULL);
 			break;

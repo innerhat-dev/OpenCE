@@ -81,7 +81,10 @@ symbols in this file:
 #include "game/game.h"
 #include "game/game_engine.h"
 #include "game/players.h"
+#include "interface/player_ui.h"
+#include "saved games/player_profile.h"
 #include "main/main.h"
+#include "memory/data.h"
 #include "network_game_globals.h"
 #include "network_game_manager.h"
 #include "network_game_ui.h"
@@ -99,6 +102,22 @@ native builds' session limits (port/linux/include/halo_port_limits.h) */
 #else
 #define NETWORK_GAME_MACHINE_SLOTS 4
 #define NETWORK_GAME_PLAYER_SLOTS 16
+#endif
+
+#ifdef HALO_LINUX
+/* port: the distributed netcode names players by their datums' absolute
+indices (port/linux/game), which every machine must share: a machine that
+joined the game in progress too, which has neither the players who left
+(their datums stay until the game ends) nor the order the others added
+players in. So there each player's datum is its slot in the host's player
+list: every machine makes it there (network_game_spawn_player), and the host
+gives a player added to the game in progress a slot whose datum is free. */
+static boolean network_game_player_slot_held(
+	long slot)
+{
+	return game_in_progress() && player_data && player_data->valid && slot < player_data->maximum_count &&
+		((struct datum_header *)((byte *)player_data->data + player_data->size * slot))->identifier != 0;
+}
 #endif
 
 enum
@@ -260,7 +279,40 @@ void network_game_generate_local_machine_name(
 	wchar_t *machine_name)
 {
 	char ascii_machine_name[32];
-	HANDLE find_handle = XFindFirstNicknameW(FALSE, machine_name, 32);
+	HANDLE find_handle;
+
+#ifdef HALO_LINUX
+	/* port: a machine that brings one player to the game (the one who
+	joined multiplayer on it) is named after that player's profile, not the
+	system's random nickname: the system link list shows a host's game by it */
+	{
+		short local_player_index;
+		short joined_player_index = NONE;
+		short joined_player_count = 0;
+
+		for (local_player_index = 0; local_player_index < MAXIMUM_LOCAL_PLAYERS; local_player_index++)
+		{
+			if (player_ui_local_player_wants_to_play_multiplayer(local_player_index))
+			{
+				joined_player_index = local_player_index;
+				joined_player_count++;
+			}
+		}
+		if (joined_player_count == 1)
+		{
+			struct player_profile profile;
+
+			player_ui_get_active_player_profile(joined_player_index, &profile);
+			if (profile.player_name[0])
+			{
+				ustrncpy(machine_name, profile.player_name, MAXIMUM_PLAYER_PROFILE_NAME_LENGTH);
+				machine_name[MIN(MAXIMUM_PLAYER_PROFILE_NAME_LENGTH, 32) - 1] = 0;
+				return;
+			}
+		}
+	}
+#endif
+	find_handle = XFindFirstNicknameW(FALSE, machine_name, 32);
 
 	if (find_handle == INVALID_HANDLE_VALUE)
 	{
@@ -345,9 +397,26 @@ boolean network_game_add_player(
 			if (player_index == NETWORK_GAME_PLAYER_SLOTS && network_player_is_valid(player))
 			{
 				new_player_index = NONE;
+#ifdef HALO_LINUX
+				/* (the distributed netcode's: the host's slot, as it chose it) */
+				if (network_game_distributed() && player->player_list_index != NONE)
+				{
+					if (VALID_INDEX(player->player_list_index, NETWORK_GAME_PLAYER_SLOTS) &&
+						game->players[player->player_list_index].player_list_index == NONE)
+					{
+						new_player_index = player->player_list_index;
+					}
+				}
+				else
+#endif
 				for (player_index = 0; player_index < NETWORK_GAME_PLAYER_SLOTS; player_index++)
 				{
-					if (game->players[player_index].player_list_index == NONE)
+					if (game->players[player_index].player_list_index == NONE
+#ifdef HALO_LINUX
+						/* (not the slot of a player who left the game in progress) */
+						&& !(network_game_distributed() && network_game_player_slot_held(player_index))
+#endif
+						)
 					{
 						new_player_index = player_index;
 						break;
@@ -429,6 +498,16 @@ boolean network_game_spawn_player(
 		network_player_is_valid(player));
 
 	controller_index = network_game_player_is_local(player) ? player->controller_index : NONE;
+#ifdef HALO_LINUX
+	/* (the distributed netcode's: the datum at the player's slot, with the
+	identifier datum_new would give it) */
+	if (network_game_distributed() && VALID_INDEX(player->player_list_index, NETWORK_GAME_PLAYER_SLOTS))
+	{
+		player_index = player_new(player->machine_index,
+			((long)(word)player_data->next_identifier << 16) | player->player_list_index, controller_index, player);
+	}
+	else
+#endif
 	player_index = player_new(player->machine_index, NONE, controller_index, player);
 	if (player_index != NONE)
 	{
@@ -677,6 +756,11 @@ boolean network_game_create_game_objects(
 		game->local_data.game_objects_loaded = TRUE;
 		game_initialize_for_new_map();
 
+#ifdef HALO_LINUX
+		/* (the distributed netcode's players stay in their slots, which are
+		their datums: network_game_spawn_player) */
+		if (!network_game_distributed())
+#endif
 		qsort(
 			game->players,
 			NETWORK_GAME_PLAYER_SLOTS,
@@ -686,7 +770,18 @@ boolean network_game_create_game_objects(
 		for (player_index = 0; player_index < NETWORK_GAME_PLAYER_SLOTS; player_index++)
 		{
 			if (!network_player_is_valid(&game->players[player_index]))
+			{
+#ifdef HALO_LINUX
+				/* (unsorted, the slots of players who left are among them) */
+				if (network_game_distributed())
+					continue;
+#endif
 				break;
+			}
+#ifdef HALO_LINUX
+			if (network_game_distributed())
+				game->players[player_index].player_list_index = (char)player_index;
+#endif
 
 			if (!network_game_spawn_player(&game->players[player_index]))
 			{

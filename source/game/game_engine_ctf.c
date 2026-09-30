@@ -209,15 +209,6 @@ enum
 
 /* ---------- structures */
 
-struct scenario_netgame_flag
-{
-	real_point3d position;
-	real facing;
-	short type;
-	short team_index;
-	byte unused[0x80];
-};
-
 typedef char verify_scenario_netgame_flag_size[
 	sizeof(struct scenario_netgame_flag) == 0x94 ? 1 : -1];
 
@@ -1386,3 +1377,53 @@ struct game_engine ctf_engine =
 	NULL,
 	NULL,
 };
+
+#ifdef HALO_LINUX
+/* the parts of ctf_globals that are the same on every machine (the flag
+objects are the host's, at the same indices everywhere: the flags' scenario
+places are each machine's own pointers) */
+struct ctf_network_state
+{
+	long weapon_indices[NUMBER_OF_CTF_TEAMS];
+	long scores[NUMBER_OF_CTF_TEAMS];
+	boolean flag_warnings[NUMBER_OF_CTF_TEAMS];
+	long flag_warning_ticks[NUMBER_OF_CTF_TEAMS];
+	long flag_swap_timer;
+};
+
+/* the distributed netcode (port/linux/game/network_distributed.c): the game
+type's state the host sends its clients, which take it as it is */
+long game_engine_ctf_write_network_state(
+	byte *buffer,
+	long size)
+{
+	struct ctf_network_state state;
+
+	if (size < (long)sizeof(state))
+		return 0;
+	csmemset(&state, 0, sizeof(state));
+	csmemcpy(state.weapon_indices, ctf_globals.weapon_indices, sizeof(state.weapon_indices));
+	csmemcpy(state.scores, ctf_globals.scores, sizeof(state.scores));
+	csmemcpy(state.flag_warnings, ctf_globals.flag_warnings, sizeof(state.flag_warnings));
+	csmemcpy(state.flag_warning_ticks, ctf_globals.flag_warning_ticks, sizeof(state.flag_warning_ticks));
+	state.flag_swap_timer = ctf_globals.flag_swap_timer;
+	csmemcpy(buffer, &state, sizeof(state));
+	return sizeof(state);
+}
+
+void game_engine_ctf_read_network_state(
+	byte const *buffer,
+	long size)
+{
+	struct ctf_network_state state;
+
+	if (size != (long)sizeof(state))
+		return;
+	csmemcpy(&state, buffer, sizeof(state));
+	csmemcpy(ctf_globals.weapon_indices, state.weapon_indices, sizeof(state.weapon_indices));
+	csmemcpy(ctf_globals.scores, state.scores, sizeof(state.scores));
+	csmemcpy(ctf_globals.flag_warnings, state.flag_warnings, sizeof(state.flag_warnings));
+	csmemcpy(ctf_globals.flag_warning_ticks, state.flag_warning_ticks, sizeof(state.flag_warning_ticks));
+	ctf_globals.flag_swap_timer = state.flag_swap_timer;
+}
+#endif

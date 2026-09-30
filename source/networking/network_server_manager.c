@@ -763,6 +763,16 @@ void countdown_timer_increment(
 
 static boolean network_game_server_setup_game_from_playlist(
 	struct network_game_server *server);
+#ifdef HALO_LINUX
+static boolean network_game_server_machine_has_waiting_players(
+	struct network_game_server *server,
+	long machine_index);
+static void network_game_server_start_late_joiner(
+	struct network_game_server *server,
+	struct network_game_server_client_machine *machine);
+static void network_game_server_keep_late_joiners_alive(
+	struct network_game_server *server);
+#endif
 static boolean network_game_server_add_new_client(
 	struct network_game_server *server,
 	struct network_connection *new_connection);
@@ -890,6 +900,14 @@ void network_game_server_dispose(
 		struct message_server_graceful_game_exit_pregame message_packet;
 		struct network_message *message;
 
+		/* BUG (preserved for exact matching): message_packet is sent without being
+		 * initialised. January serialises the reused argument slot [ebp+8], which still
+		 * holds the server pointer, so four bytes of a host address go to every machine
+		 * (0x51e250 +0x56 lea ecx,[ebp+8] for this pregame message, +0x3b lea eax,[ebp+8]
+		 * for the postgame one below; tools/test_network_server_dispose_payloads.py). The
+		 * receiving client decodes the field but does not read it. Reached whenever a server
+		 * in the pregame or postgame state is disposed. A corrected build should
+		 * zero-initialise both payloads. Source-policy approval pending (2026-09-27 audit). */
 		message = create_network_game_message(
 			_message_server_graceful_game_exit_pregame,
 			&message_packet,
@@ -1033,6 +1051,9 @@ boolean network_game_server_idle(
 						break;
 
 					case _network_game_server_state_ingame:
+#ifdef HALO_LINUX
+						network_game_server_keep_late_joiners_alive(server);
+#endif
 						break;
 
 					case _network_game_server_state_postgame:
@@ -1733,6 +1754,12 @@ boolean network_game_server_add_player_to_game(
 		if (player->primary_color_index == NONE)
 			get_unique_random_color(server, player);
 
+#ifdef HALO_LINUX
+		/* (the host chooses the player's slot, which in the distributed
+		netcode's games is its datum on every machine: network_game_add_player) */
+		if (network_game_distributed())
+			player->player_list_index = NONE;
+#endif
 		success = network_game_add_player(&server->game, player);
 		if (success == TRUE)
 		{
@@ -1785,6 +1812,13 @@ void network_game_server_update_ticks(
 				game_update.random_seed = get_random_seed();
 				game_update.game_time = game_time_get();
 				game_update.player_count = update.player_count;
+#ifdef HALO_LINUX
+				/* (the distributed netcode relays the actions unreliably, each
+				tick's buttons with the next ticks', network_distributed.c: this
+				update only keeps the clients' count of the host's ticks) */
+				if (network_game_distributed())
+					game_update.player_count = 0;
+#endif
 
 				csmemcpy(
 					game_update.player_updates,
@@ -1842,6 +1876,15 @@ void network_game_server_update_ticks(
 						network_event(
 							"network_game_server_send_player_joined_info_ingame() failed in network_game_server_handle_message_client_add_player_request_ingame()");
 					}
+#ifdef HALO_LINUX
+					/* a machine joining the game in progress, its players all in:
+					it loads the game now */
+					if (!TEST_FLAG(client_machine->flags, _network_client_machine_level_loaded_bit) &&
+						!network_game_server_machine_has_waiting_players(server, client_machine->machine_index))
+					{
+						network_game_server_start_late_joiner(server, client_machine);
+					}
+#endif
 				}
 				else
 				{
@@ -1861,12 +1904,232 @@ void network_game_server_update_ticks(
 	return;
 }
 
+#ifdef HALO_LINUX
+/* ---------- joining a game in progress (the distributed netcode's)
+
+A machine may join a distributed game in progress: the host keeps the game
+open, accepts the machine's join as in the pregame, and adds its players as
+it adds a player in game (every machine in the game spawns them, told by
+_message_server_add_player_ingame). Then the host sends the machine alone
+the settings and the start, with its game time, and the machine loads the
+game and runs its clock from there; the distributed netcode gives it the
+host's objects when it has loaded (network_objects.c). Until then the
+machine hears none of the game's messages (network_game_server_send_message_to_all_machines),
+which a machine in the pregame would refuse. */
+
+boolean network_game_server_accepts_late_joins(
+	struct network_game_server *server)
+{
+	return network_game_distributed() && server->state == _network_game_server_state_ingame &&
+		network_game_server_game_is_open(server);
+}
+
+boolean network_game_server_client_machine_is_loaded(
+	struct network_game_server *server,
+	struct network_game_server_client_machine *machine)
+{
+	(void)server;
+	return TEST_FLAG(machine->flags, _network_client_machine_level_loaded_bit);
+}
+
+/* whether players of the machine are still waiting to be added (after the
+one being added) */
+static boolean network_game_server_machine_has_waiting_players(
+	struct network_game_server *server,
+	long machine_index)
+{
+	long index;
+
+	for (index = 0; index < server->waiting_player_count; index++)
+	{
+		if (server->waiting_players[index].machine_index == machine_index)
+			return TRUE;
+	}
+	return FALSE;
+}
+
+/* the players in the settings each machine joining the game in progress
+was started with (by machine index): those added and gone while it loaded
+it, whose messages it did not hear, it is told of once it has */
+static struct network_player late_joiner_players[MAXIMUM_NETWORK_MACHINE_COUNT][NUMBEROF(((struct network_game *)0)->players)];
+
+static boolean network_game_server_same_player(
+	struct network_player const *player0,
+	struct network_player const *player1)
+{
+	return player0->machine_index == player1->machine_index &&
+		player0->controller_index == player1->controller_index &&
+		player0->player_list_index == player1->player_list_index;
+}
+
+/* whether the player is valid and one of the players */
+static boolean network_game_server_player_among(
+	struct network_player const *player,
+	struct network_player *players,
+	long count)
+{
+	long index;
+
+	for (index = 0; index < count; index++)
+	{
+		if (network_player_is_valid(&players[index]) && network_game_server_same_player(&players[index], player))
+			return TRUE;
+	}
+	return FALSE;
+}
+
+/* the settings (with the machine's players) and the start, to the machine
+alone, the start with the host's game time */
+static void network_game_server_start_late_joiner(
+	struct network_game_server *server,
+	struct network_game_server_client_machine *machine)
+{
+	struct message_server_begin_game begin_game = { 0 };
+	struct network_message *message;
+
+	/* (the message carries 16 bits: the client has the rest from its first
+	game update; never 0, which is a game starting) */
+	begin_game.unused = MAX(game_time_get() & 0xFFFF, 1);
+	if (!network_game_server_send_game_settings_to_client_machine(server, machine, &server->game, sizeof(server->game)) ||
+		!(message = create_network_game_message(_message_server_begin_game, &begin_game, sizeof(begin_game))) ||
+		!network_game_server_send_message_to_client_machine(server, machine, message))
+	{
+		network_event("failed to start machine #%d in the game in progress", machine->machine_index);
+		return;
+	}
+	if (machine->machine_index >= 0 && machine->machine_index < MAXIMUM_NETWORK_MACHINE_COUNT)
+	{
+		csmemcpy(late_joiner_players[machine->machine_index], server->game.players,
+			sizeof(late_joiner_players[machine->machine_index]));
+	}
+	network_event("machine #%d joins the game in progress at game tick #%ld", machine->machine_index,
+		begin_game.unused);
+}
+
+/* the machines joining the game in progress (in the pregame, or loading)
+hear none of the game's messages, and drop a connection they hear nothing on
+for 15 seconds: a pregame keep-alive every 5 */
+static void network_game_server_keep_late_joiners_alive(
+	struct network_game_server *server)
+{
+	unsigned long now = system_milliseconds();
+	struct message_server_pregame_keep_alive message_packet = { 0 };
+	long client_machine_index;
+
+	if (!network_game_distributed() || now - server->time_of_last_keep_alive <= 5UL * MILLISECONDS_PER_SECOND)
+		return;
+	server->time_of_last_keep_alive = now;
+	for (client_machine_index = 0; client_machine_index < MAXIMUM_NETWORK_MACHINE_COUNT; client_machine_index++)
+	{
+		struct network_game_server_client_machine *machine = &server->client_machines[client_machine_index];
+		struct network_message *message;
+
+		if (!network_game_server_client_machine_is_joined_to_game(server, machine) ||
+			TEST_FLAG(machine->flags, _network_client_machine_level_loaded_bit))
+		{
+			continue;
+		}
+		message = create_network_game_message(_message_server_pregame_keep_alive, &message_packet,
+			sizeof(message_packet));
+		if (message)
+			network_game_server_send_message_to_client_machine(server, machine, message);
+	}
+}
+
+/* a machine that joined the game in progress has loaded it */
+void network_game_server_late_joiner_loaded(
+	struct network_game_server *server,
+	struct network_game_server_client_machine *machine)
+{
+	SET_FLAG(machine->flags, _network_client_machine_level_loaded_bit, TRUE);
+	network_event("machine #%d has loaded the game in progress", machine->machine_index);
+	if (machine->machine_index >= 0 && machine->machine_index < MAXIMUM_NETWORK_MACHINE_COUNT)
+	{
+		struct network_player *started = late_joiner_players[machine->machine_index];
+		long count = (long)NUMBEROF(server->game.players);
+		long index;
+
+		/* the players gone while it loaded (first: a player's machine index
+		may be a new machine's, which a player added is told apart from by
+		that only) */
+		for (index = 0; index < count; index++)
+		{
+			struct network_player *player = &started[index];
+			struct message_server_remove_player_ingame remove_player;
+			void *message;
+
+			if (!network_player_is_valid(player) || network_game_server_player_among(player, server->game.players, count))
+				continue;
+			remove_player.player = *player;
+			remove_player.reason = game_time_get();
+			message = create_network_game_message(_message_server_remove_player_ingame, &remove_player,
+				sizeof(remove_player));
+			if (message)
+				network_game_server_send_message_to_client_machine(server, machine, message);
+			network_event("told machine #%d of a player gone while it loaded (machine #%d / controller #%d)",
+				machine->machine_index, player->machine_index, player->controller_index);
+		}
+		/* and those added */
+		for (index = 0; index < count; index++)
+		{
+			struct network_player *player = &server->game.players[index];
+			struct network_player message_packet;
+			void *message;
+
+			if (!network_player_is_valid(player) || network_game_server_player_among(player, started, count))
+				continue;
+			message_packet = *player;
+			message = create_network_game_message(_message_server_add_player_ingame, &message_packet,
+				sizeof(message_packet));
+			if (message)
+				network_game_server_send_message_to_client_machine(server, machine, message);
+			network_event("told machine #%d of a player added while it loaded (machine #%d / controller #%d)",
+				machine->machine_index, player->machine_index, player->controller_index);
+		}
+	}
+}
+
+#endif
 void network_game_server_queue_player_for_addition(
 	struct network_game_server *server,
 	struct network_player *player)
 {
 	match_assert(NETWORK_SERVER_MANAGER_FILE, 0x5DE, server && player);
 
+#ifdef HALO_LINUX
+	/* port: a player already in the game or queued to join it, asked for
+	again: the pregame screen asks every frame until its player is in the
+	settings, which a machine joining the game in progress has only once
+	started, and that waits for the machine's queued players (the repeats
+	among them, which fail to join) */
+	{
+		long index;
+
+		if (server->queued_player_valid &&
+			server->queued_player.machine_index == player->machine_index &&
+			server->queued_player.controller_index == player->controller_index)
+		{
+			return;
+		}
+		for (index = 0; index < server->waiting_player_count; index++)
+		{
+			if (server->waiting_players[index].machine_index == player->machine_index &&
+				server->waiting_players[index].controller_index == player->controller_index)
+			{
+				return;
+			}
+		}
+		for (index = 0; index < (long)NUMBEROF(server->game.players); index++)
+		{
+			if (network_player_is_valid(&server->game.players[index]) &&
+				server->game.players[index].machine_index == player->machine_index &&
+				server->game.players[index].controller_index == player->controller_index)
+			{
+				return;
+			}
+		}
+	}
+#endif
 	if (!server->queued_player_valid && network_player_is_valid(player))
 	{
 		csmemcpy(&server->queued_player, player, sizeof(server->queued_player));
@@ -3392,6 +3655,11 @@ static boolean network_game_server_idle_pregame_tasks(
 				network_game_server_have_all_machines_have_precached(server) &&
 				server->countdown_state.paused == FALSE)
 			{
+#ifdef HALO_LINUX
+				/* (the distributed netcode's games stay open: a machine may join
+				one in progress, network_game_server_start_late_joiner) */
+				if (!network_game_distributed())
+#endif
 				network_game_server_close_game(server);
 				if ((success = network_game_server_start_network_game(server)) != TRUE)
 					network_event("network_game_server_start_network_game() failed");

@@ -207,15 +207,6 @@ enum multiplayer_game_text
 
 /* ---------- structures */
 
-struct scenario_netgame_flag
-{
-	real_point3d position;
-	real facing;
-	short type;
-	short team_index;
-	byte unused[0x80];
-};
-
 typedef char verify_scenario_netgame_flag_size[
 	sizeof(struct scenario_netgame_flag) == 0x94 ? 1 : -1];
 
@@ -1484,3 +1475,30 @@ struct game_engine race_engine =
 };
 
 /* ---------- private code */
+
+#ifdef HALO_LINUX
+/* the distributed netcode (port/linux/game/network_distributed.c): the game
+type's state the host sends its clients, which take it as it is (not
+whether this machine has added its race vehicles) */
+long game_engine_race_write_network_state(
+	byte *buffer,
+	long size)
+{
+	if (size < (long)sizeof(race_globals))
+		return 0;
+	csmemcpy(buffer, &race_globals, sizeof(race_globals));
+	return sizeof(race_globals);
+}
+
+void game_engine_race_read_network_state(
+	byte const *buffer,
+	long size)
+{
+	boolean vehicles_have_been_added = race_globals.vehicles_have_been_added;
+
+	if (size != (long)sizeof(race_globals))
+		return;
+	csmemcpy(&race_globals, buffer, sizeof(race_globals));
+	race_globals.vehicles_have_been_added = vehicles_have_been_added;
+}
+#endif

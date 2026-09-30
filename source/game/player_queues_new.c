@@ -252,8 +252,50 @@ static struct update *update_server_get_update(
 	long update_number);
 static struct update *update_client_get_update(
 	long update_number);
+#ifdef HALO_LINUX
+static boolean update_server_machine_is_local(
+	long machine_index);
+#endif
 
 /* ---------- globals */
+
+#ifdef HALO_LINUX
+/* The host takes a client's input as it comes, each packet replacing the
+last, and a client sends one a frame (several per tick): a button pressed
+in only one packet between two of the host's ticks would be lost. Every
+button seen since the host's last tick stays down for the next. */
+static unsigned long update_server_pending_control_flags[MAXIMUM_NUMBER_OF_PLAYERS];
+
+/* the distributed netcode (port/linux/NETCODE.md): the latest action the
+host relayed for each player, the update it is of, and the buttons of every
+relayed update since this client's last tick */
+static struct
+{
+	boolean valid;
+	long update_number;
+	struct player_action action;
+	unsigned long pending_control_flags;
+} update_client_relayed_actions[MAXIMUM_NUMBER_OF_PLAYERS];
+
+/* ... the host: the last tick of each client machine's player's it has
+had (their buttons of that tick and before it are in) */
+static struct
+{
+	boolean valid;
+	long tick;
+} update_server_distributed_inputs[MAXIMUM_NUMBER_OF_PLAYERS];
+
+/* ... a client: each local player's last tick, its action, and the buttons
+of the ticks up to it, newest first */
+static struct
+{
+	boolean valid;
+	long tick;
+	struct player_action action;
+	unsigned short control_flags[DISTRIBUTED_INPUT_HISTORY];
+} update_client_local_inputs[MAXIMUM_LOCAL_PLAYERS];
+
+#endif
 
 static struct update_server_globals update_server_globals = { 0 };
 static struct update_client_globals update_client_globals = { 0 };
@@ -369,10 +411,33 @@ void update_server_next_update(
 	queue = (struct update_server_queue_datum *)update_server_globals.queues->data;
 	for (queue_index = 0; queue_index<update_server_globals.queues->count; ++queue_index, ++queue)
 	{
+#ifdef HALO_LINUX
+		/* port: a slot no player holds (the distributed netcode's players keep
+		their slots in the host's player list, which may leave gaps:
+		network_game_manager.c) has an idle action, not what its queue's
+		memory last held (a weapon index past the unit's, which every machine
+		dequeuing it asserted on) */
+		if (!queue->identifier)
+		{
+			struct player_action *action = &update->update.actions[queue_index];
+
+			csmemset(action, 0, sizeof(*action));
+			action->desired_weapon_index = NONE;
+			action->desired_grenade_index = NONE;
+			action->desired_zoom_level = NONE;
+			update_server_pending_control_flags[queue_index] = 0;
+			update->update.action_count += 1;
+			continue;
+		}
+#endif
 		csmemcpy(
 			&update->update.actions[queue_index],
 			&queue->current_action,
 			sizeof(struct player_action));
+#ifdef HALO_LINUX
+		update->update.actions[queue_index].control_flags |= update_server_pending_control_flags[queue_index];
+		update_server_pending_control_flags[queue_index] = 0;
+#endif
 		update->update.action_count += 1;
 	}
 	update_client_handle_server_update(&update->update, update_number);
@@ -571,6 +636,77 @@ void update_client_queue_push(
 	return;
 }
 
+#ifdef HALO_LINUX
+/* the local player (of this machine) controlling the player at player_index,
+or NONE */
+static short update_client_local_player_index(
+	short player_index)
+{
+	short local_player_index;
+
+	for (local_player_index = 0; local_player_index < MAXIMUM_LOCAL_PLAYERS; local_player_index++)
+	{
+		long local_player = local_player_get_player_index(local_player_index);
+
+		if (local_player != NONE && DATUM_INDEX_TO_ABSOLUTE_INDEX(local_player) == player_index)
+			return local_player_index;
+	}
+	return NONE;
+}
+
+/* the distributed netcode's tick (port/linux/NETCODE.md): this machine's
+players from its own input at once, the others from what the host last
+relayed */
+static boolean update_client_dequeue_distributed(
+	struct player_action *actions)
+{
+	struct update_client_queue_datum *queue = (struct update_client_queue_datum *)update_client_globals.queues->data;
+	short queue_index;
+
+	for (queue_index = 0; queue_index < update_client_globals.queues->count; ++queue_index, ++queue)
+	{
+		struct player_action action;
+		short local_player_index = update_client_local_player_index(queue_index);
+
+		csmemset(&action, 0, sizeof(action));
+		action.desired_weapon_index = NONE;
+		action.desired_grenade_index = NONE;
+		action.desired_zoom_level = NONE;
+		if (local_player_index != NONE)
+		{
+			action = update_client_globals.saved_action_collection.actions[local_player_index];
+			if (local_player_index < MAXIMUM_LOCAL_PLAYERS)
+			{
+				/* (for the host: network_distributed.c) */
+				update_client_local_inputs[local_player_index].valid = TRUE;
+				update_client_local_inputs[local_player_index].tick = game_time_get();
+				update_client_local_inputs[local_player_index].action = action;
+				csmemmove(&update_client_local_inputs[local_player_index].control_flags[1],
+					&update_client_local_inputs[local_player_index].control_flags[0],
+					(DISTRIBUTED_INPUT_HISTORY - 1) * sizeof(unsigned short));
+				update_client_local_inputs[local_player_index].control_flags[0] = (unsigned short)action.control_flags;
+			}
+		}
+		else if (queue_index < MAXIMUM_NUMBER_OF_PLAYERS && update_client_relayed_actions[queue_index].valid)
+		{
+			action = update_client_relayed_actions[queue_index].action;
+			action.control_flags |= update_client_relayed_actions[queue_index].pending_control_flags;
+			update_client_relayed_actions[queue_index].pending_control_flags = 0;
+		}
+		actions[queue_index].control_flags = action.control_flags & ~queue->latched_control_flags;
+		queue->latched_control_flags = action.control_flags & LATCHED_CONTROL_FLAGS;
+		actions[queue_index].desired_facing = action.desired_facing;
+		actions[queue_index].throttle = action.throttle;
+		actions[queue_index].primary_trigger = action.primary_trigger;
+		actions[queue_index].desired_weapon_index = action.desired_weapon_index;
+		actions[queue_index].desired_grenade_index = action.desired_grenade_index;
+		actions[queue_index].desired_zoom_level = action.desired_zoom_level;
+	}
+	update_client_globals.next_update_number_to_dequeue += 1;
+	return TRUE;
+}
+
+#endif
 boolean update_client_dequeue(
 	struct player_action *actions)
 {
@@ -582,6 +718,10 @@ boolean update_client_dequeue(
 		"c:\\halo\\SOURCE\\game\\player_queues_new.c",
 		0x1AF,
 		update_client_globals.initialized);
+#ifdef HALO_LINUX
+	if (game_connection() == _game_connection_network_client && network_game_distributed())
+		return update_client_dequeue_distributed(actions);
+#endif
 	update = update_client_get_update(update_client_globals.next_update_number_to_dequeue);
 	if (!update ||
 		update_client_globals.next_update_number_to_dequeue>update_client_globals.latest_update_number_received ||
@@ -712,6 +852,15 @@ void update_server_handle_client_update(
 		"c:\\halo\\SOURCE\\game\\player_queues_new.c",
 		0x22A,
 		update_server_globals.initialized);
+#ifdef HALO_LINUX
+	/* (the distributed netcode takes another machine's players' input from
+	its own message, update_server_handle_distributed_input) */
+	if (game_connection() == _game_connection_network_server && network_game_distributed() &&
+		!update_server_machine_is_local(machine_index))
+	{
+		return;
+	}
+#endif
 	for (player_index = 0; player_index<MAXIMUM_LOCAL_PLAYERS; ++player_index)
 	{
 		if (player_list[player_index]!=NONE)
@@ -721,6 +870,10 @@ void update_server_handle_client_update(
 				player_list[player_index]);
 
 			queue->current_action = actions[action_index++];
+#ifdef HALO_LINUX
+			update_server_pending_control_flags[DATUM_INDEX_TO_ABSOLUTE_INDEX(player_list[player_index])] |=
+				queue->current_action.control_flags;
+#endif
 			match_assert_valid_real(
 				"c:\\halo\\SOURCE\\game\\player_queues_new.c",
 				0x238,
@@ -795,6 +948,12 @@ void update_client_handle_server_update(
 void update_queues_reset_and_fill_with_lies(
 	void)
 {
+#ifdef HALO_LINUX
+	csmemset(update_server_pending_control_flags, 0, sizeof(update_server_pending_control_flags));
+	csmemset(update_client_relayed_actions, 0, sizeof(update_client_relayed_actions));
+	csmemset(update_server_distributed_inputs, 0, sizeof(update_server_distributed_inputs));
+	csmemset(update_client_local_inputs, 0, sizeof(update_client_local_inputs));
+#endif
 	if (update_server_globals.initialized)
 	{
 		update_server_globals.next_update_number_to_build = 0;
@@ -858,6 +1017,144 @@ long player_new_queue(
 	return queue_index;
 }
 
+#ifdef HALO_LINUX
+/* whether the machine's players are this machine's (the host's own input
+comes to it as a client's does) */
+static boolean update_server_machine_is_local(
+	long machine_index)
+{
+	long *player_list = machine_get_player_list(machine_index);
+	short index;
+
+	for (index = 0; index < MAXIMUM_LOCAL_PLAYERS; index++)
+	{
+		struct player_datum *player = player_list[index] != NONE ? player_try_and_get(player_list[index]) : NULL;
+
+		if (player)
+			return player->local_player_index != NONE;
+	}
+	return TRUE;
+}
+
+/* an action fit to take: finite, its choices in range */
+static boolean distributed_action_valid(
+	struct player_action const *action)
+{
+	return valid_real(action->desired_facing.yaw) && valid_real(action->desired_facing.pitch) &&
+		valid_real(action->throttle.i) && valid_real(action->throttle.j) && valid_real(action->primary_trigger) &&
+		(action->desired_weapon_index == NONE ||
+			(action->desired_weapon_index >= 0 && action->desired_weapon_index < MAXIMUM_WEAPONS_PER_UNIT)) &&
+		(action->desired_grenade_index == NONE ||
+			(action->desired_grenade_index >= 0 && action->desired_grenade_index < NUMBER_OF_UNIT_GRENADE_TYPES)) &&
+		(action->desired_zoom_level == NONE || action->desired_zoom_level >= 0);
+}
+
+/* the buttons of the ticks after last up to tick (control_flags newest
+first), added to pending; FALSE for a tick already had */
+static boolean distributed_add_new_ticks(
+	boolean *valid,
+	long *last,
+	long tick,
+	unsigned short const *control_flags,
+	short count,
+	unsigned long *pending)
+{
+	short index;
+
+	if (*valid && tick <= *last)
+		return FALSE;
+	/* (the first: its own tick only) */
+	if (!*valid || tick - *last < count)
+		count = (short)(*valid ? tick - *last : 1);
+	for (index = 0; index < count; index++)
+		*pending |= control_flags[index];
+	*valid = TRUE;
+	*last = tick;
+	return TRUE;
+}
+
+void update_server_handle_distributed_input(
+	long player_index,
+	long tick,
+	struct player_action const *action,
+	unsigned short const *control_flags,
+	short count)
+{
+	struct update_server_queue_datum *queue;
+	long absolute_index = DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index);
+
+	if (!update_server_globals.initialized || absolute_index < 0 || absolute_index >= MAXIMUM_NUMBER_OF_PLAYERS ||
+		count <= 0 || !distributed_action_valid(action))
+	{
+		return;
+	}
+	queue = (struct update_server_queue_datum *)datum_try_and_get(update_server_globals.queues, player_index);
+	if (!queue)
+		return;
+	if (!distributed_add_new_ticks(&update_server_distributed_inputs[absolute_index].valid,
+		&update_server_distributed_inputs[absolute_index].tick, tick, control_flags, count,
+		&update_server_pending_control_flags[absolute_index]))
+	{
+		return;
+	}
+	queue->current_action = *action;
+}
+
+long update_server_ticked_update_number(
+	void)
+{
+	return update_server_globals.initialized && update_client_globals.initialized ?
+		update_client_globals.next_update_number_to_dequeue - 1 : NONE;
+}
+
+struct player_action const *update_server_update_actions(
+	long update_number,
+	short *count)
+{
+	struct update *update = update_server_globals.initialized ? update_server_get_update(update_number) : NULL;
+
+	if (!update || update->update_number != update_number)
+		return NULL;
+	*count = (short)update->update.action_count;
+	return update->update.actions;
+}
+
+void update_client_handle_relayed_action(
+	short player_index,
+	long update_number,
+	struct player_action const *action,
+	unsigned short const *control_flags,
+	short count)
+{
+	if (player_index < 0 || player_index >= MAXIMUM_NUMBER_OF_PLAYERS || count <= 0 || !distributed_action_valid(action))
+		return;
+	if (distributed_add_new_ticks(&update_client_relayed_actions[player_index].valid,
+		&update_client_relayed_actions[player_index].update_number, update_number, control_flags, count,
+		&update_client_relayed_actions[player_index].pending_control_flags))
+	{
+		update_client_relayed_actions[player_index].action = *action;
+	}
+}
+
+boolean update_client_distributed_input(
+	short local_player_index,
+	long *tick,
+	struct player_action *action,
+	unsigned short *control_flags)
+{
+	if (local_player_index < 0 || local_player_index >= MAXIMUM_LOCAL_PLAYERS ||
+		!update_client_local_inputs[local_player_index].valid)
+	{
+		return FALSE;
+	}
+	*tick = update_client_local_inputs[local_player_index].tick;
+	*action = update_client_local_inputs[local_player_index].action;
+	csmemcpy(control_flags, update_client_local_inputs[local_player_index].control_flags,
+		sizeof(update_client_local_inputs[local_player_index].control_flags));
+	return TRUE;
+}
+
+#endif
 /* ---------- private code */
 
 static struct update *update_server_get_update(

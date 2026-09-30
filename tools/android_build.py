@@ -27,7 +27,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .linux_build import LINUX_PROFILE, pgo_mode, pgo_profile, profile_use_flags
+from .linux_build import (LINUX_PROFILE, MINIUPNPC_DEFINES, MINIUPNPC_DIR, MUSL_MATH_DIR, XDK_INCLUDE,
+                          compile_launcher, miniupnpc_sources, musl_math_sources, pgo_mode, pgo_profile,
+                          profile_use_flags, xdk_headers)
 from .ninja_syntax import Writer
 
 PORT_DIR = Path("port/android")
@@ -36,6 +38,7 @@ BUILD = Path("build/android")
 THIRD_PARTY = BUILD / "third_party"
 # the TOML parser config.toml is read with (port/linux/src/port_config.c)
 TOML_DIR = Path("port/third_party/tomlc17")
+KCP_DIR = Path("port/third_party/kcp")
 MUSL_VERSION = "1.2.5"
 MUSL_DIR = THIRD_PARTY / f"musl-{MUSL_VERSION}"
 MUSL_URL = f"https://musl.libc.org/releases/musl-{MUSL_VERSION}.tar.gz"
@@ -241,8 +244,6 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     libc_include = guest_dir / "libc_include"
     libc_internal = guest_dir / "libc_internal"
     gl_include = guest_dir / "gl_include"
-    sdk_overlay = build_root / "sdk_include"
-    sdk_stamp = build_root / "sdk_include.stamp"
     arch = PORT_DIR / "guest" / "libc" / "arch" / "arm64_32"
     semantics_header = Path("build/linux/halo_msvc_semantics.h")
     platform_semantics_header = Path("build/linux/platform_msvc_semantics.h")
@@ -262,14 +263,6 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     n.variable("android_ndk_bin", str(ndk_bin))
 
     # ---------- generated headers and sources
-
-    n.rule(
-        name="android_sdk_overlay",
-        command=f"{python} tools/linux_sdk_overlay.py --output {sdk_overlay} --stamp $out",
-        description="ANDROID SDK HEADERS",
-    )
-    n.build(outputs=sdk_stamp, rule="android_sdk_overlay",
-            implicit=[Path("tools/linux_sdk_overlay.py")])
 
     alltypes = libc_include / "bits" / "alltypes.h"
     syscall_h = libc_include / "bits" / "syscall.h"
@@ -338,14 +331,14 @@ def generate_android_build(n: Writer, sln: Any) -> None:
             inputs=[host_imports_list, posix_imports, gl_imports],
             implicit=[Path("tools/android_imports.py")])
 
-    generated_headers = [sdk_stamp, alltypes, syscall_h, version_h, gl_stamp,
+    generated_headers = [*xdk_headers(), alltypes, syscall_h, version_h, gl_stamp,
                          semantics_header, platform_semantics_header]
 
     # ---------- guest compilation: C -> Darwin assembly -> ELF assembly -> object
 
     n.rule(
         name="android_guest_cc",
-        command=(f"$android_guest_cc -MMD -MF $out.d $cflags -S $in -o $out.darwin.s && "
+        command=(f"{compile_launcher(sln)}$android_guest_cc -MMD -MF $out.d $cflags -S $in -o $out.darwin.s && "
                  f"{python} tools/android_asm_convert.py $out.darwin.s $out.s && "
                  f"$android_guest_cc --target=aarch64-linux-android -c $out.s -o $out"),
         description="ANDROID CC $out",
@@ -431,7 +424,7 @@ def generate_android_build(n: Writer, sln: Any) -> None:
         game_cflags = " ".join([
             guest_abi, guest_code, " ".join(game_flags), profile_flags,
             f"-include {prefix_header}", f"-include {semantics_header}", defines,
-            f"-I{LINUX_DIR}/include", includes, *libc_includes, f"-idirafter {sdk_overlay}",
+            f"-I{LINUX_DIR}/include", includes, *libc_includes, f"-idirafter {XDK_INCLUDE}",
         ])
         for obj in proj.objects:
             name = str(obj.file_path).replace(os.sep, "/")
@@ -449,8 +442,8 @@ def generate_android_build(n: Writer, sln: Any) -> None:
         guest_abi, guest_code, "-std=gnu11", "-D_GNU_SOURCE", "-DHALO_LINUX_PLATFORM_LAYER", "-w", profile_flags,
         f"-include {prefix_header}", f"-include {platform_semantics_header}",
         f"-I{LINUX_DIR}/src", f"-I{LINUX_DIR}/include", f"-I{PORT_DIR}/guest/runtime",
-        f"-I{PORT_DIR}/include", f"-I{TOML_DIR}", "-Isource -Isource/cseries",
-        f"-I{SDL_DIR}/include", f"-I{gl_include}", *libc_includes, f"-idirafter {sdk_overlay}",
+        f"-I{PORT_DIR}/include", f"-I{TOML_DIR}", f"-I{KCP_DIR}", "-Isource -Isource/cseries",
+        f"-I{SDL_DIR}/include", f"-I{gl_include}", *libc_includes, f"-idirafter {XDK_INCLUDE}",
     ])
     guest_host_only = {"memory_watch.c"}  # replaced by guest_memory_watch.c
     for source in sorted((LINUX_DIR / "src").glob("*.c")):
@@ -459,6 +452,16 @@ def generate_android_build(n: Writer, sln: Any) -> None:
         objects.append(guest_object(source, platform_cflags))
     # the settings file's parser (port/third_party/tomlc17)
     objects.append(guest_object(TOML_DIR / "tomlc17.c", platform_cflags))
+    # internet play's reliable streams (port/third_party/kcp; p2p.c)
+    objects.append(guest_object(KCP_DIR / "ikcp.c", platform_cflags))
+    # the game's sin, pow and the rest, the same on every port
+    # (port/include/halo_math.h)
+    musl_math_cflags = " ".join([
+        guest_abi, "-std=gnu11", "-w", profile_flags, *libc_includes, f"-I{MUSL_MATH_DIR}/include",
+        f"-include {MUSL_MATH_DIR}/include/libm.h",
+    ])
+    for source in musl_math_sources():
+        objects.append(guest_object(source, musl_math_cflags))
     runtime_internal_cflags = " ".join([
         guest_abi, "-std=c99", "-ffreestanding", "-fno-common", "-D_XOPEN_SOURCE=700", "-D_GNU_SOURCE",
         f"-I{PORT_DIR}/guest/runtime", f"-I{PORT_DIR}/include",
@@ -514,6 +517,8 @@ def generate_android_build(n: Writer, sln: Any) -> None:
                  f"-DCMAKE_TOOLCHAIN_FILE={ndk}/build/cmake/android.toolchain.cmake "
                  f"-DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-{ANDROID_API} -DCMAKE_BUILD_TYPE=Release "
                  f"-DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF "
+                 # 16 KB pages (Android 15 and later), as the host library
+                 f"-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384 "
                  f"> {build_root}/sdl3-configure.log && ninja -C {sdl_build} > {build_root}/sdl3-build.log"),
         description="ANDROID SDL3",
         pool="console",
@@ -544,6 +549,16 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     for source in host_sources:
         obj = host_obj_dir / (source.name + ".o")
         n.build(outputs=obj, rule="android_host_cc", inputs=source, variables={"cflags": host_cflags})
+        host_objects.append(obj)
+    # internet play's UPnP (posix_upnp.c, with port/third_party/miniupnpc),
+    # as the other posix_*.c in the host
+    miniupnpc_cflags = " ".join([host_cflags, f"-I{MINIUPNPC_DIR / 'include'}", f"-I{MINIUPNPC_DIR / 'src'}",
+                                 *MINIUPNPC_DEFINES])
+    for source in [LINUX_DIR / "src" / "posix_upnp.c", *miniupnpc_sources()]:
+        obj = host_obj_dir / ("miniupnpc_" + source.name + ".o" if source.parent.parent == MINIUPNPC_DIR
+                              else source.name + ".o")
+        n.build(outputs=obj, rule="android_host_cc", inputs=source,
+                variables={"cflags": miniupnpc_cflags + (" -w" if source.name != "posix_upnp.c" else "")})
         host_objects.append(obj)
     table_obj = host_obj_dir / "host_import_table.c.o"
     n.build(outputs=table_obj, rule="android_host_cc", inputs=host_table_c, variables={"cflags": host_cflags})

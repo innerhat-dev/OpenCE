@@ -108,7 +108,74 @@ static const struct config_setting config_settings[] =
 		"Comma-separated IPv4 addresses system link sends its announcements to\n"
 		"instead of the local network's broadcast address (for VPNs); empty for\n"
 		"the local network." },
+	{ "network.netcode", _config_string, "\"distributed\"", "HALO_NETCODE", _environment_value, _platform_all,
+		"\"distributed\" (work in progress, port/linux/NETCODE.md) predicts each\n"
+		"player's own moves and lets the host decide the rest; \"lockstep\" plays\n"
+		"system link as the Xbox game did. The host's is played: a machine that\n"
+		"joins a game plays its host's." },
+	{ "network.online", _config_boolean, "true", "HALO_NET_ONLINE", _environment_value, _platform_all,
+		"Internet play: hosting makes an invite link (logged, and put on the\n"
+		"clipboard) that lets whoever has it join over the internet; opening a\n"
+		"link (or copying one before switching to the game) joins. Only people\n"
+		"with the invite can join. Off keeps system link to the local network." },
+	{ "network.join_from_clipboard", _config_boolean, "true", "HALO_NET_JOIN_FROM_CLIPBOARD", _environment_value,
+		_platform_all,
+		"Join the game of an invite link found on the clipboard when the game\n"
+		"comes to the front." },
+	{ "network.tunnel_port", _config_integer, "0", "HALO_NET_TUNNEL_PORT", _environment_value, _platform_all,
+		"The UDP port internet play uses; 0 picks one. A fixed one can be\n"
+		"forwarded on the router, for networks whose NAT stops connections." },
+	{ "network.allow_upnp", _config_boolean, "true", "HALO_NET_ALLOW_UPNP", _environment_value, _platform_all,
+		"Let internet play ask the router (UPnP) to forward its port, for\n"
+		"networks whose NAT stops connections: when a player joins this\n"
+		"machine's game, and when joining a game takes too long. False never\n"
+		"asks." },
+	{ "network.signalling_brokers", _config_string,
+		"\"broker.emqx.io:1883,broker.hivemq.com:1883,test.mosquitto.org:1883\"",
+		"HALO_NET_BROKERS", _environment_value, _platform_all,
+		"Public MQTT brokers through which the machines of an invite find each\n"
+		"other (its messages are encrypted); comma-separated host:port." },
+	{ "network.stun_servers", _config_string, "\"stun.l.google.com:19302,stun.cloudflare.com:3478\"",
+		"HALO_NET_STUN", _environment_value, _platform_all,
+		"Public STUN servers that tell this machine its internet address;\n"
+		"comma-separated host:port." },
+	{ "discord.application_id", _config_string, "\"1553978809840050229\"", "HALO_DISCORD_APPLICATION",
+		_environment_value, _platform_desktop,
+		"The Discord application internet play invites go through while the\n"
+		"Discord desktop client runs; empty for none." },
 
+	{ "update.auto", _config_boolean, "true", "HALO_UPDATE_AUTO", _environment_value, _platform_all,
+		"Look for a new version when the game starts, and offer to update to it;\n"
+		"false never looks (the game's \"Do not ask again\" writes false here)." },
+
+	{ "debug.network_test", _config_string, "\"\"", "HALO_NETWORK_TEST", _environment_value, _platform_all,
+		"Automated system link sessions for testing (port/linux/game/network_test.c):\n"
+		"\"host:<map>\" hosts a game on that map, \"join\" joins the first game found;\n"
+		"empty for none." },
+	{ "debug.network_test_start", _config_real, "15.0", "HALO_NETWORK_TEST_START", _environment_value, _platform_all,
+		"Seconds after hosting that an automated test game starts." },
+	{ "debug.network_test_kill", _config_real, "0.0", "HALO_NETWORK_TEST_KILL", _environment_value, _platform_all,
+		"Every this many seconds an automated test host kills its last player; 0 never." },
+	{ "debug.network_test_shoot", _config_real, "0.0", "HALO_NETWORK_TEST_SHOOT", _environment_value, _platform_all,
+		"Every this many seconds each automated test player hits the next with\n"
+		"their weapon; 0 never." },
+	{ "debug.network_test_vehicle", _config_real, "0.0", "HALO_NETWORK_TEST_VEHICLE", _environment_value, _platform_all,
+		"This many seconds into an automated test game the host seats its last\n"
+		"player as a vehicle's driver (and out 15 seconds on); 0 never." },
+	{ "debug.network_test_pickup", _config_real, "0.0", "HALO_NETWORK_TEST_PICKUP", _environment_value, _platform_all,
+		"This many seconds into an automated test game the host stands its last\n"
+		"player on a weapon, which a joining player then picks up; 0 never." },
+	{ "debug.network_latency", _config_real, "0.0", "HALO_NETWORK_LATENCY", _environment_value, _platform_all,
+		"Milliseconds everything received is held back (a round trip between two\n"
+		"machines of twice it), to test the netcode as over the internet; 0 none." },
+	{ "debug.network_loss", _config_real, "0.0", "HALO_NETWORK_LOSS", _environment_value, _platform_all,
+		"Percent of datagrams received that are dropped, for the same; 0 none." },
+	{ "debug.test_input", _config_string, "\"\"", "HALO_TEST_INPUT", _environment_value, _platform_all,
+		"\"bot:<seed>\" plays controller 1 with a scripted pattern (automated\n"
+		"network tests); empty for none." },
+	{ "debug.update_answer", _config_string, "\"\"", "HALO_UPDATE_ANSWER", _environment_value, _platform_desktop,
+		"The answer to the new version question, for automated tests: \"yes\",\n"
+		"\"no\" or \"never\" (do not ask again, confirmed); empty asks." },
 	{ "debug.exit_after", _config_real, "0.0", "HALO_EXIT_AFTER", _environment_value, _platform_all,
 		"Quit this many seconds after the window opens; 0 never." },
 	{ "debug.hidden_window", _config_boolean, "false", "HALO_HIDDEN_WINDOW", _environment_set_is_true, _platform_desktop,
@@ -274,6 +341,58 @@ static void config_append(struct config_text *text, const char *string)
 	text->length += length;
 }
 
+/* the first length characters of text, as a string of their own */
+static char *config_copy(const char *text, size_t length)
+{
+	char *copy = malloc(length + 1);
+
+	if (copy)
+	{
+		memcpy(copy, text, length);
+		copy[length] = 0;
+	}
+	return copy;
+}
+
+/* one setting as the file holds it: its comment, and its key at the
+default */
+static void config_append_setting(struct config_text *text, const struct config_setting *setting)
+{
+	const char *dot = strchr(setting->name, '.');
+	const char *line;
+	char buffer[256];
+
+	config_append(text, "\n");
+	for (line = setting->comment; *line;)
+	{
+		size_t length = strcspn(line, "\n");
+
+		snprintf(buffer, sizeof(buffer), "# %.*s\n", (int)length, line);
+		config_append(text, buffer);
+		line += length;
+		if (*line)
+			line++;
+	}
+#ifndef HALO_ANDROID
+	/* (Android apps have no environment to set) */
+	switch (setting->environment_style)
+	{
+	case _environment_value:
+		snprintf(buffer, sizeof(buffer), "# (for one run: %s=<value>)\n", setting->environment);
+		break;
+	case _environment_set_is_true:
+		snprintf(buffer, sizeof(buffer), "# (for one run: %s=1 makes it true)\n", setting->environment);
+		break;
+	case _environment_set_is_false:
+		snprintf(buffer, sizeof(buffer), "# (for one run: %s=1 makes it false)\n", setting->environment);
+		break;
+	}
+	config_append(text, buffer);
+#endif
+	snprintf(buffer, sizeof(buffer), "%s = %s\n", dot + 1, setting->default_value);
+	config_append(text, buffer);
+}
+
 /* the file with every setting of this build at its default */
 static char *config_default_text(void)
 {
@@ -299,8 +418,7 @@ static char *config_default_text(void)
 	{
 		const struct config_setting *setting = &config_settings[index];
 		const char *dot = strchr(setting->name, '.');
-		const char *line;
-		char buffer[256];
+		char buffer[64];
 
 		if (!(setting->platforms & CONFIG_PLATFORM) || !dot)
 			continue;
@@ -311,37 +429,89 @@ static char *config_default_text(void)
 			snprintf(buffer, sizeof(buffer), "\n[%s]\n", section);
 			config_append(&text, buffer);
 		}
-		config_append(&text, "\n");
-		for (line = setting->comment; *line;)
+		config_append_setting(&text, setting);
+	}
+	return text.buffer;
+}
+
+/* the settings of this build that text (the file, parsed as table) lacks,
+added to it in their sections, keeping the rest as it is: a newer version's
+settings appear in an older file. Returns the new text, or NULL if nothing
+was missing */
+static char *config_add_missing(const char *text, toml_datum_t table)
+{
+	char *result = NULL;
+	size_t index;
+
+	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
+	{
+		const struct config_setting *setting = &config_settings[index];
+		const char *dot = strchr(setting->name, '.');
+		const char *current = result ? result : text;
+		struct config_text block = { NULL, 0, 0 };
+		struct config_text updated = { NULL, 0, 0 };
+		char header[40];
+		const char *line;
+		const char *insert = NULL;
+
+		if (!(setting->platforms & CONFIG_PLATFORM) || !dot || toml_seek(table, setting->name).type != TOML_UNKNOWN)
+			continue;
+		snprintf(header, sizeof(header), "[%.*s]", (int)(dot - setting->name), setting->name);
+		/* the end of the section's last line that is not blank */
+		for (line = current; *line; )
 		{
+			const char *start = line;
 			size_t length = strcspn(line, "\n");
 
-			snprintf(buffer, sizeof(buffer), "# %.*s\n", (int)length, line);
-			config_append(&text, buffer);
+			while (*start == ' ' || *start == '\t')
+				start++;
+			if (insert && *start == '[')
+				break;
+			if (!insert && !strncmp(start, header, strlen(header)))
+				insert = line + length;
+			else if (insert && start < line + length && *start != '\r')
+				insert = line + length;
 			line += length;
 			if (*line)
 				line++;
 		}
-#ifndef HALO_ANDROID
-		/* (Android apps have no environment to set) */
-		switch (setting->environment_style)
+		if (insert)
 		{
-		case _environment_value:
-			snprintf(buffer, sizeof(buffer), "# (for one run: %s=<value>)\n", setting->environment);
-			break;
-		case _environment_set_is_true:
-			snprintf(buffer, sizeof(buffer), "# (for one run: %s=1 makes it true)\n", setting->environment);
-			break;
-		case _environment_set_is_false:
-			snprintf(buffer, sizeof(buffer), "# (for one run: %s=1 makes it false)\n", setting->environment);
-			break;
+			if (*insert)
+				insert++;
+			config_append_setting(&block, setting);
 		}
-		config_append(&text, buffer);
-#endif
-		snprintf(buffer, sizeof(buffer), "%s = %s\n", dot + 1, setting->default_value);
-		config_append(&text, buffer);
+		else
+		{
+			/* no such section: a new one at the end */
+			insert = current + strlen(current);
+			config_append(&block, current[0] && insert[-1] != '\n' ? "\n\n" : "\n");
+			config_append(&block, header);
+			config_append(&block, "\n");
+			config_append_setting(&block, setting);
+		}
+		if (!block.buffer)
+			continue;
+		{
+			char *before = config_copy(current, (size_t)(insert - current));
+
+			if (before)
+				config_append(&updated, before);
+			free(before);
+		}
+		if (insert > current && insert[-1] != '\n')
+			config_append(&updated, "\n");
+		config_append(&updated, block.buffer);
+		config_append(&updated, insert);
+		free(block.buffer);
+		if (updated.buffer)
+		{
+			free(result);
+			result = updated.buffer;
+			platform_log("settings: added %s (new in this version) at its default", setting->name);
+		}
 	}
-	return text.buffer;
+	return result;
 }
 
 /* ---------- values */
@@ -480,8 +650,10 @@ static void config_load(void)
 
 		if (config_settings[index].type == _config_string)
 		{
-			/* the defaults are all "" */
-			config_values[index].string = strdup("");
+			/* written as a TOML basic string without escapes */
+			size_t length = strlen(default_value);
+
+			config_values[index].string = length >= 2 ? config_copy(default_value + 1, length - 2) : strdup("");
 		}
 		else
 		{
@@ -497,10 +669,16 @@ static void config_load(void)
 
 		if (result.ok)
 		{
+			char *completed;
+
 			for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
 				config_set_from_file(&config_values[index], &config_settings[index], result.toptab);
 			config_report_unknown_keys(result.toptab);
 			platform_log("settings: %s", path);
+			completed = config_add_missing(text, result.toptab);
+			if (completed && !config_write_file(path, completed))
+				platform_log("settings: cannot write %s", path);
+			free(completed);
 		}
 		else
 		{
@@ -561,6 +739,118 @@ static const struct config_value *config_value(const char *name, enum config_typ
 		return &none;
 	}
 	return &config_values[index];
+}
+
+/* ---------- writing a setting */
+
+/* the line's key, if it is "key = ..." (after spaces), in key */
+static int config_line_key(const char *line, const char *end, const char *key)
+{
+	size_t length = strlen(key);
+
+	while (line < end && (*line == ' ' || *line == '\t'))
+		line++;
+	if ((size_t)(end - line) <= length || strncmp(line, key, length) != 0)
+		return 0;
+	line += length;
+	while (line < end && (*line == ' ' || *line == '\t'))
+		line++;
+	return line < end && *line == '=';
+}
+
+/* the section the line opens, if it is "[section]" (after spaces) */
+static int config_line_section(const char *line, const char *end, char *section, size_t size)
+{
+	const char *close;
+
+	while (line < end && (*line == ' ' || *line == '\t'))
+		line++;
+	if (line >= end || *line != '[')
+		return 0;
+	close = memchr(line, ']', (size_t)(end - line));
+	if (!close || (size_t)(close - line - 1) >= size)
+		return 0;
+	memcpy(section, line + 1, (size_t)(close - line - 1));
+	section[close - line - 1] = 0;
+	return 1;
+}
+
+/* sets a boolean setting, for now and in config.toml: its line there is
+changed (or added), the rest of the file kept as it is */
+int config_write_boolean(const char *name, int value)
+{
+	const char *dot = strchr(name, '.');
+	long index = config_setting_index(name);
+	char section[64], key[64], wanted[80], current[64] = "", line_text[96], path[1024];
+	struct config_text out = { 0 };
+	size_t size = 0;
+	char *text;
+	const char *line;
+	int written = 0, in_section = 0, succeeded;
+
+	if (index < 0 || config_settings[index].type != _config_boolean || !dot || (size_t)(dot - name) >= sizeof(section))
+		return 0;
+	/* (the file read first, as the other settings are) */
+	config_boolean(name);
+	pthread_mutex_lock(&config_lock);
+	config_values[index].boolean = value != 0;
+	snprintf(section, sizeof(section), "%.*s", (int)(dot - name), name);
+	snprintf(key, sizeof(key), "%s", dot + 1);
+	snprintf(line_text, sizeof(line_text), "%s = %s\n", key, value ? "true" : "false");
+	snprintf(wanted, sizeof(wanted), "%s", section);
+	config_path(path, sizeof(path));
+	text = config_read_file(path, &size);
+	for (line = text ? text : ""; *line;)
+	{
+		const char *end = line + strcspn(line, "\n");
+		const char *next = *end ? end + 1 : end;
+
+		if (config_line_section(line, end, current, sizeof(current)))
+		{
+			/* (leaving the section without the key: it goes at its end) */
+			if (in_section && !written)
+			{
+				config_append(&out, line_text);
+				written = 1;
+			}
+			in_section = !strcmp(current, wanted);
+		}
+		else if (in_section && !written && config_line_key(line, end, key))
+		{
+			config_append(&out, line_text);
+			written = 1;
+			line = next;
+			continue;
+		}
+		{
+			char *copy = config_copy(line, (size_t)(next - line));
+
+			if (copy)
+			{
+				config_append(&out, copy);
+				free(copy);
+			}
+		}
+		line = next;
+	}
+	if (!written)
+	{
+		if (out.length && out.buffer[out.length - 1] != '\n')
+			config_append(&out, "\n");
+		if (!in_section)
+		{
+			char header[80];
+
+			snprintf(header, sizeof(header), "\n[%s]\n", section);
+			config_append(&out, header);
+		}
+		config_append(&out, line_text);
+	}
+	succeeded = out.buffer && config_write_file(path, out.buffer);
+	pthread_mutex_unlock(&config_lock);
+	free(out.buffer);
+	free(text);
+	return succeeded;
 }
 
 /* ---------- public code */

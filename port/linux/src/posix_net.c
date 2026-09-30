@@ -9,7 +9,13 @@ with the host ABI.
 #include <errno.h>
 #include <fcntl.h>
 #include <ifaddrs.h>
+#include <netdb.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <poll.h>
+#include <spawn.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #ifndef HALO_IOS /* Darwin host supplies arc4random_buf through its wrapper. */
@@ -17,7 +23,13 @@ with the host ABI.
 #endif
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/un.h>
+#include <sys/wait.h>
 #include <unistd.h>
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+#include <crt_externs.h>
+#endif
 
 #include "posix.h"
 
@@ -205,6 +217,13 @@ int posix_socket_set_nonblocking(int socket, int nonblocking)
 		return fail();
 	flags = nonblocking ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
 	return succeed(fcntl(socket, F_SETFL, flags));
+}
+
+int posix_socket_set_nodelay(int socket)
+{
+	int value = 1;
+
+	return succeed(setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, &value, sizeof(value)));
 }
 
 int posix_socket_bytes_available(int socket, posix_ulong *count)
@@ -413,4 +432,251 @@ void posix_random_bytes(void *buffer, posix_ulong size)
 		cursor += count;
 		size -= (posix_ulong)count;
 	}
+}
+
+posix_ulong posix_resolve_ipv4(const char *host)
+{
+	struct addrinfo hints, *results;
+	posix_ulong address = 0;
+
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_DGRAM;
+	if (getaddrinfo(host, NULL, &hints, &results) != 0)
+		return 0;
+	if (results && results->ai_addr && results->ai_addr->sa_family == AF_INET)
+		address = ((struct sockaddr_in *)results->ai_addr)->sin_addr.s_addr;
+	freeaddrinfo(results);
+	return address;
+}
+
+/* ---------- the process and the desktop */
+
+int posix_command_line_argument(int index, char *buffer, posix_ulong size)
+{
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+	if (index < 0 || index >= *_NSGetArgc() || !size)
+		return 0;
+	snprintf(buffer, size, "%s", (*_NSGetArgv())[index]);
+	return 1;
+#elif defined(__ANDROID__) || defined(HALO_IOS)
+	(void)index;
+	(void)buffer;
+	(void)size;
+	return 0;
+#else
+	char command_line[4096];
+	ssize_t length;
+	ssize_t offset = 0;
+	int descriptor = open("/proc/self/cmdline", O_RDONLY);
+
+	if (descriptor < 0 || !size)
+		return descriptor >= 0 ? (close(descriptor), 0) : 0;
+	length = read(descriptor, command_line, sizeof(command_line) - 1);
+	close(descriptor);
+	if (length <= 0)
+		return 0;
+	command_line[length] = '\0';
+	/* the arguments are NUL-separated */
+	while (index-- > 0)
+	{
+		offset += (ssize_t)strlen(command_line + offset) + 1;
+		if (offset >= length)
+			return 0;
+	}
+	snprintf(buffer, size, "%s", command_line + offset);
+	return 1;
+#endif
+}
+
+posix_ulong posix_process_id(void)
+{
+	return (posix_ulong)getpid();
+}
+
+#if !defined(__ANDROID__) && !defined(HALO_MACOS)
+/* runs a program with its arguments and waits for it; its exit status, or -1 */
+static int run_program(char *const arguments[])
+{
+	extern char **environ;
+	pid_t process;
+	int status;
+
+	if (posix_spawnp(&process, arguments[0], NULL, NULL, arguments, environ) != 0)
+		return -1;
+	if (waitpid(process, &status, 0) < 0)
+		return -1;
+	return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+}
+#endif
+
+int posix_register_url_scheme(const char *scheme, const char *description)
+{
+#if defined(__ANDROID__) || defined(HALO_MACOS)
+	(void)scheme;
+	(void)description;
+	/* Apple app bundles declare their handler in CFBundleURLTypes. */
+#ifdef HALO_MACOS
+	return 1;
+#else
+	return 0;
+#endif
+#else
+	/* a desktop entry declaring the executable as the scheme's handler, and
+	the scheme's default application set to it (as xdg-open reads it) */
+	char executable[1024], directory[1024], path[1200], name[128], entry[2048], existing[2048];
+	const char *data_home = getenv("XDG_DATA_HOME");
+	const char *home = getenv("HOME");
+	ssize_t length = readlink("/proc/self/exe", executable, sizeof(executable) - 1);
+	FILE *file;
+	size_t existing_length = 0;
+
+	if (length <= 0)
+		return 0;
+	executable[length] = '\0';
+	if (data_home && *data_home)
+		snprintf(directory, sizeof(directory), "%s/applications", data_home);
+	else if (home && *home)
+		snprintf(directory, sizeof(directory), "%s/.local/share/applications", home);
+	else
+		return 0;
+	snprintf(name, sizeof(name), "halo-ce-universal-%s.desktop", scheme);
+	snprintf(path, sizeof(path), "%s/%s", directory, name);
+	snprintf(entry, sizeof(entry),
+		"[Desktop Entry]\n"
+		"Type=Application\n"
+		"Name=%s\n"
+		"Exec=\"%s\" %%u\n"
+		"NoDisplay=true\n"
+		"MimeType=x-scheme-handler/%s;\n",
+		description, executable, scheme);
+	/* unchanged since the last start: nothing to do */
+	file = fopen(path, "r");
+	if (file)
+	{
+		existing_length = fread(existing, 1, sizeof(existing) - 1, file);
+		fclose(file);
+		existing[existing_length] = '\0';
+		if (!strcmp(existing, entry))
+			return 1;
+	}
+	mkdir(directory, 0755);
+	file = fopen(path, "w");
+	if (!file)
+		return 0;
+	fputs(entry, file);
+	fclose(file);
+	{
+		char mime_type[160];
+		char *arguments[] = { "xdg-mime", "default", name, mime_type, NULL };
+
+		snprintf(mime_type, sizeof(mime_type), "x-scheme-handler/%s", scheme);
+		run_program(arguments);
+	}
+	return 1;
+#endif
+}
+
+/* ---------- Discord's local socket */
+
+int posix_discord_connect(void)
+{
+#if defined(__ANDROID__) || defined(HALO_MACOS)
+	return -1;
+#else
+	/* where Discord (and its Flatpak and Snap packages) put discord-ipc-N */
+	static const char *const variables[] = { "XDG_RUNTIME_DIR", "TMPDIR", "TMP", "TEMP" };
+	static const char *const subdirectories[] = { "", "app/com.discordapp.Discord/", "snap.discord/",
+		".flatpak/dev.vencord.Vesktop/xdg-run/" };
+	const char *directories[5];
+	int directory_count = 0;
+	int index;
+
+	for (index = 0; index < (int)(sizeof(variables) / sizeof(*variables)); index++)
+	{
+		const char *value = getenv(variables[index]);
+
+		if (value && *value)
+			directories[directory_count++] = value;
+	}
+	directories[directory_count++] = "/tmp";
+	for (index = 0; index < directory_count; index++)
+	{
+		int subdirectory;
+
+		for (subdirectory = 0; subdirectory < (int)(sizeof(subdirectories) / sizeof(*subdirectories)); subdirectory++)
+		{
+			int number;
+
+			for (number = 0; number < 10; number++)
+			{
+				struct sockaddr_un address;
+				int socket_descriptor;
+
+				memset(&address, 0, sizeof(address));
+				address.sun_family = AF_UNIX;
+				snprintf(address.sun_path, sizeof(address.sun_path), "%s/%sdiscord-ipc-%d",
+					directories[index], subdirectories[subdirectory], number);
+				if (access(address.sun_path, F_OK) != 0)
+					continue;
+				socket_descriptor = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+				if (socket_descriptor < 0)
+					return -1;
+				if (connect(socket_descriptor, (struct sockaddr *)&address, sizeof(address)) == 0)
+				{
+					fcntl(socket_descriptor, F_SETFL, fcntl(socket_descriptor, F_GETFL) | O_NONBLOCK);
+					return socket_descriptor;
+				}
+				close(socket_descriptor);
+			}
+		}
+	}
+	return -1;
+#endif
+}
+
+int posix_discord_write(int handle, const void *buffer, int length)
+{
+	const char *cursor = buffer;
+	int remaining = length;
+
+	while (remaining > 0)
+	{
+		ssize_t written = send(handle, cursor, (size_t)remaining, MSG_NOSIGNAL);
+
+		if (written < 0)
+		{
+			struct pollfd poll_descriptor;
+
+			if (errno == EINTR)
+				continue;
+			if (errno != EAGAIN)
+				return -1;
+			poll_descriptor.fd = handle;
+			poll_descriptor.events = POLLOUT;
+			if (poll(&poll_descriptor, 1, 1000) <= 0)
+				return -1;
+			continue;
+		}
+		cursor += written;
+		remaining -= (int)written;
+	}
+	return length;
+}
+
+int posix_discord_read(int handle, void *buffer, int length)
+{
+	ssize_t count = recv(handle, buffer, (size_t)length, MSG_DONTWAIT);
+
+	if (count > 0)
+		return (int)count;
+	if (count < 0 && (errno == EAGAIN || errno == EINTR))
+		return 0;
+	return -1;
+}
+
+void posix_discord_close(int handle)
+{
+	if (handle >= 0)
+		close(handle);
 }

@@ -200,6 +200,11 @@ symbols in this file:
 #include "networking/network_client_message_handler.h"
 #include "networking/network_messages.h"
 
+#ifdef HALO_LINUX
+/* port/linux/game/network_distributed.c's */
+void network_distributed_handle_message(long machine_index, word const *message, word size);
+#endif
+
 /* ---------- constants */
 
 #define NETWORK_CLIENT_MESSAGE_HANDLER_FILE "c:\\halo\\SOURCE\\networking\\network_client_message_handler.c"
@@ -731,7 +736,12 @@ boolean network_game_client_handle_message(
 				break;
 
 			case _message_type_data:
+#ifdef HALO_LINUX
+				/* the distributed netcode's messages (port/linux/NETCODE.md) */
+				network_distributed_handle_message(NONE, message, message_size);
+#else
 				network_event("client received a bad message type (_message_type_data)");
+#endif
 				break;
 
 			case _message_type_error:
@@ -1195,6 +1205,10 @@ static boolean network_game_client_handle_message_server_begin_game(
 			short packet_type = _message_server_begin_game;
 			short packet_version = NETWORK_GAME_MESSAGE_VERSION;
 
+#ifdef HALO_LINUX
+			/* (it decodes 16 bits of its long: the rest zero) */
+			csmemset(&begin_game, 0, sizeof(begin_game));
+#endif
 			message_size -= sizeof(word);
 			if (decode_network_game_message(
 				&begin_game,
@@ -1204,6 +1218,14 @@ static boolean network_game_client_handle_message_server_begin_game(
 				&packet_version,
 				_network_game_packet_class_pregame))
 			{
+#ifdef HALO_LINUX
+				/* (a game in progress: the host's time, network_client_manager.c) */
+				extern long network_game_client_late_join_time;
+
+				/* (the message carries 16 bits of it: the rest from the first
+				game update, network_game_client_handle_game_update) */
+				network_game_client_late_join_time = (long)((unsigned long)begin_game.unused & 0xFFFF);
+#endif
 				result = network_game_client_game_has_started(client);
 				if (!result)
 				{

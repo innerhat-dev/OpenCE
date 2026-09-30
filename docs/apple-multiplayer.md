@@ -1,9 +1,48 @@
-# Mac and iPhone System Link
+# Apple multiplayer and Mac invite links
 
 Build both devices from the same revision with the same map set. Native builds
-use protocol version 2 and changed player capacities, so original Xbox games
+use protocol version 4 and changed player capacities, so original Xbox games
 and older native builds cannot join. See the [shared System Link notes](../port/linux/README.md#system-link)
 for protocol details and limits.
+
+## Play on Mac using an invite
+
+Open `build/macos/Halo CE Universal.app`. Allow local network access if macOS
+asks. Internet play and clipboard invites are enabled in the default settings.
+
+1. On the host, choose **Multiplayer → System Link**, select a player profile,
+   then create a game with **Y / Tab**. Pick a map and mode.
+2. Hosting copies a `halo://join/` link to the clipboard. Paste it into a message
+   for the other players. The link is also in `halo.log` in the save directory.
+3. On a joining Mac, open the link. Alternatively, copy the link and bring Halo
+   to the front. Go to **Multiplayer → System Link**, select a profile, and join
+   the advertised game.
+4. Once everyone appears in the lobby, start the match on the host.
+
+The app registers the `halo://` scheme. macOS delivers an opened link to the
+running app; the host queues it in that instance's save directory. A development
+launch can also take the link as an argument:
+
+```sh
+"build/macos/Halo CE Universal.app/Contents/MacOS/halo" 'halo://join/YOUR_44_HEX_DIGITS'
+```
+
+Invites last for the hosting game process. Treat the link as access to the room.
+Keep the host running and send a new invite after restarting it.
+
+Gameplay travels directly between players. Public MQTT brokers provide
+signaling and public STUN services help discover network addresses; UPnP can
+ask a compatible router to forward a port. There is no game server or relay
+to pay for. These public services and some NAT/firewall combinations can still
+prevent a connection. This build does not provide guaranteed connectivity,
+host migration, or a browser client. See the
+[upstream connection notes](../port/linux/README.md#connection).
+
+The current integration keeps the Apple ARM64/Metal renderer and merges the
+cybersecurity upstream through `fd8fc726`. It incorporates PR #22's clock/uptime
+fix (`5d18a367`) and Darwin socket broken-pipe protection. PR #22's LP64/OpenGL
+conversion is a separate port, so that conversion and its FFmpeg videos are
+not part of this Metal app.
 
 ## Connect the devices
 
@@ -89,6 +128,22 @@ clang -arch arm64 -O2 -Wall -I. -Iport/linux/src \
 build/macos/tests/host_network
 ```
 
-It checks discovery sends, connected gameplay sends, empty datagrams, received
+It checks discovery sends, connected gameplay sends with explicit and omitted
+destinations, empty datagrams, received
 addresses and refusal to redirect a mismatched destination to the connected peer.
 It also runs as part of `python3 tools/test_macos_runtime.py`.
+
+The real-game smoke test uses separate saves and settings for two copies on one
+Mac. It exercises either LAN discovery or an encrypted invite and records
+movement and network updates. It requires game maps and a configured LAN IPv4
+address, while keeping personal saves untouched:
+
+```sh
+python3 tools/macos_multiplayer_smoke.py --mode invite --seconds 65 \
+  --output build/macos/multiplayer/invite-test
+python3 tools/macos_multiplayer_smoke.py --mode lan --seconds 65 \
+  --output build/macos/multiplayer/lan-test
+```
+
+Use a fresh output directory for each run. Two physical Macs on different
+networks and 128-player capacity still need separate testing.

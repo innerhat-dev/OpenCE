@@ -19,6 +19,20 @@ from .ninja_syntax import Writer
 
 PORT_DIR = Path("port/linux")
 PORT_CONFIG = PORT_DIR / "port.json"
+# the Xbox SDK declarations the game and the platform layer use, in place of
+# the SDK's headers (port/include/xdk/README.md)
+XDK_INCLUDE = Path("port/include/xdk")
+
+
+def xdk_headers() -> List[Path]:
+    return sorted(XDK_INCLUDE.glob("*.h"))
+
+
+def compile_launcher(sln: Any) -> str:
+    """what the native ports' compile commands start with: the
+    --compiler-launcher (ccache, say) and a space, or nothing"""
+    launcher = getattr(sln, "compiler_launcher", None)
+    return f"{launcher} " if launcher else ""
 
 # The optimisation level of every unit, and of link-time optimisation.
 OPTIMISATION = "-O2"
@@ -48,6 +62,11 @@ LINUX_ABI_FLAGS = [
     # the game keeps EBP frames (MSVC /Oy-): get_return_eip and the stack
     # walker follow the frame chain
     "-fno-omit-frame-pointer",
+    # the same floating point results on every port (system link games run
+    # in lockstep, and a machine whose results differ goes out of sync): no
+    # fused multiply-adds, which -march=native and ARM64 would otherwise
+    # emit (port/include/halo_math.h)
+    "-ffp-contract=off",
     OPTIMISATION,
     "-g",
     # glibc's wide string functions assume a 32-bit wchar_t; stop clang from
@@ -76,6 +95,31 @@ GAME_FLAGS = [
 
 # the TOML parser the platform layer reads config.toml with (port_config.c)
 TOML_DIR = Path("port/third_party/tomlc17")
+KCP_DIR = Path("port/third_party/kcp")
+MUSL_MATH_DIR = Path("port/third_party/musl-math")
+# the self-updater's TLS (port/linux/src/posix_update.c)
+MBEDTLS_DIR = Path("port/third_party/mbedtls")
+# internet play's UPnP (port/linux/src/posix_upnp.c)
+MINIUPNPC_DIR = Path("port/third_party/miniupnpc")
+# miniupnpc's own build's definitions (its Makefile), and a static library
+MINIUPNPC_DEFINES = ["-DMINIUPNP_STATICLIB", "-DMINIUPNPC_SET_SOCKET_TIMEOUT", "-DMINIUPNPC_GET_SRC_ADDR",
+                     "-D_BSD_SOURCE", "-D_DEFAULT_SOURCE"]
+
+
+def miniupnpc_sources() -> List[Path]:
+    """miniupnpc's library sources (port/third_party/miniupnpc/src)"""
+    return sorted((MINIUPNPC_DIR / "src").glob("*.c"))
+
+
+def updater_defines(release: bool) -> str:
+    """the self-updater's build (port/linux/src/updater.c): its number, from
+    HALO_BUILD_NUMBER (tools/ci_build.py gives it for builds of main; none
+    elsewhere, which never look for updates), and its configuration"""
+    number = os.environ.get("HALO_BUILD_NUMBER", "0")
+    if not number.isdigit():
+        number = "0"
+    flavor = "release" if release else "debug"
+    return f'-DHALO_BUILD_NUMBER={number} -DHALO_BUILD_FLAVOR=\\"{flavor}\\"'
 
 PLATFORM_FLAGS = [
     "-std=gnu11",
@@ -116,6 +160,17 @@ PROFILE_USE_FLAGS = [
     "-Wno-profile-instr-missing",
     "-Wno-backend-plugin",
 ]
+
+
+def musl_math_sources() -> List[Path]:
+    """musl's maths functions the game uses (port/third_party/musl-math)"""
+    return sorted((MUSL_MATH_DIR / "src").glob("*.c"))
+
+
+def musl_math_cflags(abi: str) -> str:
+    """their flags: the game's ABI, and the headers standing in for musl's"""
+    return " ".join([abi, "-std=gnu11", "-w", f"-I{MUSL_MATH_DIR}/include",
+                     f"-include {MUSL_MATH_DIR}/include/libm.h"])
 
 
 def march_flag(sln: Any) -> str:
@@ -208,7 +263,7 @@ def linux_configure_inputs() -> List[Path]:
     """Files whose change must re-run configure.py."""
     if not PORT_CONFIG.is_file():
         return [Path(__file__)]
-    return [PORT_CONFIG, Path(__file__), PORT_DIR / "src", PORT_DIR / "game"]
+    return [PORT_CONFIG, Path(__file__), PORT_DIR / "src", PORT_DIR / "game", XDK_INCLUDE]
 
 
 def _quote(path: Any) -> str:
@@ -222,8 +277,6 @@ def generate_linux_build(n: Writer, sln: Any) -> None:
         return
     config = _load_port_config()
     build_dir: Path = sln.build_dir / "linux"
-    overlay_dir = build_dir / "sdk_include"
-    overlay_stamp = build_dir / "sdk_include.stamp"
     obj_dir = build_dir / "obj"
     output = build_dir / "halo"
     cc = sln.linux_cc or "clang"
@@ -234,16 +287,6 @@ def generate_linux_build(n: Writer, sln: Any) -> None:
     n.comment("Native Linux build (ninja linux)")
     n.variable("linux_cc", cc)
     n.rule(
-        name="linux_sdk_overlay",
-        command=f"$python tools/linux_sdk_overlay.py --output {overlay_dir} --stamp $out",
-        description="LINUX SDK HEADERS",
-    )
-    n.build(
-        outputs=overlay_stamp,
-        rule="linux_sdk_overlay",
-        implicit=[Path("tools/linux_sdk_overlay.py")],
-    )
-    n.rule(
         name="linux_msvc_semantics",
         command="$python tools/linux_msvc_semantics.py --output $out $scan",
         description="LINUX MSVC SEMANTICS $out",
@@ -252,26 +295,26 @@ def generate_linux_build(n: Writer, sln: Any) -> None:
     game_headers = sorted(
         p for p in Path("source").rglob("*") if p.suffix in (".c", ".h")
     )
-    # The game sees its own tags and inline functions plus the XDK's; the
-    # platform layer only includes XDK headers (the overlay, which omits the
-    # SDK's C runtime headers) and so only needs the XDK's inline functions.
+    # The game sees its own tags and inline functions and those of the SDK
+    # declarations (port/include/xdk); the platform layer only includes the
+    # SDK declarations and so only needs their inline functions.
     n.build(
         outputs=semantics_header,
         rule="linux_msvc_semantics",
-        implicit=[Path("tools/linux_msvc_semantics.py"), overlay_stamp, *game_headers],
+        implicit=[Path("tools/linux_msvc_semantics.py"), *xdk_headers(), *game_headers],
         variables={
-            "scan": f"--all-inlines --tags source --inlines source --inlines {overlay_dir}"
+            "scan": f"--all-inlines --tags source --inlines source --inlines {XDK_INCLUDE}"
         },
     )
     n.build(
         outputs=platform_semantics_header,
         rule="linux_msvc_semantics",
-        implicit=[Path("tools/linux_msvc_semantics.py"), overlay_stamp],
-        variables={"scan": f"--inlines {overlay_dir}"},
+        implicit=[Path("tools/linux_msvc_semantics.py"), *xdk_headers()],
+        variables={"scan": f"--inlines {XDK_INCLUDE}"},
     )
     n.rule(
         name="linux_cc",
-        command="$linux_cc -MMD -MF $out.d $cflags -c $in -o $out",
+        command=f"{compile_launcher(sln)}$linux_cc -MMD -MF $out.d $cflags -c $in -o $out",
         description="LINUX CC $out",
         depfile="$out.d",
         deps="gcc",
@@ -296,7 +339,7 @@ def generate_linux_build(n: Writer, sln: Any) -> None:
 
     abi = " ".join(LINUX_ABI_FLAGS + [march_flag(sln)] + (["-DHALO_RELEASE"] if getattr(sln, "port_release", False) else []))
     port_include = PORT_DIR / "include"
-    sdk_flags = f"-idirafter {overlay_dir}"
+    sdk_flags = f"-idirafter {XDK_INCLUDE}"
     excluded = set(config.get("exclude_sources", []))
     libs = " ".join(f"-l{lib}" for lib in config.get("libraries", []))
 
@@ -317,7 +360,9 @@ def generate_linux_build(n: Writer, sln: Any) -> None:
                 outputs=obj,
                 rule="linux_cc",
                 inputs=source,
-                implicit=[overlay_stamp, prefix_header, semantics_header, platform_semantics_header,
+                # (the SDK declarations are system headers, which the depfile
+                # leaves out)
+                implicit=[*xdk_headers(), prefix_header, semantics_header, platform_semantics_header,
                           *implicit_inputs],
                 variables={"cflags": f"{cflags} {posix_extra if posix else extra}"},
             )
@@ -363,18 +408,46 @@ def generate_linux_build(n: Writer, sln: Any) -> None:
             f"-I{platform_dir}",
             f"-I{port_include}",
             f"-I{TOML_DIR}",
+            f"-I{KCP_DIR}",
             "-Isource -Isource/cseries",
             sdk_flags,
         ])
         posix_cflags = " ".join(POSIX_FLAGS + [march_flag(sln), f"-I{platform_dir}"])
+        mbedtls_include = f"-I{MBEDTLS_DIR / 'include'}"
         for source in sorted(platform_dir.glob("*.c")):
-            if source.name.startswith("posix_"):
+            if source.name == "posix_update.c":
+                add_object(source, f"{posix_cflags} {mbedtls_include}", posix=True)
+            elif source.name == "posix_upnp.c":
+                add_object(source, f"{posix_cflags} -I{MINIUPNPC_DIR / 'include'} -DMINIUPNP_STATICLIB", posix=True)
+            elif source.name.startswith("posix_"):
                 add_object(source, posix_cflags, posix=True)
+            elif source.name == "updater.c":
+                add_object(source, f"{platform_cflags} {updater_defines(getattr(sln, 'port_release', False))}")
             else:
                 add_object(source, platform_cflags)
+        # the self-updater's TLS (port/third_party/mbedtls), with the host's
+        # ABI as the posix_*.c that use it (and no loop turned into glibc's
+        # wcslen, which linux_link_check.py rejects: the game's wchar_t is
+        # 16-bit)
+        for source in sorted((MBEDTLS_DIR / "library").glob("*.c")):
+            add_object(source, " ".join(POSIX_FLAGS + [march_flag(sln), mbedtls_include,
+                                                       f"-I{MBEDTLS_DIR / 'library'}", "-fno-builtin-wcslen",
+                                                       "-w"]), posix=True)
+        # internet play's UPnP (port/third_party/miniupnpc), with the host's
+        # ABI as posix_upnp.c, which uses it
+        for source in miniupnpc_sources():
+            add_object(source, " ".join(POSIX_FLAGS + [march_flag(sln), *MINIUPNPC_DEFINES,
+                                                       f"-I{MINIUPNPC_DIR / 'include'}", f"-I{MINIUPNPC_DIR / 'src'}",
+                                                       "-fno-builtin-wcslen", "-w"]), posix=True)
         # the settings file's parser (port/third_party/tomlc17), with the
         # platform layer's ABI (its structs hold doubles) and nothing else
         add_object(TOML_DIR / "tomlc17.c", " ".join([abi, "-std=gnu11", "-w"]))
+        # internet play's reliable streams (port/third_party/kcp; p2p.c)
+        add_object(KCP_DIR / "ikcp.c", " ".join([abi, "-std=gnu11", "-w"]))
+        # the game's sin, pow and the rest, the same on every port
+        # (port/include/halo_math.h)
+        for source in musl_math_sources():
+            add_object(source, musl_math_cflags(abi))
 
         n.build(
             outputs=output,

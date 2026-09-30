@@ -71,6 +71,12 @@ parser.add_argument(
     help="compiler for the native Linux build, `ninja linux` (default: clang)",
 )
 parser.add_argument(
+    "--compiler-launcher",
+    metavar="BINARY",
+    help="native ports: a program that runs each compile, such as ccache "
+    "(links and the Android host's few units run the compiler directly)",
+)
+parser.add_argument(
     "--release",
     action="store_true",
     help="release builds of the native ports (Linux, Windows, Android): assertions are not checked",
@@ -194,6 +200,7 @@ sln.csplit_path = args.csplit
 sln.ninja_path = args.ninja
 sln.ml_path = args.ml
 sln.linux_cc = args.linux_cc
+sln.compiler_launcher = args.compiler_launcher
 sln.port_release = args.release
 sln.port_lto = args.lto
 sln.port_portable = args.portable
@@ -247,7 +254,7 @@ for build_project in build_config["projects"]:
 # build file generation
 
 if args.mode == "configure":
-    if any(
+    if sln.matching and any(
         obj["status"] != "MISSING" and obj["name"].startswith("libs/d3d8/")
         for project in build_config["projects"]
         for obj in project["objects"]

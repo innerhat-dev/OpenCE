@@ -85,9 +85,15 @@ static uint32_t make_boot(void) {
 }
 extern void macos_enter_guest_stack(void *top, uint32_t boot) __attribute__((noreturn));
 int main(int argc, char **argv) {
-    if (argc > 2) {
-        fprintf(stderr, "Usage: %s [halo_guest.elf]\n", argv[0]);
-        return 2;
+    const char *image_argument = NULL;
+    for (int i = 1; i < argc; i++) {
+        if (!strncmp(argv[i], "halo://join/", 12))
+            continue;
+        if (image_argument) {
+            fprintf(stderr, "Usage: %s [halo_guest.elf] [halo://join/invite]\n", argv[0]);
+            return 2;
+        }
+        image_argument = argv[i];
     }
     setbuf(stderr, NULL);
     host_install_signal_handlers();
@@ -103,7 +109,7 @@ int main(int argc, char **argv) {
     snprintf(resources, sizeof(resources), "%s/../Resources", executable);
     snprintf(default_image, sizeof(default_image), "%s/halo_guest.elf", resources);
     snprintf(default_data, sizeof(default_data), "%s/GameData", resources);
-    if (argc == 1 && access(default_data, F_OK)) {
+    if (!image_argument && access(default_data, F_OK)) {
         char config[4096];
         snprintf(config, sizeof(config), "%s/GameDataPath.txt", resources);
         FILE *setting = fopen(config, "r");
@@ -115,7 +121,7 @@ int main(int argc, char **argv) {
     }
     const char *root = getenv("HALO_DATA_ROOT");
     if (!root)
-        root = argc == 1 ? default_data : "assets";
+        root = !image_argument ? default_data : "assets";
     if (!realpath(root, data_root))
         host_fatal("Game data folder is missing: %s", root);
     const char *home = getenv("HOME");
@@ -125,10 +131,10 @@ int main(int argc, char **argv) {
              "%s/Library/Application Support/Halo CE Universal", home);
     const char *saves = getenv("HALO_SAVE_ROOT");
     if (!saves)
-        saves = argc == 1 ? default_saves : "build/macos/saves";
+        saves = !image_argument ? default_saves : "build/macos/saves";
     if (create_directories(saves) || !realpath(saves, save_root))
         host_fatal("Cannot open saves folder: %s", saves);
-    if (argc == 1) {
+    if (!image_argument) {
         char log_path[4096];
         snprintf(log_path, sizeof(log_path), "%s/halo.log", save_root);
         freopen(log_path, "w", stderr);
@@ -148,7 +154,7 @@ int main(int argc, char **argv) {
         host_logf(HOST_LOG_INFO, "Display %dx%d; game aspect %sx480", display->w,
                   display->h, getenv("HALO_DISPLAY_WIDTH"));
     }
-    const char *image_path = argc == 2 ? argv[1] : default_image;
+    const char *image_path = image_argument ? image_argument : default_image;
     FILE *file = fopen(image_path, "rb");
     if (!file)
         host_fatal("Cannot open guest image: %s", image_path);
