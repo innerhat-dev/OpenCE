@@ -794,6 +794,23 @@ static boolean network_game_client_handle_message_server_game_advertise(
 		{
 			if (transport_is_nonce(&advertisement, TRANSPORT_NONCE_LENGTH))
 			{
+#ifdef HALO_LINUX
+				/* PR #20: across networks the reachable host address is the
+				advertisement's source, rather than its private LAN address.
+				127.0.0.1 denotes this game's own host in the XNet adapter. */
+				if (source_address->address_length == IPV4_ADDRESS_LENGTH &&
+					source_address->address.ipv4_address != 0 &&
+					source_address->address.ipv4_address != 0x7F000001)
+				{
+					unsigned long ip = source_address->address.ipv4_address;
+					unsigned char network_order[4];
+					network_order[0] = (unsigned char)(ip >> 24);
+					network_order[1] = (unsigned char)(ip >> 16);
+					network_order[2] = (unsigned char)(ip >> 8);
+					network_order[3] = (unsigned char)ip;
+					csmemcpy(&advertisement.xnaddr.ina, network_order, sizeof(network_order));
+				}
+#endif
 				network_game_client_new_advertised_game(client, &advertisement);
 			}
 		}

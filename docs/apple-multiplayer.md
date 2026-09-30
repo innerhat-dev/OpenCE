@@ -44,6 +44,12 @@ fix (`5d18a367`) and Darwin socket broken-pipe protection. PR #22's LP64/OpenGL
 conversion is a separate port, so that conversion and its FFmpeg videos are
 not part of this Metal app.
 
+The relevant networking changes from PR #20 (`f3841695`) are also included:
+invite traffic is limited to sockets owned by Halo, clients use the reachable
+source of a host advertisement, and hosts reply to recent game searches from
+outside their LAN. Its automatic Tailscale lookup, alternate compiler,
+ray-tracing effects and rendering-resolution controls are not included.
+
 ## Connect the devices
 
 Put the Mac and iPhone on the same LAN. Find the Mac's Wi-Fi IPv4 address in
@@ -147,3 +153,9 @@ python3 tools/macos_multiplayer_smoke.py --mode lan --seconds 65 \
 
 Use a fresh output directory for each run. Two physical Macs on different
 networks and 128-player capacity still need separate testing.
+LAN mode also needs a second configured non-loopback IPv4 address on the Mac
+(for example an existing VPN interface); it discovers that address automatically
+or accepts `--client-address`. Invite mode works with LAN plus loopback.
+The local invite test passed on the M5 Max. Direct discovery between its LAN
+and VPN interfaces did not find the host; that path and LAN play between two
+physical Macs remain unverified. Use the invite path for the current POC.

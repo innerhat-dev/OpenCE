@@ -56,7 +56,11 @@ build/macos/halo build/macos/halo_guest.elf
 That development command uses `build/macos/saves/` by default; the app uses the
 Mac Application Support location above.
 
-For a Mac-versus-iPhone LAN match, follow [Apple System Link setup](../../docs/apple-multiplayer.md).
+For Mac invite links and Mac-versus-iPhone LAN setup, follow
+[Apple multiplayer setup](../../docs/apple-multiplayer.md). Builds must use the
+same networking revision and map set. Hosting copies an invite to the clipboard;
+opening it, or copying it and switching to Halo, connects the peers so the host
+appears in the System Link browser.
 
 ## Build
 
@@ -136,11 +140,16 @@ Completed:
   Xbox addresses, integer/floating varargs, memory routines, and atomics.
 - Regression checks for fresh allocation contents, neighboring 4 KB allocations,
   texture write tracking, futex wakeups, clocks, and the SDL audio handoff.
+- Mac invite validation, private atomic delivery, and native SDL URL events
+  consumed without passing a 64-bit string pointer to the guest.
+- Two real instances on one M5 Max Mac: encrypted invite connection, Blood
+  Gulch gameplay, bidirectional updates, damage, death/respawn, and clean exit.
 - Real menu rendering, campaign gameplay, mouse capture, sound, and clean timed
   test shutdown; gameplay, audio and input confirmed on the target Mac.
 
 Not yet exhaustively validated: all campaign missions, checkpoint save/reload,
-controllers, split screen, system link, other M-series GPUs, and older macOS.
+controllers, split screen, multiplayer across physical devices/networks,
+128-player sessions, other M-series GPUs, and older macOS.
 Bink startup videos are skipped by the existing native port. CPU and rendering
 correctness still need longer playtesting, especially under memory pressure.
 

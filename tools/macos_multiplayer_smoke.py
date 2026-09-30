@@ -5,6 +5,7 @@ Uses isolated saves and the upstream scripted network test. This checks a
 single Mac; an internet/NAT test still needs a second physical network.
 """
 import argparse
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -17,16 +18,17 @@ ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build/macos"
 
 
-def prepare(folder, role, mode, seconds, host_address):
+def prepare(folder, role, mode, seconds, host_address, client_address):
     saves = folder / "saves"
     saves.mkdir(parents=True, exist_ok=True)
     data = folder / "data"
     data.mkdir()
     (data / "maps").symlink_to(ROOT / "assets/maps", target_is_directory=True)
-    # Darwin binds only configured loopback addresses. Use its actual LAN
-    # address and 127.0.0.1; Linux's arbitrary 127.x aliases fail on Mac.
-    address = host_address if role == "host" else "127.0.0.1"
-    broadcast = host_address if mode == "lan" else address
+    # Use configured addresses only: Linux's arbitrary 127.x loopback
+    # aliases fail on Darwin. Invite mode supports LAN plus 127.0.0.1.
+    address = host_address if role == "host" else client_address
+    other_address = client_address if role == "host" else host_address
+    broadcast = other_address if mode == "lan" else address
     config = f'''[network]
 address = "{address}"
 broadcast = "{broadcast}"
@@ -62,6 +64,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--guest", type=Path, default=BUILD / "halo_guest.elf")
     parser.add_argument("--host-address", help="A configured local IPv4 address, other than 127.0.0.1")
+    parser.add_argument("--client-address", help="Another configured local IPv4 address")
     args = parser.parse_args()
     host_address = args.host_address
     if not host_address:
@@ -71,6 +74,22 @@ def main():
             host_address = route.getsockname()[0]
     if host_address == "127.0.0.1":
         raise SystemExit("This test requires a LAN IPv4 address and loopback.")
+    client_address = args.client_address
+    if not client_address and args.mode == "lan":
+        # Halo uses 127.0.0.1 for its own host. A direct LAN test needs
+        # another configured non-loopback address; a VPN interface also
+        # works. Do not add system interface aliases just for this test.
+        interfaces = subprocess.check_output(["ifconfig"], text=True)
+        candidates = re.findall(r"\binet (\d+\.\d+\.\d+\.\d+)\b", interfaces)
+        client_address = next((a for a in candidates if a != host_address and
+                               not ipaddress.IPv4Address(a).is_loopback), None)
+        if not client_address:
+            raise SystemExit("LAN mode needs a second configured IPv4 address; use invite mode otherwise.")
+    client_address = str(ipaddress.IPv4Address(client_address or "127.0.0.1"))
+    host_address = str(ipaddress.IPv4Address(host_address))
+    if client_address == host_address or (args.mode == "lan" and
+                                         ipaddress.IPv4Address(client_address).is_loopback):
+        raise SystemExit("LAN mode needs two distinct configured non-loopback IPv4 addresses.")
     out = args.output.resolve()
     if out.exists():
         raise SystemExit("Use a new output directory to preserve previous evidence.")
@@ -81,7 +100,7 @@ def main():
         for role in ("host", "client"):
             folder = out / role
             folders[role] = folder
-            environment = prepare(folder, role, args.mode, args.seconds, host_address)
+            environment = prepare(folder, role, args.mode, args.seconds, host_address, client_address)
             command = [str(BUILD / "halo"), str(args.guest.resolve())]
             if role == "client" and args.mode == "invite":
                 deadline = time.monotonic() + 40

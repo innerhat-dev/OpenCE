@@ -49,6 +49,7 @@ every peer.
 
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 /* ---------- address settings */
 
@@ -250,6 +251,137 @@ static void peer_incoming_address(int stream, struct sockaddr *address, const in
 	incoming_address(address, address_length);
 }
 
+/* ---------- remote searchers
+
+A game's advertisements, like the searches for games, are broadcasts. A
+machine searching from elsewhere (on the internet, through the host's
+forwarded ports: network.broadcast names the host there) is not on this
+network, so the broadcasts also go to every such machine the game's sockets
+heard from in the last minute (broadcast_targets). */
+
+#define REMOTE_SEARCHERS 64
+#define REMOTE_SEARCHER_SECONDS 60
+
+static struct
+{
+	unsigned long address;
+	time_t heard;
+} remote_searchers[REMOTE_SEARCHERS];
+static pthread_mutex_t remote_searchers_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static unsigned long title_address(void);
+
+/* 10/8, 172.16/12, 192.168/16: another machine on a local network */
+static int is_private_address(unsigned long address)
+{
+	unsigned long host = halo_ws_ntohl(address);
+
+	return (host & 0xff000000UL) == 0x0a000000UL || (host & 0xfff00000UL) == 0xac100000UL ||
+		(host & 0xffff0000UL) == 0xc0a80000UL;
+}
+
+/* the game server's port, where searches for games arrive
+(source/networking/network_game_protocol.h), in network byte order */
+#define SEARCH_PORT_NETWORK_ORDER 0x1e14
+
+/* the socket the last datagram came in on, and whether it is the server's
+(one getsockname for each socket, not each datagram) */
+static int search_socket_cached = -1, search_socket_is_server;
+
+static void remote_searcher_socket_closed(int socket)
+{
+	if (socket == search_socket_cached)
+		search_socket_cached = -1;
+}
+
+/* this machine's address, looked up again every 10 seconds */
+static unsigned long cached_title_address(void)
+{
+	static unsigned long address;
+	static time_t looked_up;
+	time_t now = time(NULL);
+
+	if (!looked_up || now - looked_up >= 10)
+	{
+		address = title_address();
+		looked_up = now;
+	}
+	return address;
+}
+
+static void remote_searcher_heard(int socket, const struct sockaddr *address, const int *address_length)
+{
+	unsigned long ip, host;
+	time_t now = time(NULL);
+	int index, slot = -1;
+
+	if (!address || !address_length || *address_length < (int)sizeof(struct sockaddr_in) ||
+		address->sa_family != AF_INET)
+	{
+		return;
+	}
+	/* only searches: datagrams to the game server's port */
+	if (socket != search_socket_cached)
+	{
+		struct sockaddr_in bound;
+		int length = sizeof(bound);
+
+		search_socket_cached = socket;
+		search_socket_is_server = posix_socket_getsockname(socket, &bound, &length) == 0 &&
+			bound.sin_port == SEARCH_PORT_NETWORK_ORDER;
+	}
+	if (!search_socket_is_server)
+		return;
+	ip = ((const struct sockaddr_in *)address)->sin_addr.s_addr;
+	host = halo_ws_ntohl(ip);
+	/* not this machine, nor the local network's (they get the broadcasts),
+	nor the virtual invite/tailnet addresses */
+	if (!ip || (host >> 24) == 127 || ip == INADDR_BROADCAST || is_private_address(ip) ||
+		(host & 0xffc00000UL) == 0x64400000UL || ip == cached_title_address())
+	{
+		return;
+	}
+	pthread_mutex_lock(&remote_searchers_lock);
+	for (index = 0; index < REMOTE_SEARCHERS; index++)
+	{
+		if (remote_searchers[index].address == ip)
+		{
+			slot = index;
+			break;
+		}
+		if (slot < 0 && (!remote_searchers[index].address ||
+			now - remote_searchers[index].heard > REMOTE_SEARCHER_SECONDS))
+		{
+			slot = index;
+		}
+	}
+	if (slot >= 0)
+	{
+		if (remote_searchers[slot].address != ip)
+			platform_log("system link: heard from %lu.%lu.%lu.%lu (outside this network); broadcasts go to it too",
+				host >> 24, (host >> 16) & 255, (host >> 8) & 255, host & 255);
+		remote_searchers[slot].address = ip;
+		remote_searchers[slot].heard = now;
+	}
+	pthread_mutex_unlock(&remote_searchers_lock);
+}
+
+/* the remote searchers heard from lately; returns their count */
+static int remote_searcher_targets(unsigned long *targets, int maximum_count)
+{
+	time_t now = time(NULL);
+	int index, count = 0;
+
+	pthread_mutex_lock(&remote_searchers_lock);
+	for (index = 0; index < REMOTE_SEARCHERS && count < maximum_count; index++)
+	{
+		if (remote_searchers[index].address && now - remote_searchers[index].heard <= REMOTE_SEARCHER_SECONDS)
+			targets[count++] = remote_searchers[index].address;
+	}
+	pthread_mutex_unlock(&remote_searchers_lock);
+	return count;
+}
+
 /* the addresses to send broadcasts to instead, if network.broadcast is
 set (255.255.255.255 among them sends a real broadcast too); returns their
 count */
@@ -260,6 +392,18 @@ static int broadcast_targets(unsigned long *targets, int maximum_count)
 	net_settings_read();
 	count = net_settings.broadcast_count < maximum_count ? net_settings.broadcast_count : maximum_count;
 	memcpy(targets, net_settings.broadcast_targets, (size_t)count * sizeof(*targets));
+	unsigned long remote[REMOTE_SEARCHERS];
+	int remote_count = remote_searcher_targets(remote, REMOTE_SEARCHERS);
+	if (remote_count && !net_settings.broadcast_count && count < maximum_count)
+		targets[count++] = INADDR_BROADCAST;
+	for (int index = 0; index < remote_count && count < maximum_count; index++)
+	{
+		int known = 0;
+		for (int other = 0; other < count; other++)
+			known |= targets[other] == remote[index];
+		if (!known)
+			targets[count++] = remote[index];
+	}
 	return count;
 }
 
@@ -310,6 +454,62 @@ int WSAAPI WSACleanup(void)
 	return 0;
 }
 
+/* ---------- the game's own sockets
+
+Internet play's tunnel (p2p.c) delivers a peer's traffic only to ports the
+game's own sockets are bound to (xnet_is_game_port), never to other
+programs listening on this machine. */
+
+#define MAXIMUM_GAME_SOCKETS 256
+
+static int game_sockets[MAXIMUM_GAME_SOCKETS];
+static int game_socket_count;
+static pthread_mutex_t game_sockets_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void game_socket_add(int socket)
+{
+	pthread_mutex_lock(&game_sockets_lock);
+	if (game_socket_count < MAXIMUM_GAME_SOCKETS)
+		game_sockets[game_socket_count++] = socket;
+	pthread_mutex_unlock(&game_sockets_lock);
+}
+
+static void game_socket_remove(int socket)
+{
+	int index;
+
+	pthread_mutex_lock(&game_sockets_lock);
+	for (index = 0; index < game_socket_count; index++)
+	{
+		if (game_sockets[index] == socket)
+		{
+			game_sockets[index] = game_sockets[--game_socket_count];
+			break;
+		}
+	}
+	pthread_mutex_unlock(&game_sockets_lock);
+}
+
+int xnet_is_game_port(unsigned short port)
+{
+	int index, found = 0;
+
+	pthread_mutex_lock(&game_sockets_lock);
+	for (index = 0; index < game_socket_count && !found; index++)
+	{
+		struct sockaddr_in bound;
+		int length = sizeof(bound);
+
+		if (posix_socket_getsockname(game_sockets[index], &bound, &length) == 0 &&
+			bound.sin_family == AF_INET && bound.sin_port == port)
+		{
+			found = 1;
+		}
+	}
+	pthread_mutex_unlock(&game_sockets_lock);
+	return found;
+}
+
 SOCKET WSAAPI halo_ws_socket(int family, int type, int protocol)
 {
 	int result = posix_socket(family, type, protocol);
@@ -319,6 +519,7 @@ SOCKET WSAAPI halo_ws_socket(int family, int type, int protocol)
 		WSASetLastError(posix_socket_last_error());
 		return INVALID_SOCKET;
 	}
+	game_socket_add(result);
 	/* (the game's connections: every tick's messages go at once) */
 	if (type == SOCK_STREAM)
 		posix_socket_set_nodelay(result);
@@ -327,6 +528,8 @@ SOCKET WSAAPI halo_ws_socket(int family, int type, int protocol)
 
 int WSAAPI halo_ws_closesocket(SOCKET socket)
 {
+	game_socket_remove((int)socket);
+	remote_searcher_socket_closed((int)socket);
 	p2p_socket_closed((int)socket);
 	return winsock_result(posix_socket_close((int)socket));
 }
@@ -401,6 +604,7 @@ SOCKET WSAAPI halo_ws_accept(SOCKET socket, struct sockaddr *address, int *addre
 		WSASetLastError(posix_socket_last_error());
 		return INVALID_SOCKET;
 	}
+	game_socket_add(result);
 	posix_socket_set_nodelay(result);
 	peer_incoming_address(1, address, address_length);
 	return (SOCKET)result;
@@ -628,7 +832,10 @@ int WSAAPI halo_ws_recvfrom(SOCKET socket, char *buffer, int length, int flags,
 		return delayed_receive(socket, buffer, length, flags, address, address_length, 1);
 	result = posix_socket_recvfrom((int)socket, buffer, length, flags, address, address_length);
 	if (result >= 0)
+	{
+		remote_searcher_heard((int)socket, address, address_length);
 		peer_incoming_address(0, address, address_length);
+	}
 	return winsock_result(result);
 }
 
