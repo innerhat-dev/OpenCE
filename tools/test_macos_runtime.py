@@ -36,8 +36,13 @@ def main():
     run(OUT / "host_memory")
     run("clang", "-arch", "arm64", "-O2", "-Wall", "-I.", "-Iport/linux/src",
         "port/macos/tests/host_network.c", "port/macos/host/posix_net.c",
+        "port/macos/host/host_discord.c",
         "-o", OUT / "host_network")
     run(OUT / "host_network")
+    run("clang", "-arch", "arm64", "-O2", "-Wall", "-Wextra", "-I.", "-Iport/linux/src",
+        "port/macos/tests/discord_bridge.c", "port/macos/host/posix_net.c",
+        "port/macos/host/host_discord.c", "-o", OUT / "discord_bridge")
+    run(OUT / "discord_bridge")
     run("clang", "-arch", "arm64", "-O2", "-Wall", "-Wextra",
         "-Iport/macos/host", "-Iport/android/include",
         "port/macos/tests/invite_bridge.c", "port/macos/host/host_invite.c",

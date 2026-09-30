@@ -11,9 +11,17 @@ int main(void) {
     char directory[] = "/tmp/halo-invite-test.XXXXXX";
     assert(mkdtemp(directory));
     assert(setenv("HALO_SAVE_ROOT", directory, 1) == 0);
+    assert(host_is_discord_launch_url("discord-1553978809840050229://"));
+    assert(host_is_discord_launch_url("discord-1553978809840050229://join"));
+    assert(!host_is_discord_launch_url(NULL));
+    assert(!host_is_discord_launch_url("discord-://"));
+    assert(!host_is_discord_launch_url("discord-not-an-id://"));
+    assert(!host_is_discord_launch_url("discord-1553978809840050229"));
+    assert(!host_is_discord_launch_url("halo://join/short"));
     const char *invite = "halo://join/0123456789ab0123456789abcdef0123456789abcdef";
     assert(!host_invite_received(NULL));
     assert(!host_invite_received("https://example.com/"));
+    assert(!host_invite_received("discord-1553978809840050229://"));
     assert(!host_invite_received("halo://join/short"));
     assert(!host_invite_received("halo://join/0123456789ab0123456789abcdef0123456789abcdeg"));
     assert(host_invite_received(invite));

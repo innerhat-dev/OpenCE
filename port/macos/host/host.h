@@ -40,6 +40,8 @@ void host_exit(int code) __attribute__((noreturn));
 int host_errno(void);
 /* Queue an OS invite in this instance's save folder for the P2P thread. */
 int host_invite_received(const char *text);
+/* Discord launches the app first, then delivers its invite through RPC. */
+int host_is_discord_launch_url(const char *text);
 
 /* logs, shows the message to the player and terminates */
 void host_fatal(const char *format, ...) __attribute__((format(printf, 1, 2), noreturn));

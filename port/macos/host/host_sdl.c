@@ -258,7 +258,9 @@ int host_sdl_poll_event(void *event) {
     /* Cocoa sends opened URLs as drop-file events. Consume the native
        string here; the guest's 32-bit SDL event cannot hold that pointer. */
     if (host_event.type == SDL_EVENT_DROP_FILE || host_event.type == SDL_EVENT_DROP_TEXT) {
-        if (host_invite_received(host_event.drop.data))
+        if (host_is_discord_launch_url(host_event.drop.data))
+            host_logf(HOST_LOG_INFO, "Internet play: Discord launch received; waiting for its invite");
+        else if (host_invite_received(host_event.drop.data))
             host_logf(HOST_LOG_INFO, "Internet play: opened invite queued for this game");
         memset(event, 0, sizeof(host_event));
         return 1;

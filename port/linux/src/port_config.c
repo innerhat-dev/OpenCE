@@ -237,7 +237,9 @@ static const struct config_setting config_settings[] =
 
 #define NUMBER_OF_CONFIG_SETTINGS (sizeof(config_settings) / sizeof(config_settings[0]))
 
-#ifdef HALO_ANDROID
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+#define CONFIG_PLATFORM _platform_desktop
+#elif defined(HALO_ANDROID)
 #define CONFIG_PLATFORM _platform_android
 #else
 #define CONFIG_PLATFORM _platform_desktop

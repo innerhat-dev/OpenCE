@@ -22,7 +22,7 @@ ANGLE = Path(os.environ.get("HALO_MACOS_ANGLE_DIR", str(BUILD / "angle/dist")))
 GL = BUILD / "toolchain/gl"
 APP_ICON = "AppIcon.icns"
 APP_VERSION = "0.3.0"
-APP_BUILD = "3"
+APP_BUILD = "4"
 
 
 def run(*args):
@@ -143,7 +143,9 @@ def package(data_root):
         "CFBundlePackageType": "APPL", "CFBundleShortVersionString": APP_VERSION,
         "CFBundleVersion": APP_BUILD, "LSMinimumSystemVersion": "14.0",
         "CFBundleURLTypes": [{"CFBundleURLName": "Halo multiplayer invite",
-                              "CFBundleURLSchemes": ["halo"], "CFBundleTypeRole": "Viewer"}],
+                              # Match the shared discord.application_id default.
+                              "CFBundleURLSchemes": ["halo", "discord-1553978809840050229"],
+                              "CFBundleTypeRole": "Viewer"}],
         "NSLocalNetworkUsageDescription": "Connect to players hosting Halo multiplayer games.",
         "NSHighResolutionCapable": True,
         "NSHumanReadableCopyright": "Local experimental Apple Silicon port",

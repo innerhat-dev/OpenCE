@@ -6,6 +6,15 @@
 #include <string.h>
 #include <unistd.h>
 
+int host_is_discord_launch_url(const char *text) {
+    static const char prefix[] = "discord-";
+    if (!text || strncmp(text, prefix, sizeof(prefix) - 1))
+        return 0;
+    const char *application = text + sizeof(prefix) - 1;
+    size_t length = strspn(application, "0123456789");
+    return length > 0 && length < 32 && !strncmp(application + length, "://", 3);
+}
+
 int host_invite_received(const char *text) {
     static const char prefix[] = "halo://join/";
     const size_t prefix_size = sizeof(prefix) - 1;

@@ -87,7 +87,7 @@ extern void macos_enter_guest_stack(void *top, uint32_t boot) __attribute__((nor
 int main(int argc, char **argv) {
     const char *image_argument = NULL;
     for (int i = 1; i < argc; i++) {
-        if (!strncmp(argv[i], "halo://join/", 12))
+        if (!strncmp(argv[i], "halo://join/", 12) || host_is_discord_launch_url(argv[i]))
             continue;
         if (image_argument) {
             fprintf(stderr, "Usage: %s [halo_guest.elf] [halo://join/invite]\n", argv[0]);
