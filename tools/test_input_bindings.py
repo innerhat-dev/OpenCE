@@ -113,6 +113,7 @@ int main(int argc, char **argv) {
     if (!strcmp(mode, "custom")) {
         assert(press(SDL_SCANCODE_T).bAnalogButtons[XINPUT_GAMEPAD_X] == 255);
         assert(!press(SDL_SCANCODE_E).bAnalogButtons[XINPUT_GAMEPAD_X]);
+        assert(!press(SDL_SCANCODE_R).bAnalogButtons[XINPUT_GAMEPAD_X]);
         assert(press(SDL_SCANCODE_CAPSLOCK).wButtons == XINPUT_GAMEPAD_BACK);
         assert(!press(SDL_SCANCODE_GRAVE).wButtons);
         assert(!press(SDL_SCANCODE_Q).bAnalogButtons[XINPUT_GAMEPAD_Y]);
@@ -138,10 +139,14 @@ int main(int argc, char **argv) {
         return 0;
     }
     assert(press(SDL_SCANCODE_E).bAnalogButtons[XINPUT_GAMEPAD_X] == 255);
+    assert(press(SDL_SCANCODE_R).bAnalogButtons[XINPUT_GAMEPAD_X] ==
+        (!strcmp(mode, "preserved") ? 0 : 255));
     assert(press(SDL_SCANCODE_Q).bAnalogButtons[XINPUT_GAMEPAD_Y] == 255);
     assert(!press(SDL_SCANCODE_Q).bAnalogButtons[XINPUT_GAMEPAD_WHITE]);
-    assert(press(SDL_SCANCODE_TAB).wButtons == XINPUT_GAMEPAD_START);
-    assert(!press(SDL_SCANCODE_TAB).bAnalogButtons[XINPUT_GAMEPAD_Y]);
+    assert(!press(SDL_SCANCODE_TAB).wButtons);
+    assert(press(SDL_SCANCODE_TAB).bAnalogButtons[XINPUT_GAMEPAD_Y] == 255);
+    assert(press(SDL_SCANCODE_1).wButtons == XINPUT_GAMEPAD_START);
+    assert(!press(SDL_SCANCODE_1).bAnalogButtons[XINPUT_GAMEPAD_Y]);
     assert(press(SDL_SCANCODE_GRAVE).wButtons == XINPUT_GAMEPAD_BACK);
     assert(press(SDL_SCANCODE_F1).wButtons == XINPUT_GAMEPAD_BACK);
     assert(press(SDL_SCANCODE_LCTRL).wButtons == XINPUT_GAMEPAD_RIGHT_THUMB);
@@ -232,8 +237,11 @@ class InputBindings(unittest.TestCase):
     def test_mac_defaults_packets_holds_console_and_mouse(self):
         config, _ = self.run_probe()
         bindings = tomllib.loads(config)["bindings"]
+        self.assertEqual(bindings["x"], "E, R")
         self.assertEqual(bindings["select"], "Grave, F1")
         self.assertEqual(bindings["zoom"], "Ctrl, MouseMiddle")
+        self.assertEqual(bindings["y"], "Q, Tab, Wheel")
+        self.assertEqual(bindings["start"], "1, Escape")
 
     def test_custom_bindings_disable_old_keys_and_wheel(self):
         self.run_probe("custom", '''[bindings]
@@ -261,7 +269,7 @@ release_mouse = "Wheel"
 
     def test_existing_config_keeps_comments_and_values(self):
         original = '# My local settings\n[audio]\nvolume = 0.25 # keep\n[bindings]\nx = "E" # mine\n[custom]\nmarker = "preserve"\n'
-        config, _ = self.run_probe(config=original)
+        config, _ = self.run_probe("preserved", config=original)
         self.assertIn('# My local settings', config)
         self.assertIn('volume = 0.25 # keep', config)
         self.assertIn('x = "E" # mine', config)
