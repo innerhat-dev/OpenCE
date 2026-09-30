@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Build the native Apple Silicon host, rebased game, and local .app bundle."""
 import argparse
+from datetime import datetime, timezone
+import hashlib
 import os
 from pathlib import Path
 import plistlib
@@ -19,6 +21,8 @@ SDL = Path(os.environ.get("HALO_MACOS_SDL_PREFIX", "/opt/homebrew/opt/sdl3"))
 ANGLE = Path(os.environ.get("HALO_MACOS_ANGLE_DIR", str(BUILD / "angle/dist")))
 GL = BUILD / "toolchain/gl"
 APP_ICON = "AppIcon.icns"
+APP_VERSION = "0.3.0"
+APP_BUILD = "3"
 
 
 def run(*args):
@@ -136,8 +140,8 @@ def package(data_root):
         "CFBundleExecutable": "halo", "CFBundleIdentifier": "local.halo.ce-universal",
         "CFBundleName": "Halo CE Universal", "CFBundleDisplayName": "Halo CE Universal",
         "CFBundleIconFile": APP_ICON,
-        "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.2.0",
-        "CFBundleVersion": "2", "LSMinimumSystemVersion": "14.0",
+        "CFBundlePackageType": "APPL", "CFBundleShortVersionString": APP_VERSION,
+        "CFBundleVersion": APP_BUILD, "LSMinimumSystemVersion": "14.0",
         "CFBundleURLTypes": [{"CFBundleURLName": "Halo multiplayer invite",
                               "CFBundleURLSchemes": ["halo"], "CFBundleTypeRole": "Viewer"}],
         "NSLocalNetworkUsageDescription": "Connect to players hosting Halo multiplayer games.",
@@ -146,6 +150,17 @@ def package(data_root):
     }
     with (contents / "Info.plist").open("wb") as stream:
         plistlib.dump(info, stream)
+    try:
+        revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT,
+                                           text=True, stderr=subprocess.DEVNULL).strip()
+        if subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip():
+            revision += " (local changes)"
+    except (OSError, subprocess.CalledProcessError):
+        revision = "unknown"
+    guest_hash = hashlib.sha256((resources / "halo_guest.elf").read_bytes()).hexdigest()
+    (resources / "BuildInfo.txt").write_text(
+        f"Halo CE Universal {APP_VERSION} (build {APP_BUILD})\n"
+        f"Source: {revision}\nGuest SHA-256: {guest_hash}\n")
     licenses = resources / "Licenses"
     licenses.mkdir(exist_ok=True)
     for source, name in (
@@ -167,11 +182,70 @@ def package(data_root):
     print(f"Built {app}")
 
 
+def install_app(app, applications):
+    """Stage and verify a complete app before replacing an installed copy."""
+    app = require(app.resolve())
+    applications = applications.expanduser().resolve()
+    applications.mkdir(parents=True, exist_ok=True)
+    destination = applications / app.name
+    with tempfile.TemporaryDirectory(prefix=".halo-install-", dir=applications) as temporary:
+        staged = Path(temporary) / app.name
+        shutil.copytree(app, staged, symlinks=True)
+        run("codesign", "--verify", "--deep", "--strict", staged)
+        previous = None
+        if destination.exists():
+            with (destination / "Contents/Info.plist").open("rb") as stream:
+                installed = plistlib.load(stream)
+            if installed.get("CFBundleIdentifier") != "local.halo.ce-universal":
+                raise RuntimeError(f"Another application already exists at {destination}")
+            previous = Path(tempfile.mkdtemp(prefix=".halo-previous-", dir=applications))
+            destination.rename(previous / app.name)
+        try:
+            staged.rename(destination)
+        except OSError:
+            if previous:
+                (previous / app.name).rename(destination)
+                previous.rmdir()
+            raise
+    register = Path("/System/Library/Frameworks/CoreServices.framework/Frameworks/"
+                    "LaunchServices.framework/Support/lsregister")
+    # Spotlight can rediscover unregistered development bundles, and launching
+    # by name can then choose one of them instead of the installed version.
+    # Preserve generated copies outside its index with a non-app extension.
+    development_apps = list(BUILD.rglob("Halo CE Universal.app"))
+    backup_root = BUILD / "app-backups.noindex" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    for development_app in development_apps:
+        if development_app.resolve() == destination:
+            continue
+        info_path = development_app / "Contents/Info.plist"
+        if not info_path.is_file():
+            continue
+        with info_path.open("rb") as stream:
+            info = plistlib.load(stream)
+        if info.get("CFBundleIdentifier") != "local.halo.ce-universal":
+            continue
+        # An already-unregistered bundle returns an error; moving it still
+        # removes the conflicting launch path. Registration below must succeed.
+        subprocess.run([str(register), "-u", str(development_app)],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        backup = backup_root / development_app.relative_to(BUILD)
+        backup = backup.with_name(backup.name + ".backup")
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        development_app.rename(backup)
+    os.utime(destination, None)
+    run(register, "-f", destination)
+    run("mdimport", "-i", destination)
+    print(f"Installed {destination}")
+    return destination
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plugin-only", action="store_true")
     parser.add_argument("--host-only", action="store_true")
     parser.add_argument("--data-root", type=Path, default=ROOT / "assets")
+    parser.add_argument("--install", nargs="?", const=Path("/Applications"), type=Path,
+                        metavar="DIRECTORY", help="Install in /Applications, or the given directory, for Spotlight")
     parser.add_argument("--jobs", type=int, default=min(os.cpu_count() or 4, 6))
     args = parser.parse_args()
     os.chdir(ROOT)
@@ -189,6 +263,8 @@ def main():
         run(ninja, "-j", args.jobs, "macos_guest")
     build_host()
     package(args.data_root)
+    if args.install:
+        install_app(BUILD / "Halo CE Universal.app", args.install)
 
 
 if __name__ == "__main__":

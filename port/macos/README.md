@@ -113,6 +113,24 @@ python3 tools/macos_build.py
 open "build/macos/Halo CE Universal.app"
 ```
 
+To build and install a single copy in Applications for Spotlight:
+
+```sh
+python3 tools/macos_build.py --install
+```
+
+Then press Command-Space, type `Halo CE Universal`, and press Return. An
+optional directory, such as `--install ~/Applications`, installs for just your
+account. Installation verifies the signed bundle before replacing a previous
+copy, preserves the previous app in a hidden backup directory, and registers
+the new copy with Launch Services and Spotlight. Generated app copies in
+`build/macos` are preserved under `build/macos/app-backups.noindex` with a
+`.app.backup` extension so Spotlight cannot select an older development build.
+Quit an older running copy before launching the installed version: macOS can
+reactivate an existing
+instance with the same app ID. The startup log now identifies the executable,
+app version, source revision and guest hash.
+
 The first build compiles the complete game and downloads public SDL/musl source
 dependencies. No development team, provisioning profile or paid account is needed;
 the local app is ad-hoc signed automatically. For compiler/runtime checks:

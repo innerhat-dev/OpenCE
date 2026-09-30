@@ -368,7 +368,11 @@ BOOL platform_video_initialize(unsigned long width, unsigned long height)
 
 #ifdef HALO_ANDROID
 	platform_window = SDL_CreateWindow("Halo", (int)(width * scale), (int)(height * scale),
-		SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN);
+		SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN
+#ifdef HALO_MACOS
+		| (config_boolean("debug.hidden_window") ? SDL_WINDOW_HIDDEN : 0)
+#endif
+		);
 #else
 	/* fullscreen at the desktop's resolution unless display.fullscreen is
 	false, where the game draws the display's shape at its resolution

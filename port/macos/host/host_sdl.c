@@ -80,6 +80,8 @@ static EGLSurface metal_surface;
 static int requested_minor;
 static SDL_Window *metal_window;
 static SDL_MetalView metal_view;
+static int metal_window_hidden;
+static int metal_swap_interval = 1;
 
 /* ---------- general */
 
@@ -109,10 +111,11 @@ static void SDLCALL ios_refresh_hint(void *unused) { (void)unused; }
 #endif
 
 uint32_t host_sdl_create_window(const char *title, int width, int height, int64_t flags) {
-    (void)flags;
     const char *windowed = SDL_getenv("HALO_WINDOWED");
     SDL_WindowFlags mode = SDL_WINDOW_METAL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
-    if (!windowed || !SDL_atoi(windowed)) mode |= SDL_WINDOW_FULLSCREEN;
+    metal_window_hidden = (flags & SDL_WINDOW_HIDDEN) != 0;
+    if (metal_window_hidden) mode |= SDL_WINDOW_HIDDEN;
+    else if (!windowed || !SDL_atoi(windowed)) mode |= SDL_WINDOW_FULLSCREEN;
     metal_window = SDL_CreateWindow(title, width > 0 ? width : 1280, height > 0 ? height : 960,
                                     mode);
     if (metal_window) {
@@ -154,6 +157,7 @@ void host_sdl_window_size_in_pixels(uint32_t window, int *width, int *height) {
 int host_sdl_set_relative_mouse(uint32_t window, int enabled) {
     SDL_Window *object = handle_get(window, _handle_window);
 
+    if (metal_window_hidden) return 1;
     return object ? SDL_SetWindowRelativeMouseMode(object, enabled != 0) : 0;
 }
 
@@ -178,7 +182,7 @@ uint32_t host_sdl_gl_create_context(uint32_t window) {
         return 0;
     }
     const EGLint configAttributes[] = {EGL_SURFACE_TYPE,
-                                       EGL_WINDOW_BIT,
+                                       metal_window_hidden ? EGL_PBUFFER_BIT : EGL_WINDOW_BIT,
                                        EGL_RENDERABLE_TYPE,
                                        EGL_OPENGL_ES3_BIT,
                                        EGL_RED_SIZE,
@@ -200,9 +204,18 @@ uint32_t host_sdl_gl_create_context(uint32_t window) {
     eglBindAPI(EGL_OPENGL_ES_API);
     const EGLint contextAttributes[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
     metal_context = eglCreateContext(metal_display, config, EGL_NO_CONTEXT, contextAttributes);
-    metal_view = SDL_Metal_CreateView(object);
-    metal_surface = eglCreateWindowSurface(
-        metal_display, config, (EGLNativeWindowType)SDL_Metal_GetLayer(metal_view), NULL);
+    if (metal_window_hidden) {
+        /* Isolated launch/input checks use the shipped host without taking
+           focus or capturing the user's mouse. Ordinary launches use MetalView. */
+        int width, height;
+        SDL_GetWindowSizeInPixels(object, &width, &height);
+        const EGLint size[] = {EGL_WIDTH, width, EGL_HEIGHT, height, EGL_NONE};
+        metal_surface = eglCreatePbufferSurface(metal_display, config, size);
+    } else {
+        metal_view = SDL_Metal_CreateView(object);
+        metal_surface = eglCreateWindowSurface(
+            metal_display, config, (EGLNativeWindowType)SDL_Metal_GetLayer(metal_view), NULL);
+    }
     if (metal_context == EGL_NO_CONTEXT || metal_surface == EGL_NO_SURFACE) {
         SDL_SetError("Cannot create Metal surface: %x", eglGetError());
         return 0;
@@ -221,12 +234,19 @@ int host_sdl_gl_make_current(uint32_t window, uint32_t context) {
     return eglMakeCurrent(metal_display, metal_surface, metal_surface,
                           handle_get(context, _handle_context));
 }
-int host_sdl_gl_set_swap_interval(int interval) { return eglSwapInterval(metal_display, interval); }
+int host_sdl_gl_set_swap_interval(int interval) {
+    metal_swap_interval = interval;
+    return eglSwapInterval(metal_display, interval);
+}
 int host_sdl_gl_swap_window(uint32_t window) {
     (void)window;
     uint64_t start = SDL_GetTicksNS();
     int result = eglSwapBuffers(metal_display, metal_surface);
     host_perf_frame((SDL_GetTicksNS() - start) / 1e6);
+    if (metal_window_hidden && metal_swap_interval > 0) {
+        uint64_t elapsed = SDL_GetTicksNS() - start;
+        if (elapsed < 16666667) SDL_DelayNS(16666667 - elapsed);
+    }
     return result;
 }
 

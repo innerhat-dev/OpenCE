@@ -97,11 +97,12 @@ int main(int argc, char **argv) {
     }
     setbuf(stderr, NULL);
     host_install_signal_handlers();
-    char executable[4096], resources[4096], default_image[4096], default_data[4096],
+    char executable[4096], full_executable[4096], resources[4096], default_image[4096], default_data[4096],
         default_saves[4096];
     uint32_t executable_size = sizeof(executable);
     if (_NSGetExecutablePath(executable, &executable_size))
         host_fatal("Executable path is too long");
+    snprintf(full_executable, sizeof(full_executable), "%s", executable);
     char *slash = strrchr(executable, '/');
     if (!slash)
         host_fatal("Cannot locate application resources");
@@ -139,6 +140,17 @@ int main(int argc, char **argv) {
         snprintf(log_path, sizeof(log_path), "%s/halo.log", save_root);
         freopen(log_path, "w", stderr);
         setbuf(stderr, NULL);
+    }
+    host_logf(HOST_LOG_INFO, "App executable: %s", full_executable);
+    char build_info_path[4096], build_info_line[256];
+    snprintf(build_info_path, sizeof(build_info_path), "%s/BuildInfo.txt", resources);
+    FILE *build_info = fopen(build_info_path, "r");
+    if (build_info) {
+        while (fgets(build_info_line, sizeof(build_info_line), build_info)) {
+            build_info_line[strcspn(build_info_line, "\r\n")] = 0;
+            host_logf(HOST_LOG_INFO, "%s", build_info_line);
+        }
+        fclose(build_info);
     }
     setenv("HALO_DATA_ROOT", data_root, 1);
     setenv("HALO_SAVE_ROOT", save_root, 1);
