@@ -39,7 +39,7 @@ host migration, or a browser client. See the
 [upstream connection notes](../port/linux/README.md#connection).
 
 The current integration keeps the Apple ARM64/Metal renderer and merges the
-cybersecurity upstream through `fd8fc726`. It incorporates PR #22's clock/uptime
+cybersecurity upstream through `6feea5db`. It incorporates PR #22's clock/uptime
 fix (`5d18a367`) and Darwin socket broken-pipe protection. PR #22's LP64/OpenGL
 conversion is a separate port, so that conversion and its FFmpeg videos are
 not part of this Metal app.
@@ -49,6 +49,13 @@ invite traffic is limited to sockets owned by Halo, clients use the reachable
 source of a host advertisement, and hosts reply to recent game searches from
 outside their LAN. Its automatic Tailscale lookup, alternate compiler,
 ray-tracing effects and rendering-resolution controls are not included.
+
+The `lantos1618/halo-ce-universal` fork was also checked through `b7fa7f74`
+on its `macos-port` branch. Its two commits after `f3841695` add a startup-map
+setting, scripted test input, and a high-resolution zoom-effect correction.
+They are not required by this app's existing test drivers and 480-line internal
+renderer, so they remain separate. The fork's `main` (`0ef2ed7d`) is already an
+ancestor of the merged cybersecurity main.
 
 ## Connect the devices
 
