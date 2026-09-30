@@ -32,6 +32,11 @@ static int xbox_protect(uint32_t address, size_t size, int protection, int fresh
     uint32_t native_first = first & ~3u;
     size_t native_end = (first + count + 3) & ~(size_t)3;
     pthread_mutex_lock(&memory_lock);
+    /* Updating one Xbox allocation can make its whole Darwin page writable.
+       Invalidate watched neighbors before changing protection or zeroing data,
+       so cached geometry and textures notice subsequent writes. */
+    host_memory_watch_prepare_write(HALO_GUEST_WINDOW_BASE + native_first * 4096,
+                                   (uint32_t)((native_end - native_first) * 4096));
     if (fresh && protection) {
         if (mprotect(guest_pointer(HALO_GUEST_WINDOW_BASE + native_first * 4096),
                      (native_end - native_first) * 4096, PROT_READ | PROT_WRITE)) {
@@ -203,7 +208,18 @@ void host_memory_watch_prepare_write(uint32_t a, uint32_t n) {
                              __ATOMIC_RELEASE);
         }
 }
-void host_memory_watch_forget(uint32_t a, uint32_t n) { host_memory_watch_prepare_write(a, n); }
+void host_memory_watch_forget(uint32_t a, uint32_t n) {
+    if (!n || (uint64_t)a + n > UINT64_C(0x100000000))
+        return;
+    /* Remapping invalidates cached data even if a previous write already
+       removed the watch. Match the shared allocator's forget contract. */
+    for (uint32_t i = a / PAGE; i <= (a + n - 1) / PAGE; i++) {
+        if (__atomic_exchange_n(watched + i, 0, __ATOMIC_ACQ_REL))
+            mprotect(guest_pointer(i * PAGE), PAGE, PROT_READ | PROT_WRITE);
+        __atomic_store_n(generation + i, __atomic_add_fetch(&serial, 1, __ATOMIC_ACQ_REL),
+                         __ATOMIC_RELEASE);
+    }
+}
 static void fault(int signal, siginfo_t *info, void *context) {
     uintptr_t address = (uintptr_t)info->si_addr;
     if (address >= HALO_MACOS_BIAS && address < HALO_MACOS_BIAS + UINT64_C(0x100000000)) {

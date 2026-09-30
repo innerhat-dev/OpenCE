@@ -66,6 +66,8 @@ long host_guest_munmap(uint64_t address, uint64_t size);
 long host_guest_mprotect(uint64_t address, uint64_t size, int protection);
 void host_memory_watch_protect(uint32_t address, uint32_t size);
 uint32_t host_memory_watch_generation(uint32_t address, uint32_t size);
+void host_memory_watch_prepare_write(uint32_t address, uint32_t size);
+void host_memory_watch_forget(uint32_t address, uint32_t size);
 
 /* ---------- the guest image (host_loader.c) */
 

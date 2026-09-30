@@ -59,6 +59,34 @@ int main(void) {
     *(volatile uint32_t *)guest_pointer(a) = 0x12345678;
     assert(host_memory_watch_generation(a, 4096) > before);
     assert(*(uint32_t *)guest_pointer(a) == 0x12345678);
+
+    /* Forgetting a writable range still invalidates its previous contents. */
+    before = host_memory_watch_generation(a, 4096);
+    host_memory_watch_forget(a, 4096);
+    assert(host_memory_watch_generation(a, 4096) > before);
+    before = host_memory_watch_generation(a, 4096);
+    host_memory_watch_forget(a, 4096);
+    assert(host_memory_watch_generation(a, 4096) > before);
+
+    host_memory_watch_protect(a, 4096);
+    host_memory_watch_forget(a, 4096);
+    *(volatile uint32_t *)guest_pointer(a) = 0x12345678;
+    assert(*(uint32_t *)guest_pointer(a) == 0x12345678);
+
+    /* A neighboring Xbox allocation shares this Darwin page. Making it
+       writable must invalidate cached GPU data in the existing allocation. */
+    host_memory_watch_protect(a, 4096);
+    before = host_memory_watch_generation(a, 4096);
+    assert(host_guest_mmap(b, 4096, PROT_READ | PROT_WRITE, 0x32, -1, 0) == b);
+    *(volatile uint32_t *)guest_pointer(a) = 0x87654321;
+    assert(host_memory_watch_generation(a, 4096) > before);
+    assert(*(uint32_t *)guest_pointer(a) == 0x87654321);
+
+    host_memory_watch_protect(a, 4096);
+    before = host_memory_watch_generation(a, 4096);
+    assert(host_guest_mprotect(b, 4096, PROT_NONE) == 0);
+    *(volatile uint32_t *)guest_pointer(a) = 0x12345678;
+    assert(host_memory_watch_generation(a, 4096) > before);
     assert(host_guest_mmap(0x1000, 4096, PROT_READ, 0x32, -1, 0) == -22);
 
     futex_word = (uint32_t *)reused;
