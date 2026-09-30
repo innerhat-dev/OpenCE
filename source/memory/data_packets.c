@@ -59,13 +59,13 @@ symbols in this file:
 
 /* ---------- prototypes */
 
-void _data_packet_verify(
+static void _data_packet_verify(
 	struct data_packet_definition *packet_definition,
 	short *packet_size,
 	struct data_packet_field *fields,
 	short *field_count);
 
-void _data_packet_encode(
+static void _data_packet_encode(
 	struct data_packet_definition *packet_definition,
 	struct data_encoding_state *state,
 	short packet_version,
@@ -74,7 +74,7 @@ void _data_packet_encode(
 	struct data_packet_field *fields,
 	short *field_count);
 
-void _data_packet_decode(
+static void _data_packet_decode(
 	struct data_packet_definition *packet_definition,
 	struct data_encoding_state *state,
 	short packet_version,
@@ -205,7 +205,7 @@ boolean data_packet_decode(
 
 /* ---------- private code */
 
-void _data_packet_verify(
+static void _data_packet_verify(
 	struct data_packet_definition *packet_definition,
 	short *packet_size,
 	struct data_packet_field *fields,
@@ -303,7 +303,7 @@ void _data_packet_verify(
 	return;
 }
 
-void _data_packet_encode(
+static void _data_packet_encode(
 	struct data_packet_definition *packet_definition,
 	struct data_encoding_state *state,
 	short packet_version,
@@ -438,7 +438,7 @@ void _data_packet_encode(
 	return;
 }
 
-void _data_packet_decode(
+static void _data_packet_decode(
 	struct data_packet_definition *packet_definition,
 	struct data_encoding_state *state,
 	short packet_version,
@@ -502,6 +502,13 @@ void _data_packet_decode(
 				void *source;
 
 				data_size = (short)data_decode_integer(state, field->count);
+				/* port: no more than the field holds (the rest of the packet is
+				not to be read then) */
+				if (data_size < 0 || data_size > field->count)
+				{
+					state->overflow = TRUE;
+					data_size = 0;
+				}
 				*(short *)decoded_data = data_size;
 				source = data_decode_memory(state, data_size, 1);
 				if (source)
