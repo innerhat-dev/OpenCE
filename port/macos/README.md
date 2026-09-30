@@ -37,13 +37,13 @@ Keyboard/mouse controls:
 | Left / right mouse button | Fire / grenade |
 | Space or Enter | Jump / accept |
 | E or R | Action / reload (X) |
-| F or Backspace | Melee / back |
+| F, Escape or Backspace | Melee / back (B) |
 | Q, Tab or mouse wheel | Change weapon (Y) |
 | L | Flashlight |
 | X | Change grenade type |
 | Shift (either side) | Crouch |
 | Control (either side) or middle mouse button | Zoom |
-| 1 or Escape | Pause (Start) |
+| 1 | Pause (Start) |
 | Backtick (`) or F1 | Hold for scoreboard (Back/Select) |
 | F2 | Open / close developer console |
 | F12 (Fn-F12 on some keyboards) | Release or recapture mouse |
@@ -62,10 +62,10 @@ For example, these are the Mac defaults for the main keyboard actions:
 x = "E, R"
 y = "Q, Tab, Wheel"
 zoom = "Ctrl, MouseMiddle"
-start = "1, Escape"
+start = "1"
 select = "Grave, F1"
 a = "Space, Return, KeypadEnter"
-b = "F, Backspace, MouseX1, ACBack"
+b = "F, Escape, Backspace, MouseX1, ACBack"
 crouch = "Shift"
 console = "F2"
 release_mouse = "F12"

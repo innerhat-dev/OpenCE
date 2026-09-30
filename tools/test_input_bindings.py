@@ -133,6 +133,8 @@ int main(int argc, char **argv) {
     }
     if (!strcmp(mode, "legacy")) {
         assert(press(SDL_SCANCODE_TAB).bAnalogButtons[XINPUT_GAMEPAD_Y] == 255);
+        assert(press(SDL_SCANCODE_ESCAPE).wButtons == XINPUT_GAMEPAD_START);
+        assert(!press(SDL_SCANCODE_ESCAPE).bAnalogButtons[XINPUT_GAMEPAD_B]);
         assert(press(SDL_SCANCODE_Q).bAnalogButtons[XINPUT_GAMEPAD_WHITE] == 255);
         assert(press(SDL_SCANCODE_LCTRL).wButtons == XINPUT_GAMEPAD_LEFT_THUMB);
         console_event(SDL_SCANCODE_GRAVE, 0xc0);
@@ -147,6 +149,8 @@ int main(int argc, char **argv) {
     assert(press(SDL_SCANCODE_TAB).bAnalogButtons[XINPUT_GAMEPAD_Y] == 255);
     assert(press(SDL_SCANCODE_1).wButtons == XINPUT_GAMEPAD_START);
     assert(!press(SDL_SCANCODE_1).bAnalogButtons[XINPUT_GAMEPAD_Y]);
+    assert(!press(SDL_SCANCODE_ESCAPE).wButtons);
+    assert(press(SDL_SCANCODE_ESCAPE).bAnalogButtons[XINPUT_GAMEPAD_B] == 255);
     assert(press(SDL_SCANCODE_GRAVE).wButtons == XINPUT_GAMEPAD_BACK);
     assert(press(SDL_SCANCODE_F1).wButtons == XINPUT_GAMEPAD_BACK);
     assert(press(SDL_SCANCODE_LCTRL).wButtons == XINPUT_GAMEPAD_RIGHT_THUMB);
@@ -241,7 +245,8 @@ class InputBindings(unittest.TestCase):
         self.assertEqual(bindings["select"], "Grave, F1")
         self.assertEqual(bindings["zoom"], "Ctrl, MouseMiddle")
         self.assertEqual(bindings["y"], "Q, Tab, Wheel")
-        self.assertEqual(bindings["start"], "1, Escape")
+        self.assertEqual(bindings["start"], "1")
+        self.assertEqual(bindings["b"], "F, Escape, Backspace, MouseX1, ACBack")
 
     def test_custom_bindings_disable_old_keys_and_wheel(self):
         self.run_probe("custom", '''[bindings]
