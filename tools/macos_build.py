@@ -188,6 +188,15 @@ def install_app(app, applications):
     applications = applications.expanduser().resolve()
     applications.mkdir(parents=True, exist_ok=True)
     destination = applications / app.name
+    register = Path("/System/Library/Frameworks/CoreServices.framework/Frameworks/"
+                    "LaunchServices.framework/Support/lsregister")
+
+    def unregister(bundle):
+        # An already-unregistered bundle returns an error. Archive it anyway;
+        # the installed app's final registration below must succeed.
+        subprocess.run([str(register), "-u", str(bundle)],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
     with tempfile.TemporaryDirectory(prefix=".halo-install-", dir=applications) as temporary:
         staged = Path(temporary) / app.name
         shutil.copytree(app, staged, symlinks=True)
@@ -199,16 +208,24 @@ def install_app(app, applications):
             if installed.get("CFBundleIdentifier") != "local.halo.ce-universal":
                 raise RuntimeError(f"Another application already exists at {destination}")
             previous = Path(tempfile.mkdtemp(prefix=".halo-previous-", dir=applications))
-            destination.rename(previous / app.name)
+            unregister(destination)
+            destination.rename(previous / (app.name + ".backup"))
         try:
             staged.rename(destination)
         except OSError:
             if previous:
-                (previous / app.name).rename(destination)
+                (previous / (app.name + ".backup")).rename(destination)
                 previous.rmdir()
+                run(register, "-f", destination)
             raise
-    register = Path("/System/Library/Frameworks/CoreServices.framework/Frameworks/"
-                    "LaunchServices.framework/Support/lsregister")
+    # Older installers kept launchable apps in these folders. macOS follows
+    # their file identities when the installed copy is renamed to a backup.
+    for prior in applications.glob(".halo-previous-*/" + app.name):
+        with (prior / "Contents/Info.plist").open("rb") as stream:
+            info = plistlib.load(stream)
+        if info.get("CFBundleIdentifier") == "local.halo.ce-universal":
+            unregister(prior)
+            prior.rename(prior.with_name(prior.name + ".backup"))
     # Spotlight can rediscover unregistered development bundles, and launching
     # by name can then choose one of them instead of the installed version.
     # Preserve generated copies outside its index with a non-app extension.
@@ -224,10 +241,7 @@ def install_app(app, applications):
             info = plistlib.load(stream)
         if info.get("CFBundleIdentifier") != "local.halo.ce-universal":
             continue
-        # An already-unregistered bundle returns an error; moving it still
-        # removes the conflicting launch path. Registration below must succeed.
-        subprocess.run([str(register), "-u", str(development_app)],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        unregister(development_app)
         backup = backup_root / development_app.relative_to(BUILD)
         backup = backup.with_name(backup.name + ".backup")
         backup.parent.mkdir(parents=True, exist_ok=True)
