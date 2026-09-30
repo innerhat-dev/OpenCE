@@ -36,14 +36,53 @@ Keyboard/mouse controls:
 | W A S D / mouse | Move / aim |
 | Left / right mouse button | Fire / grenade |
 | Space or Enter | Jump / accept |
-| E or R | Action / reload |
+| E | Action / reload (X) |
 | F or Backspace | Melee / back |
-| Tab or mouse wheel | Change weapon |
-| Q | Flashlight |
-| C or left Control | Crouch |
-| Z or middle mouse button | Zoom |
-| Escape | Pause |
+| Q or mouse wheel | Change weapon (Y) |
+| L | Flashlight |
+| X | Change grenade type |
+| Shift (either side) | Crouch |
+| Control (either side) or middle mouse button | Zoom |
+| Tab or Escape | Pause (Start) |
+| Backtick (`) or F1 | Hold for scoreboard (Back/Select) |
+| F2 | Open / close developer console |
 | F12 (Fn-F12 on some keyboards) | Release or recapture mouse |
+
+All keyboard/controller actions and mouse buttons can be changed in the
+`[bindings]` section of `~/Library/Application Support/Halo CE Universal/config.toml`.
+The first launch adds any missing bindings with their defaults, preserving
+existing settings, bindings and comments. Quit Halo, edit the file, and restart
+to apply changes. These bindings emit Xbox controller buttons, so an in-game
+controller preset can also change what an action does.
+
+For example, these are the Mac defaults for the main keyboard actions:
+
+```toml
+[bindings]
+x = "E"
+y = "Q, Wheel"
+zoom = "Ctrl, MouseMiddle"
+start = "Tab, Escape"
+select = "Grave, F1"
+a = "Space, Return, KeypadEnter"
+b = "F, Backspace, MouseX1, ACBack"
+crouch = "Shift"
+console = "F2"
+release_mouse = "F12"
+```
+
+Names are case-insensitive. Separate alternative keys/buttons with commas;
+for example, `select = "CapsLock, F1"`. `Grave`, `Backtick`, or the literal
+backtick names the physical backtick key. `Ctrl`, `Shift`, `Alt`/`Option`, and
+`Cmd` match either side; `LeftCtrl` and `RightCtrl` select just one. Letters,
+digits, F1-F24, arrows, `Space`, `Return`, `Escape`, `Tab`, `Backspace`,
+`CapsLock`, navigation keys and keypad keys are supported. Mouse names are
+`MouseLeft`, `MouseRight`, `MouseMiddle`, `MouseX1`, `MouseX2`, and `Wheel`.
+Use `""` to unbind an action, and use names such as `Comma` for punctuation.
+The `console` and `release_mouse` bindings accept keyboard keys only and take
+priority over controller actions. Invalid bindings are logged and use the
+default for that action. The remaining movement, D-pad, trigger, flashlight
+and grenade bindings are listed with comments in the generated config.
 
 `HALO_DATA_ROOT`, `HALO_SAVE_ROOT`, `HALO_WINDOW_SCALE`, `HALO_VOLUME`, and the
 other [shared native settings](../linux/README.md#settings) remain available.

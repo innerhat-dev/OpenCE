@@ -13,6 +13,7 @@ and the debug keyboard that the game's console reads.
 #include "sdl_platform.h"
 #include "gl.h"
 #include "port_config.h"
+#include "input_bindings.h"
 #include "p2p.h"
 #include "xiso.h"
 
@@ -549,7 +550,8 @@ static void queue_keystroke(const SDL_KeyboardEvent *event)
 	if (event->mod & SDL_KMOD_NUM) flags |= 0x10;
 	if (!event->down) flags |= 0x40;
 	if (event->repeat) flags |= 0x80;
-	keystroke->virtual_key = virtual_key_from_scancode(event->scancode);
+	keystroke->virtual_key = input_binding_console_key(event->scancode,
+		virtual_key_from_scancode(event->scancode));
 	keystroke->ascii = event->down ? ascii_from_key(event->key, event->mod) : 0;
 	keystroke->flags = flags;
 	keystroke_count++;
@@ -714,8 +716,8 @@ void platform_pump_events(void)
 					keys_pressed[event.key.scancode] = 1;
 			}
 			queue_keystroke(&event.key);
-			/* F12 releases or recaptures the mouse */
-			if (event.key.down && !event.key.repeat && event.key.scancode == SDL_SCANCODE_F12)
+			/* The configured mouse-release key releases or recaptures it. */
+			if (event.key.down && !event.key.repeat && input_binding_matches_key(_binding_release_mouse, event.key.scancode))
 			{
 				input_state.mouse_released = !input_state.mouse_released;
 				platform_mouse_capture(!input_state.mouse_released && !input_state.ui_pointer);

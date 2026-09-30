@@ -98,6 +98,15 @@ static const struct config_setting config_settings[] =
 		"right stick to move decides. The bullets' autoaim (bent toward the\n"
 		"target) stays either way." },
 
+	/* Bindings are config-only: they do not need application environment variables. */
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+#define BINDING(name, mac, other, comment) { "bindings." #name, _config_string, "\"" mac "\"", NULL, _environment_value, _platform_all, comment },
+#else
+#define BINDING(name, mac, other, comment) { "bindings." #name, _config_string, "\"" other "\"", NULL, _environment_value, _platform_all, comment },
+#endif
+#include "input_bindings.def"
+#undef BINDING
+
 	{ "game.language", _config_string, "\"\"", "HALO_LANGUAGE", _environment_value, _platform_all,
 		"The language the game asks the Xbox for: \"ja\", \"de\", \"fr\", \"es\" or \"it\";\n"
 		"empty for English. The game data decides what is translated." },
@@ -386,19 +395,22 @@ static void config_append_setting(struct config_text *text, const struct config_
 	}
 #ifndef HALO_ANDROID
 	/* (Android apps have no environment to set) */
-	switch (setting->environment_style)
+	if (setting->environment)
 	{
-	case _environment_value:
-		snprintf(buffer, sizeof(buffer), "# (for one run: %s=<value>)\n", setting->environment);
-		break;
-	case _environment_set_is_true:
-		snprintf(buffer, sizeof(buffer), "# (for one run: %s=1 makes it true)\n", setting->environment);
-		break;
-	case _environment_set_is_false:
-		snprintf(buffer, sizeof(buffer), "# (for one run: %s=1 makes it false)\n", setting->environment);
-		break;
+		switch (setting->environment_style)
+		{
+		case _environment_value:
+			snprintf(buffer, sizeof(buffer), "# (for one run: %s=<value>)\n", setting->environment);
+			break;
+		case _environment_set_is_true:
+			snprintf(buffer, sizeof(buffer), "# (for one run: %s=1 makes it true)\n", setting->environment);
+			break;
+		case _environment_set_is_false:
+			snprintf(buffer, sizeof(buffer), "# (for one run: %s=1 makes it false)\n", setting->environment);
+			break;
+		}
+		config_append(text, buffer);
 	}
-	config_append(text, buffer);
 #endif
 	snprintf(buffer, sizeof(buffer), "%s = %s\n", dot + 1, setting->default_value);
 	config_append(text, buffer);
@@ -712,7 +724,7 @@ static void config_load(void)
 	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
 	{
 		const struct config_setting *setting = &config_settings[index];
-		const char *environment = getenv(setting->environment);
+		const char *environment = setting->environment ? getenv(setting->environment) : NULL;
 
 		if (!environment)
 			continue;

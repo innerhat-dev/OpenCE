@@ -116,6 +116,20 @@ to 4.
 | F12 | | release or capture the mouse |
 | F11 | | change between fullscreen and window |
 
+These are the default desktop controls. The `[bindings]` section of
+`config.toml` remaps movement, D-pad and Xbox buttons, mouse buttons, the
+developer console and the mouse-release key. Use comma-separated alternatives
+such as `x = "E, R"`, `select = "CapsLock, F1"` or `zoom = "Ctrl, MouseMiddle"`;
+an empty string unbinds the action. Names are case-insensitive, `Ctrl`/`Shift`
+mean either side, and `LeftCtrl`/`RightCtrl` choose one. `Grave` means backtick.
+`MouseLeft`, `MouseRight`, `MouseMiddle`, `MouseX1`, `MouseX2` and `Wheel` are
+supported; console and mouse-release hotkeys accept keyboard keys only and
+take priority over controller actions. The config lists all defaults with
+comments. Edit with Halo closed, then restart; existing bindings and comments
+are preserved when missing settings are added. Invalid bindings fall back to
+the default for that action and are reported in the log. Mac defaults use
+the layout documented in [the Mac controls](../macos/README.md#launch).
+
 One movement of the mouse wheel changes the weapon one time. A second
 movement after a short pause changes it again.
 
