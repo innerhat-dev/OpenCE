@@ -254,9 +254,13 @@ unsigned long p2p_now(void)
 	return GetTickCount();
 }
 
+/* whether time milliseconds have passed since since; 0 is "never", which
+is long ago (a machine up more than 24.8 days has a clock past 2^31
+milliseconds, where the signed difference from 0 is negative and nothing
+that starts from 0 would ever happen) */
 static int elapsed(unsigned long since, unsigned long time)
 {
-	return (long)(p2p_now() - since) >= (long)time;
+	return !since || (long)(p2p_now() - since) >= (long)time;
 }
 
 unsigned long p2p_resolve(const char *host)

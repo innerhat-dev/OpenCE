@@ -122,7 +122,8 @@ static struct
 
 static int elapsed(unsigned long since, unsigned long time)
 {
-	return (long)(p2p_now() - since) >= (long)time;
+	/* 0 is "never", which is long ago (p2p.c's elapsed) */
+	return !since || (long)(p2p_now() - since) >= (long)time;
 }
 
 static unsigned short network_short(unsigned short value)
