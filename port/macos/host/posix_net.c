@@ -61,11 +61,12 @@ static ssize_t darwin_sendto(int fd, const void *p, size_t n, int f, const struc
     }
     return r;
 }
-static ssize_t darwin_recvfrom(int fd, void *p, size_t n, int f, struct sockaddr *a,
-                               socklen_t *an) {
-    ssize_t r = recvfrom(fd, p, n, f, a, an);
-    if (r >= 0 && a)
-        output_address(a);
+static ssize_t darwin_recvmsg(int fd, struct msghdr *message, int flags) {
+    ssize_t r = recvmsg(fd, message, flags);
+    /* Upstream uses recvmsg to detect truncated UDP packets. Its sender
+       address still needs the game's two-byte family instead of sa_len. */
+    if (r >= 0 && message->msg_name && message->msg_namelen >= sizeof(uint16_t))
+        output_address(message->msg_name);
     return r;
 }
 static int darwin_accept(int fd, struct sockaddr *a, socklen_t *n) {
@@ -117,7 +118,7 @@ static int darwin_accept4(int fd, struct sockaddr *a, socklen_t *n, int flags) {
 #define bind darwin_bind
 #define connect darwin_connect
 #define sendto darwin_sendto
-#define recvfrom darwin_recvfrom
+#define recvmsg darwin_recvmsg
 #define accept darwin_accept
 #define getsockname darwin_getsockname
 #define getpeername darwin_getpeername

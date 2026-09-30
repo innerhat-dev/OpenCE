@@ -1,7 +1,7 @@
 # Apple multiplayer and Mac invite links
 
 Build both devices from the same revision with the same map set. Native builds
-use protocol version 4 and changed player capacities, so original Xbox games
+use protocol version 5 and changed player capacities, so original Xbox games
 and older native builds cannot join. See the [shared System Link notes](../port/linux/README.md#system-link)
 for protocol details and limits.
 
@@ -38,24 +38,23 @@ prevent a connection. This build does not provide guaranteed connectivity,
 host migration, or a browser client. See the
 [upstream connection notes](../port/linux/README.md#connection).
 
-The current integration keeps the Apple ARM64/Metal renderer and merges the
-cybersecurity upstream through `6feea5db`. It incorporates PR #22's clock/uptime
-fix (`5d18a367`) and Darwin socket broken-pipe protection. PR #22's LP64/OpenGL
-conversion is a separate port, so that conversion and its FFmpeg videos are
-not part of this Metal app.
+The current integration keeps the Apple ARM64/Metal renderer and merges
+cybersecurity upstream build 52 (`aad8719f`). This includes repeated-match
+input and client-role fixes, map compatibility checks, mouse aiming changes,
+and the hardened version-5 distributed netcode. Older local Mac and iPhone
+builds must be rebuilt before joining a version-5 room.
 
-The relevant networking changes from PR #20 (`f3841695`) are also included:
-invite traffic is limited to sockets owned by Halo, clients use the reachable
-source of a host advertisement, and hosts reply to recent game searches from
-outside their LAN. Its automatic Tailscale lookup, alternate compiler,
-ray-tracing effects and rendering-resolution controls are not included.
+PR #22 was reviewed through `ad13a59b`. Its clock/uptime fix (`5d18a367`)
+and Darwin broken-pipe protection remain included. Its LP64/OpenGL conversion
+is a separate port; this app keeps the rebased ARM guest and ANGLE/Metal.
 
-The `lantos1618/halo-ce-universal` fork was also checked through `b7fa7f74`
-on its `macos-port` branch. Its two commits after `f3841695` add a startup-map
-setting, scripted test input, and a high-resolution zoom-effect correction.
-They are not required by this app's existing test drivers and 480-line internal
-renderer, so they remain separate. The fork's `main` (`0ef2ed7d`) is already an
-ancestor of the merged cybersecurity main.
+PR #20 was reviewed through `ea1015e1`. Its reachable host advertisements
+and replies to game searches from outside the LAN remain included. Upstream's
+new socket-port tracking replaces the earlier invite-port restriction. The
+latest ANGLE framebuffer/blit correction (`ea1015e1`) is also included.
+Automatic Tailscale lookup, alternate compilation and ray-traced lighting
+remain separate. The Mac renderer streams geometry to avoid stale cached
+walls after changing from Prisoner to Chill Out.
 
 ## Connect the devices
 
@@ -142,7 +141,7 @@ build/macos/tests/host_network
 ```
 
 It checks discovery sends, connected gameplay sends with explicit and omitted
-destinations, empty datagrams, received
+destinations, empty datagrams, truncated datagrams, received
 addresses and refusal to redirect a mismatched destination to the connected peer.
 It also runs as part of `python3 tools/test_macos_runtime.py`.
 

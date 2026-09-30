@@ -70,6 +70,21 @@ int main(void) {
     assert(posix_socket_sendto(client, connected, sizeof(connected), 0, NULL, 0) == sizeof(connected));
     receive_packet(server, &client_address, connected, sizeof(connected));
 
+    /* Upstream rejects truncated UDP messages instead of parsing a prefix. */
+    const char large[] = "a datagram longer than the receiving buffer";
+    assert(posix_socket_sendto(client, large, sizeof(large), 0,
+                              &server_address, sizeof(server_address)) == sizeof(large));
+    struct pollfd ready = {.fd = server, .events = POLLIN};
+    assert(poll(&ready, 1, 1000) == 1 && (ready.revents & POLLIN));
+    char prefix[4];
+    struct guest_address from;
+    int from_length = sizeof(from);
+    assert(posix_socket_recvfrom(server, prefix, sizeof(prefix), 0,
+                                &from, &from_length) == -1);
+    assert(posix_socket_last_error() == 10040); /* WSAEMSGSIZE */
+    assert(from_length == sizeof(from) && from.family == AF_INET);
+    assert(from.port == client_address.port && from.address == client_address.address);
+
     /* The fallback must never redirect a different destination to the connected peer. */
     assert(posix_socket_sendto(client, update, sizeof(update), 0,
                               &other_address, sizeof(other_address)) == -1);

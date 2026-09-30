@@ -489,62 +489,6 @@ int WSAAPI WSACleanup(void)
 	return 0;
 }
 
-/* ---------- the game's own sockets
-
-Internet play's tunnel (p2p.c) delivers a peer's traffic only to ports the
-game's own sockets are bound to (xnet_is_game_port), never to other
-programs listening on this machine. */
-
-#define MAXIMUM_GAME_SOCKETS 256
-
-static int game_sockets[MAXIMUM_GAME_SOCKETS];
-static int game_socket_count;
-static pthread_mutex_t game_sockets_lock = PTHREAD_MUTEX_INITIALIZER;
-
-static void game_socket_add(int socket)
-{
-	pthread_mutex_lock(&game_sockets_lock);
-	if (game_socket_count < MAXIMUM_GAME_SOCKETS)
-		game_sockets[game_socket_count++] = socket;
-	pthread_mutex_unlock(&game_sockets_lock);
-}
-
-static void game_socket_remove(int socket)
-{
-	int index;
-
-	pthread_mutex_lock(&game_sockets_lock);
-	for (index = 0; index < game_socket_count; index++)
-	{
-		if (game_sockets[index] == socket)
-		{
-			game_sockets[index] = game_sockets[--game_socket_count];
-			break;
-		}
-	}
-	pthread_mutex_unlock(&game_sockets_lock);
-}
-
-int xnet_is_game_port(unsigned short port)
-{
-	int index, found = 0;
-
-	pthread_mutex_lock(&game_sockets_lock);
-	for (index = 0; index < game_socket_count && !found; index++)
-	{
-		struct sockaddr_in bound;
-		int length = sizeof(bound);
-
-		if (posix_socket_getsockname(game_sockets[index], &bound, &length) == 0 &&
-			bound.sin_family == AF_INET && bound.sin_port == port)
-		{
-			found = 1;
-		}
-	}
-	pthread_mutex_unlock(&game_sockets_lock);
-	return found;
-}
-
 SOCKET WSAAPI halo_ws_socket(int family, int type, int protocol)
 {
 	int result = posix_socket(family, type, protocol);
@@ -554,7 +498,6 @@ SOCKET WSAAPI halo_ws_socket(int family, int type, int protocol)
 		WSASetLastError(posix_socket_last_error());
 		return INVALID_SOCKET;
 	}
-	game_socket_add(result);
 	/* (the game's connections: every tick's messages go at once) */
 	if (type == SOCK_STREAM)
 		posix_socket_set_nodelay(result);
@@ -563,7 +506,6 @@ SOCKET WSAAPI halo_ws_socket(int family, int type, int protocol)
 
 int WSAAPI halo_ws_closesocket(SOCKET socket)
 {
-	game_socket_remove((int)socket);
 	remote_searcher_socket_closed((int)socket);
 	p2p_socket_closed((int)socket);
 	delayed_closed((int)socket);
@@ -649,7 +591,6 @@ SOCKET WSAAPI halo_ws_accept(SOCKET socket, struct sockaddr *address, int *addre
 		WSASetLastError(posix_socket_last_error());
 		return INVALID_SOCKET;
 	}
-	game_socket_add(result);
 	posix_socket_set_nodelay(result);
 	peer_incoming_address(1, address, address_length);
 	return (SOCKET)result;

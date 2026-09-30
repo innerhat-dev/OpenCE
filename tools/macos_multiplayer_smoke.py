@@ -32,7 +32,6 @@ def prepare(folder, role, mode, seconds, host_address, client_address):
     config = f'''[network]
 address = "{address}"
 broadcast = "{broadcast}"
-netcode = "distributed"
 online = {str(mode == "invite").lower()}
 allow_upnp = false
 join_from_clipboard = false
@@ -63,6 +62,8 @@ def main():
     parser.add_argument("--seconds", type=int, default=65)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--guest", type=Path, default=BUILD / "halo_guest.elf")
+    parser.add_argument("--executable", type=Path, default=BUILD / "halo",
+                        help="Native executable, including one inside a candidate app bundle")
     parser.add_argument("--host-address", help="A configured local IPv4 address, other than 127.0.0.1")
     parser.add_argument("--client-address", help="Another configured local IPv4 address")
     args = parser.parse_args()
@@ -101,7 +102,7 @@ def main():
             folder = out / role
             folders[role] = folder
             environment = prepare(folder, role, args.mode, args.seconds, host_address, client_address)
-            command = [str(BUILD / "halo"), str(args.guest.resolve())]
+            command = [str(args.executable.resolve()), str(args.guest.resolve())]
             if role == "client" and args.mode == "invite":
                 deadline = time.monotonic() + 40
                 invite = None

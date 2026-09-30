@@ -126,6 +126,11 @@ access to its neighbors. Texture write tracking therefore has 16 KB granularity.
 Fresh heap mappings are explicitly recreated: Darwin's `MADV_DONTNEED` alone
 does not guarantee the zero-filled pages expected by musl.
 
+The Mac renderer streams current vertex and index data instead of reusing the
+contiguous geometry mirror. This prevents missing walls after switching maps
+(reproduced from Prisoner to Chill Out). It increases geometry upload work;
+the cache can be restored once its Mac write tracking is reliable.
+
 SDL video stays on the real main thread. Audio mixing runs on a guest-stack
 worker, with the results returned to SDL's callback thread before submission.
 This avoids a cross-thread stream-lock deadlock. Mouse capture is enabled on
