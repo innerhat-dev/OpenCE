@@ -1,11 +1,24 @@
-# Halo: Combat Evolved for Linux, Windows and Android
+Halo CE Universal — Apple Silicon and iPhone
+=============
 
-This project is a port of the Halo: Combat Evolved decompilation to Linux,
-Windows and Android. The decompilation is of the Xbox build 2342
-(`cachebeta.exe`, SHA-256
-`4cc87b45f721270392a96f1674ed2b5cd4a7bb4355faeab4531d1cf1884d9520`).
+This fork adds playable native Apple Silicon macOS and iPhone builds to
+[cybersecurity/halo-ce-universal](https://github.com/cybersecurity/halo-ce-universal).
+It builds on the decompilation of Halo: Combat Evolved build 2342
+(`cachebeta.exe`, sha256 `4cc87b45f721270392a96f1674ed2b5cd4a7bb4355faeab4531d1cf1884d9520`).
 
-<img width="1289" height="995" alt="The game on Linux" src="https://github.com/user-attachments/assets/0d3ad50f-f8b8-46cf-aef8-e3661da2a7d7" />
+**Start here: [Apple build setup](docs/apple-build.md)**, then follow the
+[Mac instructions](port/macos/README.md#build) or
+[iPhone instructions](port/ios/README.md#build).
+The Apple renderer uses ANGLE's Metal backend. Mac keyboard/mouse and iPhone
+touch gameplay and audio have been tested; physical iPhone gamepad play and
+the full campaign still need testing.
+
+This is a source-only repository. Supply your own original Xbox game data and
+August 2001 XDK headers locally. Game images, maps, the XDK, signing identities,
+provisioning profiles and built apps are not included. iPhone developers use
+their own Apple development team and app identifier.
+
+![Halo: Combat Evolved main menu running on Apple Silicon macOS](docs/images/main-menu.png)
 
 The port starts from the decompilation of [bnunu/halo-1](https://github.com/bnunu/halo-1).
 That project is a fork of [punpckhdq/halo](https://github.com/punpckhdq/halo).
@@ -21,18 +34,22 @@ builds of the latest release:
 | Windows | [halo-windows-release.zip](https://github.com/cybersecurity/halo-ce-universal/releases/latest/download/halo-windows-release.zip) | [halo-windows-debug.zip](https://github.com/cybersecurity/halo-ce-universal/releases/latest/download/halo-windows-debug.zip) |
 | Android | [halo-android-release.zip](https://github.com/cybersecurity/halo-ce-universal/releases/latest/download/halo-android-release.zip) | [halo-android-debug.zip](https://github.com/cybersecurity/halo-ce-universal/releases/latest/download/halo-android-debug.zip) |
 
-Use the release build to play. The debug build stops at the first failed
-assertion and writes it to the log. Use the debug build to find and report
-problems.
+For Apple platforms, use the [Apple build setup](docs/apple-build.md) and
+platform guides above; their scripts configure the build automatically.
+The following instructions also cover the inherited Linux, Windows, Android
+and byte-matching builds.
+
+You must source the August 2001 Xbox SDK yourself, and you need Python and [ninja-build](https://ninja-build.org/) on your PATH. Extract the `XDK/xbox` folder from the installer into the repository root such that `xbox/{bin,include}` are valid paths, then run `configure.py` from the repository root.
 
 The game updates itself. At start-up it looks for a newer release, and asks
 if you want to install it. Refer to "Updates" in
 [port/linux/README.md](port/linux/README.md#updates).
 
-Each build of the `main` branch that passes on all three platforms is a new
+Each build of the upstream `main` branch that passes on all three platforms is a new
 release. The [Releases](https://github.com/cybersecurity/halo-ce-universal/releases)
 page keeps the last five releases. If the latest build has a problem, get
-an older build from that page.
+an older build from that page. This fork keeps CI builds as artifacts;
+working on its `main` does not automatically publish a release or post to Discord.
 
 ## Game data
 
@@ -71,7 +88,7 @@ The game can play system link games on a local network and on the internet:
 - Linux, Windows and Android machines can play in the same game.
 - An invite link lets a machine join a game on the internet. No server of
   this project is necessary.
-- The default netcode is new. Each machine moves its own player at once,
+- The netcode is new. Each machine moves its own player at once,
   and the host makes the decisions for the game. Refer to
   [port/linux/NETCODE.md](port/linux/NETCODE.md).
 
@@ -88,11 +105,20 @@ To build the game:
 3. In the root folder of the repository, enter `python configure.py`.
 4. Enter `ninja` with the target for the platform:
 
-| Target | Result |
-| --- | --- |
-| `ninja linux` | `build/linux/halo` |
-| `ninja windows` (on Windows) | `build/windows/halo.exe` and `SDL3.dll` |
-| `ninja android_apk` | `port/android/app/build/outputs/apk/debug/app-debug.apk` |
+### iPhone development build
+
+The experimental iPhone port targets iOS 26+ with signed ARM game code, a
+Metal-backed renderer, touch controls and gamepad support. See
+[port/ios/README.md](port/ios/README.md) for the Xcode build and device signing.
+
+### Apple Silicon macOS build
+
+`python3 tools/macos_build.py` builds a native ARM64 Mac app using ANGLE's Metal
+backend. Campaign gameplay, mouse capture, and audio have been confirmed on an
+M5 Mac. See [port/macos/README.md](port/macos/README.md) for dependency setup,
+launch instructions, validation limits, and the next performance phase.
+
+### Android build
 
 If you enter `ninja` without a target, ninja builds the game for the
 computer that you use.
@@ -136,13 +162,3 @@ To record a new profile:
 The build then plays the main menu and the first minute of each campaign
 level. This procedure continues for approximately 15 minutes. The game
 data must be in `assets/`.
-
-### The byte-matching build
-
-The original project also has a byte-matching build. That build compiles
-the game with the compiler of the Xbox SDK and compares the result with
-`cachebeta.exe`. This project does not generate that build, because the
-Xbox SDK is not free to distribute. The sources of that build are not
-changed. To use the build again, set `SolutionConfig.matching` in
-`tools/project_x86.py`. You must also have the Xbox SDK in `xbox/` and
-`cachebeta.exe` in the root folder.
