@@ -133,6 +133,47 @@ enum
 
 static HANDLE discord_pipes[MAXIMUM_DISCORD_PIPES];
 
+/* a token's user, into buffer; NULL if not had */
+static PSID token_user(HANDLE token, BYTE *buffer, DWORD size)
+{
+	DWORD length = 0;
+
+	if (!GetTokenInformation(token, TokenUser, buffer, size, &length))
+		return NULL;
+	return ((TOKEN_USER *)buffer)->User.Sid;
+}
+
+/* whether the pipe's server runs as this process's user (pipe names are
+the whole machine's: another user may make one, and would be given the
+invite) */
+static int pipe_server_is_this_user(HANDLE pipe)
+{
+	BYTE ours[256], theirs[256];
+	ULONG process_id = 0;
+	HANDLE process, token;
+	PSID our_user = NULL, their_user = NULL;
+	int result;
+
+	if (!GetNamedPipeServerProcessId(pipe, &process_id))
+		return 0;
+	if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+	{
+		our_user = token_user(token, ours, sizeof(ours));
+		CloseHandle(token);
+	}
+	process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process_id);
+	if (!process)
+		return 0;
+	if (OpenProcessToken(process, TOKEN_QUERY, &token))
+	{
+		their_user = token_user(token, theirs, sizeof(theirs));
+		CloseHandle(token);
+	}
+	CloseHandle(process);
+	result = our_user && their_user && EqualSid(our_user, their_user);
+	return result;
+}
+
 int posix_discord_connect(void)
 {
 	int slot;
@@ -148,14 +189,17 @@ int posix_discord_connect(void)
 		HANDLE pipe;
 
 		snprintf(name, sizeof(name), "\\\\.\\pipe\\discord-ipc-%d", number);
-		pipe = CreateFileA(name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+		/* (the pipe's server may only identify this user, not act as them:
+		it may be another user's) */
+		pipe = CreateFileA(name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
+			SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, NULL);
 		if (pipe != INVALID_HANDLE_VALUE)
 		{
 			/* writes never wait (the p2p thread holds its lock): a write takes
 			what fits in the pipe */
 			DWORD mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
 
-			if (!SetNamedPipeHandleState(pipe, &mode, NULL, NULL))
+			if (!pipe_server_is_this_user(pipe) || !SetNamedPipeHandleState(pipe, &mode, NULL, NULL))
 			{
 				CloseHandle(pipe);
 				continue;
@@ -185,7 +229,8 @@ int posix_discord_read(int handle, void *buffer, int length)
 
 	if (handle < 0 || handle >= MAXIMUM_DISCORD_PIPES || !discord_pipes[handle])
 		return -1;
-	/* the pipe is blocking: read only what is already there */
+	/* only what is already there: a pipe that does not wait fails a read
+	of nothing (ERROR_NO_DATA) as if it had closed */
 	if (!PeekNamedPipe(discord_pipes[handle], NULL, 0, NULL, &available, NULL))
 		return -1;
 	if (!available)

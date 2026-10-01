@@ -15,13 +15,17 @@ enum
 	/* a machine's identifier: from the hash of its public key (which is new
 	each run), and also its XNADDR's abEnet */
 	P2P_IDENTIFIER_SIZE = 6,
+	/* what an invite holds of the host's public key: the first bytes of its
+	SHA-256 (of which the identifier is the first 6), so that no other key
+	can be found to pass for it */
+	P2P_KEY_HASH_SIZE = 16,
 	/* an invite's secret */
 	P2P_TOKEN_SIZE = 16,
 	/* the addresses a machine offers to be reached at */
 	P2P_MAXIMUM_CANDIDATES = 4,
-	/* an invite link's text: "halo://join/", the host's identifier and the
+	/* an invite link's text: "halo://join/", the host's key hash and the
 	token in hexadecimal, and a terminator */
-	P2P_LINK_SIZE = 64,
+	P2P_LINK_SIZE = 12 + 2 * (P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE) + 1,
 	/* the most machines one tunnels to: a host and the rest of a system
 	link game's 128 machines (include/halo_port_limits.h) */
 	P2P_MAXIMUM_PEERS = 127,
@@ -55,8 +59,13 @@ identifier is (p2p_identifier) */
 const unsigned char *p2p_public_key(void);
 /* the identifier of the machine with this public key */
 void p2p_identifier_for(const unsigned char *public_key, unsigned char *identifier);
+/* the hash of a public key an invite holds (P2P_KEY_HASH_SIZE bytes), and
+the identifier of the machine whose key has that hash */
+void p2p_key_hash(const unsigned char *public_key, unsigned char *hash);
+void p2p_identifier_from_hash(const unsigned char *hash, unsigned char *identifier);
 /* the X25519 secret this machine shares with the one with that public key;
-0 if the key is unusable (one giving a known secret) */
+0 if the key is unusable (one giving a known secret). The p2p thread's: it
+lets go of the p2p lock while it works it out */
 int p2p_shared_secret(const unsigned char *public_key, unsigned char *shared);
 /* a joiner (on the host) or the host (on a joiner) offered its addresses
 through signalling, with the secret of a session (P2P_SHA256_SIZE bytes) its
@@ -65,6 +74,11 @@ turned away: another session with that machine lives (it must lapse first),
 this one has ended, or there is no room */
 int p2p_peer_offered(const unsigned char *identifier, const unsigned char *secret,
 	const struct p2p_candidate *candidates, int count, int is_host);
+/* whether p2p_peer_offered would turn a new session with that machine away
+now (it is this machine, a session with it lives, there is no room, or, as
+a host, too many players are being reached): checked before its secret is
+worked out */
+int p2p_peer_turned_away(const unsigned char *identifier, int is_host);
 /* ... more addresses of a machine whose session (that secret's) lives: 0 if
 none does (a session that has ended is never taken up again: its keys'
 packet numbers would start again) */
@@ -85,9 +99,11 @@ void p2p_signal_update(const int *read, int read_count, const int *write, int wr
 /* hosting: listen for joiners who hold this token */
 void p2p_signal_host(const unsigned char *token);
 void p2p_signal_stop_hosting(void);
-/* joining: ask the host with this identifier, holding this token, until it
-answers (or p2p_signal_stop_joining) */
-void p2p_signal_join(const unsigned char *host_identifier, const unsigned char *token);
+/* joining: ask the host whose public key has this hash (p2p_key_hash),
+holding this token, until it answers (or p2p_signal_stop_joining); each call
+asks anew, with a new nonce (as after the session with the host ended
+before the tunnel reached it: the host makes one session of a request) */
+void p2p_signal_join(const unsigned char *host_hash, const unsigned char *token);
 void p2p_signal_stop_joining(void);
 /* whether any broker is connected */
 int p2p_signal_connected(void);

@@ -82,10 +82,18 @@ static SDL_Window *metal_window;
 static SDL_MetalView metal_view;
 static int metal_window_hidden;
 static int metal_swap_interval = 1;
+#ifndef HALO_IOS
+static int command_held;
+#endif
 
 /* ---------- general */
 
 int host_sdl_init(uint32_t flags) {
+#ifndef HALO_IOS
+    /* Handle close requests ourselves so Command-W does not also queue
+       SDL_EVENT_QUIT while W is being used to move. */
+    SDL_SetHint(SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, "0");
+#endif
     if (!SDL_Init((SDL_InitFlags)flags))
         return 0;
     SDL_SetEventEnabled(SDL_EVENT_DROP_FILE, true);
@@ -255,6 +263,21 @@ int host_sdl_poll_event(void *event) {
 
     if (!SDL_PollEvent(&host_event))
         return 0;
+#ifndef HALO_IOS
+    if (host_event.type == SDL_EVENT_KEY_DOWN || host_event.type == SDL_EVENT_KEY_UP) {
+        command_held = host_event.key.scancode == SDL_SCANCODE_LGUI ||
+                       host_event.key.scancode == SDL_SCANCODE_RGUI
+                           ? host_event.key.down : (host_event.key.mod & SDL_KMOD_GUI) != 0;
+    }
+    if (host_event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+        if (command_held) {
+            host_logf(HOST_LOG_INFO, "Command-W does not close the game; use Command-Q to quit");
+            memset(event, 0, sizeof(host_event));
+            return 1;
+        }
+        host_event.type = SDL_EVENT_QUIT;
+    }
+#endif
     /* Cocoa sends opened URLs as drop-file events. Consume the native
        string here; the guest's 32-bit SDL event cannot hold that pointer. */
     if (host_event.type == SDL_EVENT_DROP_FILE || host_event.type == SDL_EVENT_DROP_TEXT) {

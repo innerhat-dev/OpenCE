@@ -61,7 +61,7 @@ int main(void) {
     char directory[] = "/tmp/halo-invite-event.XXXXXX";
     assert(mkdtemp(directory));
     assert(setenv("HALO_SAVE_ROOT", directory, 1) == 0);
-    const char *invite = "halo://join/0123456789ab0123456789abcdef0123456789abcdef";
+    const char *invite = "halo://join/0123456789abcdef0123456789abcdeffedcba9876543210fedcba9876543210";
     SDL_Event drop = {.type = SDL_EVENT_DROP_FILE};
     drop.drop.data = invite;
     assert(SDL_PushEvent(&drop));
@@ -84,6 +84,30 @@ int main(void) {
     assert(strcmp(text, invite) == 0);
     assert(unlink(path) == 0 && rmdir(directory) == 0);
     puts("SDL opened-invite event delivered without a native pointer in the guest");
+    /* Command-W must not turn a movement key into a quit, while the
+       window's close button and Command-Q still deliver a quit event. */
+    SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
+    SDL_Event command = {.type = SDL_EVENT_KEY_DOWN};
+    command.key.scancode = SDL_SCANCODE_LGUI;
+    command.key.mod = SDL_KMOD_GUI;
+    command.key.down = true;
+    assert(SDL_PushEvent(&command));
+    SDL_Event close = {.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED};
+    assert(SDL_PushEvent(&close));
+    command.type = SDL_EVENT_KEY_UP;
+    command.key.mod = SDL_KMOD_NONE;
+    command.key.down = false;
+    assert(SDL_PushEvent(&command));
+    assert(SDL_PushEvent(&close));
+    SDL_Event quit = {.type = SDL_EVENT_QUIT};
+    assert(SDL_PushEvent(&quit));
+    int suppressed = 0, quits = 0;
+    while (host_sdl_poll_event(&guest_event)) {
+        suppressed += guest_event.type == 0;
+        quits += guest_event.type == SDL_EVENT_QUIT;
+    }
+    assert(suppressed == 1 && quits == 2);
+    puts("Command-W ignored; window close and Command-Q still quit");
     SDL_AudioSpec spec = {.format = SDL_AUDIO_F32, .channels = 2, .freq = 48000};
     uint32_t stream = host_sdl_open_audio_stream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, 1, 0);
     assert(stream);

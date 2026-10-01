@@ -42,8 +42,14 @@ int posix_discord_connect(void) {
             if (flags >= 0 && fcntl(fd, F_SETFD, FD_CLOEXEC) == 0 &&
                 fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0 &&
                 setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &enabled, sizeof(enabled)) == 0 &&
-                connect(fd, (const struct sockaddr *)&address, address.sun_len) == 0)
-                return fd;
+                connect(fd, (const struct sockaddr *)&address, address.sun_len) == 0) {
+                /* Like upstream's SO_PEERCRED check, only share an invite
+                   with a socket belonging to this user. */
+                uid_t user;
+                gid_t group;
+                if (getpeereid(fd, &user, &group) == 0 && user == getuid())
+                    return fd;
+            }
             close(fd);
         }
     }

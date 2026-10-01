@@ -21,7 +21,9 @@ debug.network_test_kill (the host kills the last player every so often),
 debug.network_test_shoot (every so often each machine's player hits the
 next with their weapon's projectile: a client's through its report to the
 host) and debug.network_test_vehicle (the host seats the last player as a
-vehicle's driver that many seconds in, and takes them out 15 seconds on)
+vehicle's driver that many seconds in, takes them out 15 seconds on, and 5
+seconds later stands them at a vehicle's driver's entrance, where a joining
+machine's player holds the action button, as getting in does)
 and debug.network_test_pickup (the last player stands on a weapon lying
 about that many seconds in, and a joining machine's player holds the action
 button a second later, to pick it up).
@@ -294,7 +296,8 @@ static void network_test_log_players(
 }
 
 /* each of this machine's players hits the next player with their weapon's
-projectile, as its impact would */
+projectile, as its impact would, when it is within the projectile's reach
+(as a real shot is: the host checks it) */
 static void network_test_shoot(
 	void)
 {
@@ -312,6 +315,8 @@ static void network_test_shoot(
 		struct weapon_definition *weapon;
 		struct weapon_trigger_definition *trigger;
 		long damage_index = NONE;
+		real reach = 0.0f;
+		boolean melee;
 		struct damage_data damage;
 		struct object_datum *target_object;
 		real_vector3d direction;
@@ -341,19 +346,56 @@ static void network_test_shoot(
 		{
 			trigger = TAG_BLOCK_GET_ELEMENT(&weapon->weapon.triggers, 0, struct weapon_trigger_definition);
 			if (trigger->projectile.index != NONE)
-				damage_index = projectile_definition_get(trigger->projectile.index)->projectile.impact_damage.index;
+			{
+				struct projectile_definition *projectile = projectile_definition_get(trigger->projectile.index);
+
+				damage_index = projectile->projectile.impact_damage.index;
+				/* (how far it flies: its range, or at its speed for as long as
+				its timer runs; none for no bound, network_damage.c) */
+				if (projectile->projectile.maximum_range > 0.0f)
+					reach = projectile->projectile.maximum_range;
+				else if (projectile->projectile.detonation_timer_starts == 0)
+				{
+					reach = projectile->projectile.timer_upper_bound * TICKS_PER_SECOND *
+						MAX(projectile->projectile.initial_velocity, projectile->projectile.final_velocity);
+				}
+			}
 		}
-		if (damage_index == NONE)
+		/* (else its melee: a blow's epicenter is its striker's, as
+		unit_cause_player_melee_damage has it) */
+		melee = damage_index == NONE;
+		if (melee)
 			damage_index = weapon->weapon.melee_attack_damage.index;
 		if (damage_index == NONE)
 			continue;
 		target_object = object_get(target->unit_index);
+		/* (a blow reaches only a target at hand, as the host checks) */
+		if (melee)
+		{
+			real dx = target_object->object.position.x - unit->object.position.x;
+			real dy = target_object->object.position.y - unit->object.position.y;
+			real dz = target_object->object.position.z - unit->object.position.z;
+
+			if (dx * dx + dy * dy + dz * dz > 1.5f * 1.5f)
+				continue;
+		}
+		/* (a shot reaches no further than its projectile flies, with a margin
+		for how far the target is from where the shot started) */
+		else if (reach > 0.0f)
+		{
+			real dx = target_object->object.position.x - unit->object.position.x;
+			real dy = target_object->object.position.y - unit->object.position.y;
+			real dz = target_object->object.position.z - unit->object.position.z;
+
+			if (dx * dx + dy * dy + dz * dz > 0.9f * reach * 0.9f * reach)
+				continue;
+		}
 		damage_data_new(&damage, damage_index);
 		damage.owner_player_index = iterator.datum_index;
 		damage.owner_object_index = player->unit_index;
 		damage.owner_team_index = unit->object.owner_team_index;
-		damage.origin = target_object->object.position;
-		damage.epicenter = target_object->object.position;
+		damage.origin = melee ? unit->object.bounding_sphere_center : target_object->object.position;
+		damage.epicenter = melee ? unit->object.bounding_sphere_center : target_object->object.position;
 		direction.i = target_object->object.position.x - unit->object.position.x;
 		direction.j = target_object->object.position.y - unit->object.position.y;
 		direction.k = target_object->object.position.z - unit->object.position.z;
@@ -368,6 +410,79 @@ static void network_test_shoot(
 }
 
 /* the host seats the last player as the nearest vehicle's driver, or out */
+/* the host brings the players far from the first (on foot) near it, so
+that they are within their weapons' reach (network_test_shoot shoots only
+so near, as a player does); the host moving a client's player, as a
+teleporter does */
+static void network_test_gather(
+	boolean leave_last)
+{
+	struct data_iterator iterator;
+	struct player_datum *player;
+	struct player_datum *first = NULL;
+	struct player_datum *last = NULL;
+	short count = 0;
+
+	data_iterator_new(&iterator, player_data);
+	while ((player = (struct player_datum *)data_iterator_next(&iterator)) != NULL)
+	{
+		if (!first)
+			first = player;
+		last = player;
+	}
+	if (!first || first->unit_index == NONE)
+		return;
+	data_iterator_new(&iterator, player_data);
+	while ((player = (struct player_datum *)data_iterator_next(&iterator)) != NULL)
+	{
+		struct object_datum const *center = object_get(first->unit_index);
+		struct object_datum *unit;
+		real_point3d position;
+		real dx, dy, dz;
+
+		if (player == first || player->unit_index == NONE || (leave_last && player == last))
+			continue;
+		count++;
+		unit = object_get(player->unit_index);
+		if (unit->object.parent_object_index != NONE || TEST_FLAG(unit->object.damage_flags, _object_dead_bit))
+			continue;
+		dx = unit->object.position.x - center->object.position.x;
+		dy = unit->object.position.y - center->object.position.y;
+		dz = unit->object.position.z - center->object.position.z;
+		if (dx * dx + dy * dy + dz * dz <= 20.0f * 20.0f)
+			continue;
+		/* (beside it, where the map is open: at its feet and its head) */
+		{
+			static real const offsets[][2] = { { 1.5f, 0.0f }, { -1.5f, 0.0f }, { 0.0f, 1.5f }, { 0.0f, -1.5f },
+				{ 1.5f, 1.5f }, { -1.5f, -1.5f }, { 1.5f, -1.5f }, { -1.5f, 1.5f } };
+			short try_index;
+
+			for (try_index = 0; try_index < (short)NUMBEROF(offsets); try_index++)
+			{
+				short index = (short)((count + try_index) % (short)NUMBEROF(offsets));
+				struct location feet, head;
+				real_point3d above;
+
+				position = center->object.position;
+				position.x += offsets[index][0];
+				position.y += offsets[index][1];
+				position.z += 0.2f;
+				above = position;
+				above.z += 0.7f;
+				scenario_location_from_point(&feet, &position);
+				scenario_location_from_point(&head, &above);
+				if (feet.cluster_index != NONE && head.cluster_index != NONE)
+					break;
+			}
+			if (try_index >= (short)NUMBEROF(offsets))
+				continue;
+		}
+		object_set_position(player->unit_index, &position, NULL, NULL);
+		platform_log("network test: the host brings player %ld near the first",
+			(long)(player - (struct player_datum *)player_data->data));
+	}
+}
+
 static void network_test_vehicle(
 	boolean enter)
 {
@@ -424,6 +539,62 @@ static void network_test_vehicle(
 		}
 		platform_log("network test: the last player cannot drive vehicle %lx", nearest_index);
 	}
+}
+
+/* both machines stand the last player at the driver's entrance of the
+nearest vehicle no one rides (a joining machine's player then holds the
+action button, as a player getting in does) */
+static void network_test_vehicle_approach(
+	void)
+{
+	struct data_iterator iterator;
+	struct player_datum *player;
+	struct player_datum *last = NULL;
+	struct object_iterator vehicles;
+	long nearest_index = NONE;
+	real nearest_distance = 0.0f;
+
+	data_iterator_new(&iterator, player_data);
+	while ((player = (struct player_datum *)data_iterator_next(&iterator)) != NULL)
+		last = player;
+	if (!last || last->unit_index == NONE || object_get(last->unit_index)->object.parent_object_index != NONE)
+		return;
+	object_iterator_new(&vehicles, _object_mask_vehicle, 0);
+	while (object_iterator_next(&vehicles))
+	{
+		struct unit_datum *vehicle = unit_get(vehicles.index);
+		/* (the same vehicle on every machine: the lowest index) */
+		real distance = (real)DATUM_INDEX_TO_ABSOLUTE_INDEX(vehicles.index);
+
+		if (vehicle->unit.driver_object_index != NONE || TEST_FLAG(vehicle->object.damage_flags, _object_dead_bit))
+			continue;
+		if (nearest_index == NONE || distance < nearest_distance)
+		{
+			nearest_index = vehicles.index;
+			nearest_distance = distance;
+		}
+	}
+	if (nearest_index != NONE)
+	{
+		short seat_index;
+
+		for (seat_index = 0; seat_index < unit_definition_get(object_get(nearest_index)->definition_index)->unit.seats.count;
+			seat_index++)
+		{
+			real_point3d entrance;
+			real_point3d seat;
+
+			if (unit_seat_is_driver(nearest_index, seat_index) &&
+				unit_get_seat_entrance_point(last->unit_index, nearest_index, seat_index, &entrance, &seat, NULL))
+			{
+				object_set_position(last->unit_index, &entrance, NULL, NULL);
+				platform_log("network test: the last player stands at vehicle %lx's driver's entrance (%.2f %.2f %.2f)",
+					nearest_index, entrance.x, entrance.y, entrance.z);
+				return;
+			}
+		}
+	}
+	platform_log("network test: no vehicle to get into");
 }
 
 /* the host gives the last player a second weapon, lying about */
@@ -539,6 +710,16 @@ void network_test_update(
 		{
 			network_test_shoot();
 		}
+		/* (the host brings the players near a second before they shoot;
+		not the last while the vehicle test has it) */
+		if (network_test.mode == _network_test_host && network_test.shoot_interval > 0.0f &&
+			(game_time_get() + TICKS_PER_SECOND) % MAX(1, (long)(network_test.shoot_interval * TICKS_PER_SECOND)) <
+				TICKS_PER_SECOND)
+		{
+			long vehicle_time = (long)(network_test.vehicle_time * TICKS_PER_SECOND);
+
+			network_test_gather(network_test.vehicle_time > 0.0f && game_time_get() >= vehicle_time - 2 * TICKS_PER_SECOND);
+		}
 		if (network_test.pickup_time > 0.0f)
 		{
 			long pickup_time = (long)(network_test.pickup_time * TICKS_PER_SECOND);
@@ -574,6 +755,20 @@ void network_test_update(
 				game_time_get() - enter_time - 15 * TICKS_PER_SECOND < TICKS_PER_SECOND)
 			{
 				network_test_vehicle(FALSE);
+			}
+		}
+		/* ... and 20 seconds on, the last player getting in as a player does:
+		at the entrance, the button held for three seconds */
+		if (network_test.vehicle_time > 0.0f)
+		{
+			long approach_time = (long)(network_test.vehicle_time * TICKS_PER_SECOND) + 20 * TICKS_PER_SECOND;
+
+			if (game_time_get() >= approach_time && game_time_get() - approach_time < TICKS_PER_SECOND)
+				network_test_vehicle_approach();
+			if (network_test.mode == _network_test_join && network_test.pickup_time <= 0.0f)
+			{
+				test_input_hold_action(game_time_get() >= approach_time + TICKS_PER_SECOND &&
+					game_time_get() < approach_time + 4 * TICKS_PER_SECOND);
 			}
 		}
 		/* debug.network_test_kill: the host kills the last player every so

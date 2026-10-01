@@ -340,6 +340,9 @@ void players_dispose(
 
 long *machine_get_player_list(
 	long machine_index);
+/* port: the player (its datum index) is no longer any machine's */
+void machine_remove_player(
+	long player_index);
 
 long player_new(
 	long machine_index,
@@ -411,6 +414,8 @@ void players_update_before_game(
 	void);
 void players_update_after_game(
 	void);
+void players_show_telefragged(
+	long player_index);
 void players_debug_render(
 	void);
 void debug_player_teleport(

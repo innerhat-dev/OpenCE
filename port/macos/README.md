@@ -107,6 +107,9 @@ and accepts Discord game invitations. Hosting a System Link game publishes
 to make it visible. The installed app handles both `halo://` links and the
 upstream Discord application's launch scheme, so an invite can start Halo
 when it is closed. Ordinary campaign/client gameplay does not publish activity.
+This branch uses multiplayer protocol 7 and 64-digit invite codes; all players
+need matching builds. Command-W is ignored while playing, and Command-Q or
+the window's close button quits.
 
 ## Build
 

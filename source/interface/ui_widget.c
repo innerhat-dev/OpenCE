@@ -2312,11 +2312,12 @@ static struct widget_instance *ui_widget_launch_widget(
 	struct widget_instance *new_widget;
 	short local_player_index;
 
-	/* port: the multiplayer menus open only on maps of a build that plays
-	multiplayer with the others (cache_files.c, cache_files_multiplayer_region);
-	otherwise the player is told why, and the main menu stays */
+	/* port: the menus of multiplayer with other machines (not split screen's
+	or co-op's) open only on maps of a build that plays multiplayer with the
+	others (cache_files.c, cache_files_multiplayer_region); otherwise the
+	player is told why, and the menu stays */
 	{
-		static char const multiplayer_menus[] = "ui\\shell\\main_menu\\multiplayer_type_select\\";
+		static char const multiplayer_menus[] = "ui\\shell\\main_menu\\multiplayer_type_select\\connected\\";
 		char const *name = tag_get_name(new_widget_tag_index);
 		char build[0x20];
 
@@ -2324,16 +2325,7 @@ static struct widget_instance *ui_widget_launch_widget(
 			!csstrncmp(name, multiplayer_menus, sizeof(multiplayer_menus) - 1) &&
 			!cache_files_multiplayer_region(build))
 		{
-			void platform_log(char const *format, ...);
-			void platform_show_message(char const *title, char const *message);
-			char message[256];
-
-			platform_log("multiplayer is unavailable: maps of build %s are not supported", build);
-			csprintf(
-				message,
-				"Your maps (build %s) aren't supported for multiplayer yet.\n\nAsk in the Discord to get them added.",
-				build);
-			platform_show_message("Halo: multiplayer unavailable", message);
+			cache_files_show_multiplayer_unavailable(NULL, build);
 
 			return NULL;
 		}

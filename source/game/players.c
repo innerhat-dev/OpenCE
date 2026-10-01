@@ -1127,6 +1127,37 @@ static void machine_add_player(
 	return;
 }
 
+/* port: a player who left the game in progress is no longer its machine's
+(its datum stays until the game ends): a machine that joins at the same index
+fills the list from its first free entry, and the old players' entries left
+it full, or its players taken for the old ones */
+void machine_remove_player(
+	long player_index)
+{
+	long machine_index;
+	long machine_player_index;
+
+	if (player_index == NONE)
+		return;
+	for (machine_index = 0; machine_index < MAXIMUM_NETWORK_MACHINE_COUNT; machine_index++)
+	{
+		for (machine_player_index = 0;
+			machine_player_index < MAXIMUM_LOCAL_PLAYERS;
+			machine_player_index++)
+		{
+			/* (by its absolute index: a datum's slot is one player's) */
+			if (machine_to_player_table[machine_index][machine_player_index] != NONE &&
+				DATUM_INDEX_TO_ABSOLUTE_INDEX(machine_to_player_table[machine_index][machine_player_index]) ==
+					DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index))
+			{
+				machine_to_player_table[machine_index][machine_player_index] = NONE;
+			}
+		}
+	}
+
+	return;
+}
+
 long player_new(
 	long machine_index,
 	long player_index,
@@ -1526,6 +1557,52 @@ static void network_player_log_idle_action(
 		absolute_index, player->unit_index, unit->object.position.x, unit->object.position.y, unit->object.position.z,
 		nearest_index, nearest_index != NONE ? tag_get_name(object_get(nearest_index)->definition_index) : "",
 		nearest_distance);
+	/* ... and the nearest vehicle: how far its nearest seat's entrance is
+	(within 1.0 to get in), and whether the unit moves or the vehicle turns
+	too fast (player_examine_nearby_vehicle) */
+	{
+		struct object_iterator vehicles;
+		long vehicle_index = NONE;
+		real vehicle_distance = 0.0f;
+
+		object_iterator_new(&vehicles, _object_mask_vehicle, 0);
+		while (object_iterator_next(&vehicles))
+		{
+			real distance = distance3d(&unit->object.position, &object_get(vehicles.index)->object.position);
+
+			if (vehicle_index == NONE || distance < vehicle_distance)
+			{
+				vehicle_index = vehicles.index;
+				vehicle_distance = distance;
+			}
+		}
+		if (vehicle_index != NONE && vehicle_distance < 10.0f)
+		{
+			struct unit_datum *vehicle = unit_get(vehicle_index);
+			short seat_count = unit_definition_get(vehicle->definition_index)->unit.seats.count;
+			short seat_index;
+			real entrance_distance = REAL_MAX;
+
+			for (seat_index = 0; seat_index < seat_count; seat_index++)
+			{
+				real_point3d entrance;
+				real_point3d seat;
+
+				if (unit_get_seat_entrance_point(player->unit_index, vehicle_index, seat_index, &entrance, &seat, NULL))
+				{
+					entrance_distance = MIN(entrance_distance,
+						MIN(distance3d(&entrance, &unit->object.bounding_sphere_center),
+							distance3d(&seat, &unit->object.bounding_sphere_center)));
+				}
+			}
+			error(2, "distributed: ... nearest vehicle %lx %s at %.2f %.2f %.2f (%.2f away), seat entrance %.2f away, "
+				"unit speed %.3f, vehicle turning %.3f, up %.2f",
+				vehicle_index, tag_get_name(vehicle->definition_index), vehicle->object.position.x,
+				vehicle->object.position.y, vehicle->object.position.z, vehicle_distance, entrance_distance,
+				magnitude3d(&unit->object.translational_velocity), magnitude3d(&vehicle->object.angular_velocity),
+				vehicle->object.up.k);
+		}
+	}
 }
 
 /* ... and gives up the one it has (the host's unit for it is another) */
@@ -1713,6 +1790,14 @@ static boolean player_handle_action(
 		break;
 
 	case _player_action_result_swap_for_powerup:
+		/* port: a distributed client's inventories are the host's (the
+		powerup is swapped where the host decides pickups, and the relayed
+		action of a remote player reaches here too): it swaps nothing */
+		if (!players_decide_pickups())
+		{
+			result = TRUE;
+			break;
+		}
 		unit_drop_current_equipment(player->unit_index);
 		if (unit_add_equipment_to_inventory(
 			player->unit_index,
@@ -3729,6 +3814,31 @@ void players_update_before_game(
 	return;
 }
 
+/* the telefrag message to a local player (port: its own function, which a
+client of the distributed netcode calls with the host's telefrag kill,
+port/linux/game/network_damage.c) */
+void players_show_telefragged(
+	long player_index)
+{
+	struct player_datum *player = player_get(player_index);
+	long message_list_index;
+
+	if (player->local_player_index == NONE)
+		return;
+	message_list_index = tag_loaded(
+		UNICODE_STRING_LIST_TAG,
+		"ui\\multiplayer_game_text");
+	hud_print_message(
+		player->local_player_index,
+		message_list_index != NONE
+			? unicode_string_list_get_string(
+				message_list_index,
+				MULTIPLAYER_GAME_TEXT_YOU_WERE_TELEFRAGGED)
+			: L"");
+
+	return;
+}
+
 void players_update_after_game(
 	void)
 {
@@ -3740,7 +3850,6 @@ void players_update_after_game(
 	struct scenario_bsp_switch_trigger_volume *bsp_switch_trigger_volume;
 	long telefrag_ticks;
 	long root_object_index;
-	long message_list_index;
 	short bsp_switch_trigger_volume_index;
 
 	profile_enter(PLAYERS_UPDATE_AFTER_GAME_PROFILE);
@@ -3765,25 +3874,17 @@ void players_update_after_game(
 			telefrag_ticks = player->telefrag_timeout;
 			if (telefrag_ticks >= 90)
 			{
-				if (player->unit_index != NONE)
+				/* a client's view of who blocks is a latency late: the
+				host's kill arrives with its damage events, and its message
+				with it (players_show_telefragged) */
+				if (network_game_distributed_client())
+					player_telefrag_effect_stop(iterator.datum_index);
+				else if (player->unit_index != NONE)
 				{
 					unit = unit_get(player->unit_index);
 					if (!TEST_FLAG(unit->object.damage_flags, _object_die_act_of_god_bit))
 					{
-						if (player->local_player_index != NONE)
-						{
-							message_list_index = tag_loaded(
-								UNICODE_STRING_LIST_TAG,
-								"ui\\multiplayer_game_text");
-							hud_print_message(
-								player->local_player_index,
-								message_list_index != NONE
-									? unicode_string_list_get_string(
-										message_list_index,
-										MULTIPLAYER_GAME_TEXT_YOU_WERE_TELEFRAGGED)
-									: L"");
-						}
-
+						players_show_telefragged(iterator.datum_index);
 						player_telefrag_effect_stop(iterator.datum_index);
 						unit_kill(player->unit_index);
 					}

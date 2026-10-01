@@ -39,9 +39,10 @@ Internet play (p2p.c) adds machines that shared an invite to this LAN: an
 XNADDR's abEnet carries its machine's identifier, which XNetXnAddrToInAddr
 maps to the peer's virtual address, and traffic to and from those addresses
 is rewritten to and from p2p.c's local stand-ins here (or fails, with
-WSAEHOSTUNREACH, while the peer is not reached). Broadcasts also go to every
-peer. p2p.c is told the ports of the game's sockets, which alone peers
-reach.
+WSAEHOSTUNREACH, while the peer is not reached); datagrams to a peer, and
+broadcasts, which also go to every peer, go onto the tunnel at once
+(p2p_send_datagram). p2p.c is told the ports of the game's sockets, which
+alone peers reach.
 */
 
 #include "platform.h"
@@ -240,8 +241,8 @@ static int peer_outgoing_address(int stream, int connecting, const struct sockad
 	return 1;
 }
 
-/* tells internet play the local port the game's socket has (bound, or
-listening) */
+/* tells internet play the local port the game's socket has (bound, given
+one by a connection or a send, or listening) */
 static void note_socket_port(SOCKET socket, int listening)
 {
 	struct sockaddr_in bound;
@@ -249,15 +250,18 @@ static void note_socket_port(SOCKET socket, int listening)
 	int type = SOCK_DGRAM;
 	int type_length = sizeof(type);
 
-	/* (not one bound to this machine alone: the telnet console's, which no
-	peer is to reach, and which is not hosting) */
 	if (posix_socket_getsockname((int)socket, &bound, &length) < 0 || bound.sin_family != AF_INET ||
-		bound.sin_addr.s_addr == loopback_address())
+		!bound.sin_port)
 	{
 		return;
 	}
 	posix_socket_getsockopt((int)socket, SOL_SOCKET, SO_TYPE, &type, &type_length);
-	p2p_socket_port((int)socket, type == SOCK_STREAM, listening, bound.sin_port);
+	/* (one bound to this machine alone, as the telnet console's, is not for
+	peers to reach, and is not hosting; its port is still no stand-in's) */
+	if (bound.sin_addr.s_addr == loopback_address())
+		p2p_port_taken(type == SOCK_STREAM, bound.sin_port);
+	else
+		p2p_socket_port((int)socket, type == SOCK_STREAM, listening, bound.sin_port);
 }
 
 /* traffic from an internet play peer's stand-in comes from the peer, and
@@ -412,6 +416,18 @@ static int remote_searcher_targets(unsigned long *targets, int maximum_count)
 	return count;
 }
 
+/* the local port the game's socket is bound to (network byte order), or 0
+if it is not yet */
+static unsigned short socket_port(SOCKET socket)
+{
+	struct sockaddr_in bound;
+	int length = sizeof(bound);
+
+	if (posix_socket_getsockname((int)socket, &bound, &length) < 0 || bound.sin_family != AF_INET)
+		return 0;
+	return bound.sin_port;
+}
+
 /* the addresses to send broadcasts to instead, if network.broadcast is
 set (255.255.255.255 among them sends a real broadcast too); returns their
 count */
@@ -506,8 +522,12 @@ SOCKET WSAAPI halo_ws_socket(int family, int type, int protocol)
 
 int WSAAPI halo_ws_closesocket(SOCKET socket)
 {
+	int type = SOCK_STREAM;
+	int type_length = sizeof(type);
+
+	posix_socket_getsockopt((int)socket, SOL_SOCKET, SO_TYPE, &type, &type_length);
 	remote_searcher_socket_closed((int)socket);
-	p2p_socket_closed((int)socket);
+	p2p_socket_closed((int)socket, type == SOCK_DGRAM ? socket_port(socket) : 0);
 	delayed_closed((int)socket);
 	return winsock_result(posix_socket_close((int)socket));
 }
@@ -538,6 +558,8 @@ int WSAAPI halo_ws_connect(SOCKET socket, const struct sockaddr *address, int ad
 	unsigned long override;
 	int type = SOCK_STREAM;
 	int type_length = sizeof(type);
+	int result;
+	int error;
 
 	/* an internet play peer's TCP or UDP port */
 	if (address && address->sa_family == AF_INET &&
@@ -569,7 +591,18 @@ int WSAAPI halo_ws_connect(SOCKET socket, const struct sockaddr *address, int ad
 			posix_socket_bind((int)socket, &bound, sizeof(bound));
 		}
 	}
-	return winsock_result(posix_socket_connect((int)socket, address, address_length));
+	result = posix_socket_connect((int)socket, address, address_length);
+	error = result < 0 ? posix_socket_last_error() : 0;
+	/* the port the system gave it (a connection under way has one too, and
+	a datagram socket's that failed keeps its: a stream socket's that failed
+	has none) */
+	note_socket_port(socket, 0);
+	if (result < 0)
+	{
+		WSASetLastError(error);
+		return SOCKET_ERROR;
+	}
+	return result;
 }
 
 int WSAAPI halo_ws_listen(SOCKET socket, int backlog)
@@ -606,6 +639,10 @@ int WSAAPI halo_ws_sendto(SOCKET socket, const char *buffer, int length, int fla
 {
 	/* the rewritten destination: it must outlive the send */
 	struct sockaddr_in target;
+	/* 0: not bound yet, which the first send binds it */
+	unsigned short source_port = socket_port(socket);
+	int result;
+	int send_error;
 
 	if (address && address->sa_family == AF_INET && address_length >= (int)sizeof(struct sockaddr_in) &&
 		((const struct sockaddr_in *)address)->sin_addr.s_addr == INADDR_BROADCAST)
@@ -615,7 +652,6 @@ int WSAAPI halo_ws_sendto(SOCKET socket, const char *buffer, int length, int fla
 		int target_count = broadcast_targets(targets, MAXIMUM_BROADCAST_TARGETS);
 		int peer_count;
 		int index;
-		int result;
 
 		/* one datagram per target; the broadcast counts as sent if any is */
 		memcpy(&target, address, sizeof(target));
@@ -636,8 +672,31 @@ int WSAAPI halo_ws_sendto(SOCKET socket, const char *buffer, int length, int fla
 		{
 			result = posix_socket_sendto((int)socket, buffer, length, flags, address, address_length);
 		}
+		/* (the broadcast's own error, which what follows would overwrite) */
+		send_error = result < 0 ? posix_socket_last_error() : 0;
 		/* and to every internet play peer (after the send above, which binds
-		the socket if it was not) */
+		the socket if it was not): onto the tunnel at once, else through the
+		stand-ins */
+		if (!source_port)
+		{
+			source_port = socket_port(socket);
+			if (source_port)
+				note_socket_port(socket, 0);
+		}
+		if (source_port)
+		{
+			if (p2p_broadcast_datagram(source_port, ((const struct sockaddr_in *)address)->sin_port, buffer,
+				length) > 0 && result < 0)
+			{
+				result = length;
+			}
+			if (result < 0)
+			{
+				WSASetLastError(send_error);
+				return SOCKET_ERROR;
+			}
+			return result;
+		}
 		peer_count = p2p_broadcast_targets(((const struct sockaddr_in *)address)->sin_port, targets, ports,
 			P2P_BROADCAST_PEERS);
 		for (index = 0; index < peer_count; index++)
@@ -650,7 +709,28 @@ int WSAAPI halo_ws_sendto(SOCKET socket, const char *buffer, int length, int fla
 			if (result < 0 && sent >= 0)
 				result = sent;
 		}
-		return winsock_result(result);
+		if (result < 0)
+		{
+			WSASetLastError(send_error);
+			return SOCKET_ERROR;
+		}
+		return result;
+	}
+	/* an internet play peer's: onto the tunnel at once, from the socket's
+	port (one not bound yet goes through a stand-in, which the system's send
+	binds it for) */
+	if (address && address->sa_family == AF_INET && address_length >= (int)sizeof(struct sockaddr_in) &&
+		(halo_ws_ntohl(((const struct sockaddr_in *)address)->sin_addr.s_addr) & 0xFFC00000) == 0x64400000)
+	{
+		switch (source_port ? p2p_send_datagram(source_port, ((const struct sockaddr_in *)address)->sin_addr.s_addr,
+			((const struct sockaddr_in *)address)->sin_port, buffer, length) : 0)
+		{
+		case 1:
+			return length;
+		case -1:
+			WSASetLastError(WSAEHOSTUNREACH);
+			return SOCKET_ERROR;
+		}
 	}
 	switch (peer_outgoing_address(0, -1, &address, address_length, &target))
 	{
@@ -660,7 +740,17 @@ int WSAAPI halo_ws_sendto(SOCKET socket, const char *buffer, int length, int fla
 		address = outgoing_address(address, address_length, &target);
 		break;
 	}
-	return winsock_result(posix_socket_sendto((int)socket, buffer, length, flags, address, address_length));
+	result = posix_socket_sendto((int)socket, buffer, length, flags, address, address_length);
+	send_error = result < 0 ? posix_socket_last_error() : 0;
+	/* the port the send gave it (one that failed binds it too) */
+	if (!source_port)
+		note_socket_port(socket, 0);
+	if (result < 0)
+	{
+		WSASetLastError(send_error);
+		return SOCKET_ERROR;
+	}
+	return result;
 }
 
 /* debug.network_latency and debug.network_loss: what this machine receives

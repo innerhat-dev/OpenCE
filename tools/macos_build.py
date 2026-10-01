@@ -22,7 +22,7 @@ ANGLE = Path(os.environ.get("HALO_MACOS_ANGLE_DIR", str(BUILD / "angle/dist")))
 GL = BUILD / "toolchain/gl"
 APP_ICON = "AppIcon.icns"
 APP_VERSION = "0.3.0"
-APP_BUILD = "4"
+APP_BUILD = "5"
 
 
 def run(*args):

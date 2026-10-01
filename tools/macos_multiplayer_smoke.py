@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build/macos"
 
 
-def prepare(folder, role, mode, seconds, host_address, client_address):
+def prepare(folder, role, mode, seconds, host_address, client_address, variants, score):
     saves = folder / "saves"
     saves.mkdir(parents=True, exist_ok=True)
     data = folder / "data"
@@ -36,9 +36,14 @@ online = {str(mode == "invite").lower()}
 allow_upnp = false
 join_from_clipboard = false
 
+[discord]
+application_id = ""
+
 [debug]
-network_test = "{'host:bloodgulch' if role == 'host' else 'join'}"
+hidden_window = true
+network_test = "{'host:bloodgulch:' + variants if role == 'host' else 'join'}"
 network_test_start = 20.0
+network_test_score = {score}
 network_test_shoot = 3.0
 network_test_kill = 12.0
 test_input = "bot:{17 if role == 'host' else 42}"
@@ -60,6 +65,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("lan", "invite"), default="invite")
     parser.add_argument("--seconds", type=int, default=65)
+    parser.add_argument("--variants", default="slayer",
+                        help="Comma-separated upstream variants; multiple entries test consecutive matches")
+    parser.add_argument("--score", type=int, default=0,
+                        help="Score to win; use a small score for consecutive matches (0 keeps the default)")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--guest", type=Path, default=BUILD / "halo_guest.elf")
     parser.add_argument("--executable", type=Path, default=BUILD / "halo",
@@ -67,6 +76,8 @@ def main():
     parser.add_argument("--host-address", help="A configured local IPv4 address, other than 127.0.0.1")
     parser.add_argument("--client-address", help="Another configured local IPv4 address")
     args = parser.parse_args()
+    if args.score < 0 or not re.fullmatch(r"[a-zA-Z0-9_ -]+(?:,[a-zA-Z0-9_ -]+)*", args.variants):
+        parser.error("Use non-empty variant names and a nonnegative score")
     host_address = args.host_address
     if not host_address:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route:
@@ -101,13 +112,14 @@ def main():
         for role in ("host", "client"):
             folder = out / role
             folders[role] = folder
-            environment = prepare(folder, role, args.mode, args.seconds, host_address, client_address)
+            environment = prepare(folder, role, args.mode, args.seconds, host_address, client_address,
+                                  args.variants, args.score)
             command = [str(args.executable.resolve()), str(args.guest.resolve())]
             if role == "client" and args.mode == "invite":
                 deadline = time.monotonic() + 40
                 invite = None
                 while time.monotonic() < deadline:
-                    match = re.search(r"halo://join/[0-9a-fA-F]{44}", read_log(folders["host"]))
+                    match = re.search(r"halo://join/[0-9a-fA-F]{64}(?![0-9a-fA-F])", read_log(folders["host"]))
                     if match:
                         invite = match[0]
                         break
@@ -143,7 +155,16 @@ def main():
         }
         if args.mode == "invite":
             checks["encrypted_peer_connected"] = all("Internet play: connected to" in log for log in logs.values())
+        expected_matches = len(args.variants.split(","))
+        if expected_matches > 1:
+            checks["host_created_all_matches"] = len(re.findall(r"network test: game \d+,", logs["host"])) >= expected_matches
+            restarts = {}
+            for role, lines in ticks.items():
+                times = [int(re.search(r"tick (\d+)", line)[1]) for line in lines]
+                restarts[role] = sum(current < previous for previous, current in zip(times, times[1:]))
+            checks["both_played_consecutive_matches"] = all(count >= expected_matches - 1 for count in restarts.values())
         result = {"mode": args.mode, "scope": "two real instances on one Mac",
+                  "variants": args.variants, "score_to_win": args.score,
                   "exit_codes": codes, "logged_ticks": {k: len(v) for k, v in ticks.items()},
                   "checks": checks, "passed": all(checks.values())}
         (out / "validation.json").write_text(json.dumps(result, indent=2) + "\n")

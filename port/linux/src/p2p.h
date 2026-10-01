@@ -44,16 +44,37 @@ int p2p_incoming(int stream, unsigned long *address, unsigned short *port);
 /* the local addresses standing in for this port (a broadcast's) on every
 peer; returns their count */
 int p2p_broadcast_targets(unsigned short port, unsigned long *addresses, unsigned short *ports, int maximum_count);
+/* a datagram the game sends from a socket with the local port source_port
+(bound: not 0) to address and port, sealed onto the tunnel at once (no
+stand-in carries it; one is made for the answers when they come): 1 if it
+is a peer's address (sent, or lost as a datagram may be); -1 if it is a
+peer's (or was) but the peer cannot be reached now; 0 if it is not a
+peer's */
+int p2p_send_datagram(unsigned short source_port, unsigned long address, unsigned short port, const void *data,
+	int size);
+/* the same for a broadcast to port: to every peer the tunnel reaches;
+returns their count */
+int p2p_broadcast_datagram(unsigned short source_port, unsigned short port, const void *data, int size);
 
 /* the game's socket has this local port: bound, given one, or listening
 (stream and listening: it is hosting). Peers reach only these ports (a
 stream's only while it listens), and datagram ports it sent them from */
 void p2p_socket_port(int socket, int stream, int listening, unsigned short port);
-/* the game closes a socket */
-void p2p_socket_closed(int socket);
+/* a socket that peers are not to reach (bound to 127.0.0.1 alone) has this
+local port: traffic from it is not a peer's whose stand-in had the port */
+void p2p_port_taken(int stream, unsigned short port);
+/* the game closes a socket, a datagram one of this local port (0: none, or
+a stream's) */
+void p2p_socket_closed(int socket, unsigned short datagram_port);
 
 /* text for the clipboard (a new invite link), once; NULL if none. Called
 from the main thread */
 const char *p2p_take_clipboard_text(void);
+
+/* the hosted game's players and the most it takes, which Discord shows
+(0, 0: not hosting; until the game says, the machines the tunnel reaches
+are shown). The game's server calls it as they change (calling it with the
+same counts again costs little) */
+void p2p_set_game_player_counts(int count, int maximum);
 
 #endif

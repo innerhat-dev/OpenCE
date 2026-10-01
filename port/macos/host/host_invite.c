@@ -1,5 +1,6 @@
 /* Pass Cocoa URL events to the guest without exposing a native pointer. */
 #include "host.h"
+#include "../../linux/src/p2p_internal.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,8 +19,9 @@ int host_is_discord_launch_url(const char *text) {
 int host_invite_received(const char *text) {
     static const char prefix[] = "halo://join/";
     const size_t prefix_size = sizeof(prefix) - 1;
-    if (!text || strncmp(text, prefix, prefix_size) || strlen(text) != prefix_size + 44 ||
-        strspn(text + prefix_size, "0123456789abcdefABCDEF") != 44)
+    const size_t code_size = 2 * (P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE);
+    if (!text || strncmp(text, prefix, prefix_size) || strlen(text) != prefix_size + code_size ||
+        strspn(text + prefix_size, "0123456789abcdefABCDEF") != code_size)
         return 0;
     const char *saves = getenv("HALO_SAVE_ROOT");
     if (!saves || !*saves)

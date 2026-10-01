@@ -6,6 +6,9 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from tools.linux_build import MINIUPNPC_DEFINES, MINIUPNPC_DIR, miniupnpc_sources
+
 OUT = ROOT / "build/macos/tests"
 LLVM = Path(os.environ.get("HALO_MACOS_LLVM_BIN", "/opt/homebrew/opt/llvm/bin"))
 
@@ -39,6 +42,11 @@ def main():
         "port/macos/host/host_discord.c",
         "-o", OUT / "host_network")
     run(OUT / "host_network")
+    run("clang", "-arch", "arm64", "-O2", "-Wall", "-DHALO_MACOS=1", "-D_DARWIN_C_SOURCE",
+        "-I.", "-Iport/linux/src", f"-I{MINIUPNPC_DIR / 'include'}", f"-I{MINIUPNPC_DIR / 'src'}",
+        *MINIUPNPC_DEFINES, "port/macos/tests/upnp_port.c", "port/macos/host/posix_net.c",
+        "port/macos/host/host_discord.c", *miniupnpc_sources(), "-o", OUT / "upnp_port")
+    run(OUT / "upnp_port")
     run("clang", "-arch", "arm64", "-O2", "-Wall", "-Wextra", "-I.", "-Iport/linux/src",
         "port/macos/tests/discord_bridge.c", "port/macos/host/posix_net.c",
         "port/macos/host/host_discord.c", "-o", OUT / "discord_bridge")

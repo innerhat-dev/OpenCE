@@ -591,6 +591,8 @@ boolean network_game_distributed_client(void);
 /* port/linux/game/network_distributed.c's */
 void network_distributed_player_killed(long *killing_player_index, long *killing_object_index,
 	long dead_player_index, boolean *friendly_fire);
+/* port/linux/game/network_damage.c's */
+boolean network_damage_killer_score(long player_index, long *score);
 
 /* ---------- constants */
 
@@ -3825,6 +3827,13 @@ void game_engine_player_killed(
 	killer (port/linux/game/network_distributed.c) */
 	network_distributed_player_killed(&killing_player_index, &killing_object_index, dead_player_index,
 		&friendly_fire);
+	/* the host's kill of a player who quit, ahead of this client's clock
+	(game_update_quit_players has not come to its time yet) */
+	if (network_game_distributed_client() && dead_player->quit_out_of_game_time != NONE &&
+		killing_player_index == dead_player_index)
+	{
+		dead_player->quit_out_of_game = TRUE;
+	}
 	dead_player->death_time = game_time_get();
 	if (game_engine->player_killed_player)
 	{
@@ -6952,7 +6961,11 @@ static boolean internal_rasterize_score(
 		if (message >= _game_engine_message_multi_kill_with_score &&
 			message <= _game_engine_message_killed_enemy_with_score)
 		{
-			score = game_engine->get_player_score(player_index, TRUE);
+			/* port: a client of the distributed netcode replaying the host's
+			killing blow: the score the host's game type gave its killer
+			(its own has it only once the game type's state comes) */
+			if (!network_damage_killer_score(player_index, &score))
+				score = game_engine->get_player_score(player_index, TRUE);
 		}
 	}
 
@@ -7982,15 +7995,26 @@ static void netgame_verify_spawn_points(
 }
 
 long game_engine_slayer_write_network_state(byte *buffer, long size);
-void game_engine_slayer_read_network_state(byte const *buffer, long size, boolean first);
+boolean game_engine_slayer_read_network_state(byte const *buffer, long size, boolean first);
 long game_engine_ctf_write_network_state(byte *buffer, long size);
-void game_engine_ctf_read_network_state(byte const *buffer, long size, boolean first);
+boolean game_engine_ctf_read_network_state(byte const *buffer, long size, boolean first);
 long game_engine_oddball_write_network_state(byte *buffer, long size);
-void game_engine_oddball_read_network_state(byte const *buffer, long size, boolean first);
+boolean game_engine_oddball_read_network_state(byte const *buffer, long size, boolean first);
 long game_engine_king_write_network_state(byte *buffer, long size);
-void game_engine_king_read_network_state(byte const *buffer, long size, boolean first);
+boolean game_engine_king_read_network_state(byte const *buffer, long size, boolean first);
 long game_engine_race_write_network_state(byte *buffer, long size);
-void game_engine_race_read_network_state(byte const *buffer, long size, boolean first);
+boolean game_engine_race_read_network_state(byte const *buffer, long size, boolean first);
+
+/* the distributed netcode (port/linux/game/network_damage.c): a player's
+score as the game type has it (with its killing blows' messages), 0 for
+none */
+long game_engine_network_player_score(
+	long player_index)
+{
+	if (!game_engine || !game_engine->get_player_score)
+		return 0;
+	return game_engine->get_player_score(player_index, TRUE);
+}
 
 /* the distributed netcode (port/linux/game/network_distributed.c): the
 current game type's state (scores, and what else every machine must agree
@@ -8028,6 +8052,7 @@ void game_engine_read_network_state(
 {
 	long postgame_state;
 	boolean first;
+	boolean read;
 
 	if (!game_engine || size < (long)sizeof(postgame_state))
 		return;
@@ -8035,16 +8060,20 @@ void game_engine_read_network_state(
 	buffer += sizeof(postgame_state);
 	size -= sizeof(postgame_state);
 	first = !game_engine_network_state_read;
-	game_engine_network_state_read = TRUE;
 	switch (game_engine_get_type())
 	{
-	case game_engine_ctf: game_engine_ctf_read_network_state(buffer, size, first); break;
-	case game_engine_slayer: game_engine_slayer_read_network_state(buffer, size, first); break;
-	case game_engine_oddball: game_engine_oddball_read_network_state(buffer, size, first); break;
-	case game_engine_king: game_engine_king_read_network_state(buffer, size, first); break;
-	case game_engine_race: game_engine_race_read_network_state(buffer, size, first); break;
-	default: break;
+	case game_engine_ctf: read = game_engine_ctf_read_network_state(buffer, size, first); break;
+	case game_engine_slayer: read = game_engine_slayer_read_network_state(buffer, size, first); break;
+	case game_engine_oddball: read = game_engine_oddball_read_network_state(buffer, size, first); break;
+	case game_engine_king: read = game_engine_king_read_network_state(buffer, size, first); break;
+	case game_engine_race: read = game_engine_race_read_network_state(buffer, size, first); break;
+	default: read = TRUE; break;
 	}
+	/* (a state the game type refused is not had: the first it takes is,
+	whose events it only takes) */
+	if (!read)
+		return;
+	game_engine_network_state_read = TRUE;
 	/* the game ended on the host (after what ended it is shown, as the host
 	shows it) */
 	if (postgame_state != 0 && game_engine_globals.postgame_state == 0)

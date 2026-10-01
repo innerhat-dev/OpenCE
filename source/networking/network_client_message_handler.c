@@ -698,9 +698,20 @@ boolean network_game_client_handle_message(
 				}
 				else
 				{
-					network_event(
-						"ignoring a distributed message from a system that is not the host @ %s",
-						transport_address_to_string(source_address));
+					/* (port: once a second at most: anyone can send them,
+					one a tick) */
+					static unsigned long last_logged_time;
+					static boolean logged;
+					unsigned long now = system_milliseconds();
+
+					if (!logged || now - last_logged_time >= 1000)
+					{
+						network_event(
+							"ignoring a distributed message from a system that is not the host @ %s",
+							transport_address_to_string(source_address));
+						last_logged_time = now;
+						logged = TRUE;
+					}
 				}
 				break;
 
@@ -859,7 +870,9 @@ static boolean network_game_client_handle_message_server_machine_accepted(
 	else
 	{
 		network_event("ignoring a message_server_machine_accepted message; either a bad machine or we aren't joining");
-		result = FALSE;
+		/* port: ignored, not failed (anyone may send a searching client a
+		datagram, and a failure ends its search) */
+		result = TRUE;
 	}
 
 	return result;
@@ -903,7 +916,9 @@ static boolean network_game_client_handle_message_server_machine_rejected(
 	else
 	{
 		network_event("ignoring a message_server_machine_rejected message; either a bad machine or we aren't joining");
-		result = FALSE;
+		/* port: ignored, not failed (anyone may send a searching client a
+		datagram, and a failure ends its search) */
+		result = TRUE;
 	}
 
 	return result;

@@ -1,7 +1,7 @@
 # Apple multiplayer and Mac invite links
 
 Build both devices from the same revision with the same map set. Native builds
-use protocol version 5 and changed player capacities, so original Xbox games
+use protocol version 7 and changed player capacities, so original Xbox games
 and older native builds cannot join. See the [shared System Link notes](../port/linux/README.md#system-link)
 for protocol details and limits.
 
@@ -24,7 +24,7 @@ running app; the host queues it in that instance's save directory. A development
 launch can also take the link as an argument:
 
 ```sh
-"build/macos/Halo CE Universal.app/Contents/MacOS/halo" 'halo://join/YOUR_44_HEX_DIGITS'
+"build/macos/Halo CE Universal.app/Contents/MacOS/halo" 'halo://join/YOUR_64_HEX_DIGITS'
 ```
 
 Invites last for the hosting game process. Treat the link as access to the room.
@@ -39,19 +39,25 @@ host migration, or a browser client. See the
 [upstream connection notes](../port/linux/README.md#connection).
 
 The current integration keeps the Apple ARM64/Metal renderer and merges
-cybersecurity upstream build 52 (`aad8719f`). This includes repeated-match
-input and client-role fixes, map compatibility checks, mouse aiming changes,
-and the hardened version-5 distributed netcode. Older local Mac and iPhone
-builds must be rebuilt before joining a version-5 room.
+cybersecurity upstream through `a6ca914b` (the sixth netcode review). This
+includes repeated-match input and client-role fixes, map compatibility checks,
+mouse aiming changes, compressed networking updates, stronger hit and movement
+validation, score/death replication, and version-7 distributed netcode. Invite
+codes now contain 64 hex digits, including a longer hash of the host's key.
+Older Mac and iPhone builds must be rebuilt before joining a version-7 room;
+version-5 rooms still require a matching older build.
 
-PR #22 was reviewed through `ad13a59b`. Its clock/uptime fix (`5d18a367`)
+PR #22 was reviewed through `2e00e652`. Its clock/uptime fix (`5d18a367`)
 and Darwin broken-pipe protection remain included. Its LP64/OpenGL conversion
 is a separate port; this app keeps the rebased ARM guest and ANGLE/Metal.
 
-PR #20 was reviewed through `ea1015e1`. Its reachable host advertisements
+PR #20 was reviewed through `79cbcb94`. Its reachable host advertisements
 and replies to game searches from outside the LAN remain included. Upstream's
 new socket-port tracking replaces the earlier invite-port restriction. The
 latest ANGLE framebuffer/blit correction (`ea1015e1`) is also included.
+The Command-W protection (`716338d8`) is adapted in the native SDL bridge.
+The Discord socket-directory fix (`79cbcb94`) is already covered by this
+port's native environment and Darwin temporary-directory lookup.
 Automatic Tailscale lookup, alternate compilation and ray-traced lighting
 remain separate. The Mac renderer streams geometry to avoid stale cached
 walls after changing from Prisoner to Chill Out.
@@ -148,13 +154,16 @@ It also runs as part of `python3 tools/test_macos_runtime.py`.
 The real-game smoke test uses separate saves and settings for two copies on one
 Mac. It exercises either LAN discovery or an encrypted invite and records
 movement and network updates. It requires game maps and a configured LAN IPv4
-address, while keeping personal saves untouched:
+address, while keeping personal saves, clipboard and Discord activity untouched:
 
 ```sh
 python3 tools/macos_multiplayer_smoke.py --mode invite --seconds 65 \
   --output build/macos/multiplayer/invite-test
 python3 tools/macos_multiplayer_smoke.py --mode lan --seconds 65 \
   --output build/macos/multiplayer/lan-test
+python3 tools/macos_multiplayer_smoke.py --mode invite --seconds 95 \
+  --variants slayer,slayer --score 1 \
+  --output build/macos/multiplayer/consecutive-test
 ```
 
 Use a fresh output directory for each run. Two physical Macs on different
@@ -165,3 +174,15 @@ or accepts `--client-address`. Invite mode works with LAN plus loopback.
 The local invite test passed on the M5 Max. Direct discovery between its LAN
 and VPN interfaces did not find the host; that path and LAN play between two
 physical Macs remain unverified. Use the invite path for the current POC.
+
+The protocol-7 candidate passed a 65-second encrypted two-instance game and
+two consecutive score-1 Slayer matches in a 95-second run on the M5 Max.
+Host/client scores, kills and deaths agreed. The native runtime probes also
+cover current invite lengths, Discord socket ownership, Command-W handling,
+and occupied UDP ports used by UPnP cleanup. A private mock Discord RPC test
+delivers the current join secret into the real game without changing Discord
+activity:
+
+```sh
+python3 tools/macos_discord_smoke.py
+```
