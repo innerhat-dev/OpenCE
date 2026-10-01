@@ -256,6 +256,11 @@ To see the frame rate:
 1. Push \` to open the developer console.
 2. Enter `display_framerate true`.
 
+In the game of another host, the console runs only the commands that change
+nothing of the game (such as `display_framerate`), and the game puts back
+cheats, the game speed and the settings of the drawing that show more of
+the world (such as `rasterizer_wireframe`). Refer to `NETCODE.md`.
+
 The frame rate shows at the bottom right of the screen. It is the mean over
 half a second.
 
@@ -273,7 +278,7 @@ have up to 4 players (split screen).
 Obey these rules:
 
 - All the machines in a game must use a build with the same limits.
-- The port uses protocol version 7. It does not see the Xbox game or older
+- The port uses protocol version 9. It does not see the Xbox game or older
   builds of the port. They do not see the port.
 
 These are the differences from the Xbox:
@@ -399,6 +404,16 @@ Only machines with the invite can find the game:
   last 256 keys. Thus the proof of a player does not need more key work. A
   flood of requests can make players join more slowly. A player asks again
   for 90 seconds.
+- The host drops a player whose game runs faster than time (a speed hack)
+  for ten seconds, and keeps that address out of its games. Each player
+  sees who in red on the console. The host adds a line to `cheaters.txt`
+  (beside `debug.txt`) with the address and hardware id of the player, and
+  the Discord name and id that the game of the player told it (a player can
+  change these). The host also bans the player: it adds the line to
+  `bans.txt`, and refuses a machine whose address or hardware id is in it.
+- The host can ban a player with `ban <player name>` in the developer
+  console (Tab completes the name). Remove a line from `bans.txt` to unban.
+  Refer to `NETCODE.md`.
 - An invite operates while the copy of the game that made it operates.
 
 ### Connection

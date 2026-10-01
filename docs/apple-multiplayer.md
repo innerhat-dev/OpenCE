@@ -1,7 +1,7 @@
 # Apple multiplayer and Mac invite links
 
 Build both devices from the same revision with the same map set. Native builds
-use protocol version 7 and changed player capacities, so original Xbox games
+use protocol version 9 and changed player capacities, so original Xbox games
 and older native builds cannot join. See the [shared System Link notes](../port/linux/README.md#system-link)
 for protocol details and limits.
 
@@ -39,13 +39,23 @@ host migration, or a browser client. See the
 [upstream connection notes](../port/linux/README.md#connection).
 
 The current integration keeps the Apple ARM64/Metal renderer and merges
-cybersecurity upstream through `a6ca914b` (the sixth netcode review). This
+cybersecurity upstream through `083eef0c` (player and machine name validation). This
 includes repeated-match input and client-role fixes, map compatibility checks,
 mouse aiming changes, compressed networking updates, stronger hit and movement
-validation, score/death replication, and version-7 distributed netcode. Invite
+validation, score/death replication, and version-9 distributed netcode. Invite
 codes now contain 64 hex digits, including a longer hash of the host's key.
-Older Mac and iPhone builds must be rebuilt before joining a version-7 room;
-version-5 rooms still require a matching older build.
+Older Mac and iPhone builds must be rebuilt before joining a version-9 room;
+older rooms still require a matching older build.
+
+The updates since the September 30, 5 p.m. Panama review also fix sound-cache
+cleanup between games and vehicles waking after a client's movement. Clients
+use the host's game rules; hosts can detect sustained speed hacks and ban
+players, and received player and machine names are cleaned before display.
+See the [shared netcode notes](../port/linux/NETCODE.md) for these rules.
+
+The original Xbox decompilation was reviewed through `901aee16`, including
+the new text and circular-queue matching work. This port already implements
+those routines and retains its portable Unicode handling and Apple ABI.
 
 PR #22 was reviewed through `2e00e652`. Its clock/uptime fix (`5d18a367`)
 and Darwin broken-pipe protection remain included. Its LP64/OpenGL conversion
@@ -175,9 +185,10 @@ The local invite test passed on the M5 Max. Direct discovery between its LAN
 and VPN interfaces did not find the host; that path and LAN play between two
 physical Macs remain unverified. Use the invite path for the current POC.
 
-The protocol-7 candidate passed a 65-second encrypted two-instance game and
-two consecutive score-1 Slayer matches in a 95-second run on the M5 Max.
-Host/client scores, kills and deaths agreed. The native runtime probes also
+The protocol-9 candidate (build 6) passed a 95-second run with two consecutive
+Slayer matches over an encrypted invite on the M5 Max. Both
+instances exchanged updates and exited cleanly without a fault or unexpected
+kick. The native runtime probes also
 cover current invite lengths, Discord socket ownership, Command-W handling,
 and occupied UDP ports used by UPnP cleanup. A private mock Discord RPC test
 delivers the current join secret into the real game without changing Discord
