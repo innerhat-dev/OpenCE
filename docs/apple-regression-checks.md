@@ -90,6 +90,18 @@ identical to the streamed reference below. Both final unsigned iOS builds also
 passed. The iOS builds ran alongside this smoke run, so its frame timings are
 not part of the sequential performance comparison.
 
+On 2026-10-01, the upstream build-64 integration (`c55e4e2b`) passed the 33
+focused checks, Mac ABI/network/audio probes and native menu/UDP check. Its
+110-second gameplay run completed Prisoner → Chill Out → a30 → Prisoner,
+with three acknowledged map changes, 32 effect commands and no rendering or
+runtime fault. Both peers in a separate 75-second encrypted-invite test with
+native menus replaced a carried weapon with a third plasma weapon, retained
+two inventory slots and replicated the pickup without an assertion or fault.
+All 69 HUD assets were found in each gameplay map. The guest SHA-256 is
+`f08c4945dcd579f0c74640c0cf09cf67ecd4e5818b4f7e760239b9cdb00121e9`.
+These checks used one Mac; physical-network multiplayer and iPhone gameplay
+were not revalidated in this integration.
+
 ## Upload measurements (2026-09-30)
 
 The final a30 comparisons each lasted 70 seconds with 23 acknowledged effect

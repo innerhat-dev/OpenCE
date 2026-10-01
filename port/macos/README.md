@@ -26,6 +26,14 @@ display this is 740x480 into a 3420x2214 drawable. Set `HALO_WINDOWED=1` for a
 resizable window or `HALO_SCREEN_WIDTH=640` to restore the original 4:3 view.
 `HALO_WINDOW_SCALE` controls the initial size in windowed mode.
 
+The HUD uses the upstream high-resolution artwork for meters, counters, panels,
+the motion sensor, reticles, waypoints and scopes. It is enabled by default;
+set `high_res_hud = false` under `[display]` in `config.toml` to use the maps'
+original bitmaps. A bitmap whose pixels differ in a localized or modified map
+keeps that map's artwork automatically. Text glyphs also have clear borders to
+prevent neighboring characters from bleeding into their edges, and widescreen
+menu dimming and flat backgrounds cover the whole display.
+
 Saves, cache files, `config.toml`, and `halo.log` are under:
 
 ```text

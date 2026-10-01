@@ -39,7 +39,7 @@ host migration, or a browser client. See the
 [upstream connection notes](../port/linux/README.md#connection).
 
 The current integration keeps the Apple ARM64/Metal renderer and merges
-cybersecurity upstream through `cdd0291a` (console log verbosity). This
+cybersecurity upstream through `c55e4e2b` (build 64, widescreen UI fills). This
 includes repeated-match input and client-role fixes, map compatibility checks,
 mouse aiming changes, compressed networking updates, stronger hit and movement
 validation, score/death replication, and version-9 distributed netcode. Invite
@@ -57,6 +57,12 @@ The console now shows important messages by default. Set `console_log` in
 the `[game]` section of `config.toml` to `"all"`, `"important"`, or `"none"`;
 command responses and stopping asserts remain visible. This setting is
 config-only in this fork.
+
+The October 1 integration also fixes first-person effects following a dropped
+or deleted weapon, selects the actual weapon object for its sound, and limits
+repeated missing-mouth-data and ignored-advertisement messages. It includes the
+high-resolution HUD artwork, text edge fixes and widescreen menu backgrounds;
+the networking protocol remains version 9.
 
 The original Xbox decompilation was reviewed through `901aee16`, including
 the new text and circular-queue matching work. This port already implements
