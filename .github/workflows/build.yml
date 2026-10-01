@@ -15,10 +15,11 @@ name: Build
 # - Windows, whose minutes cost twice Linux's, builds only Windows;
 # - artifacts are kept for three days.
 #
-# A successful build of main is also published as a GitHub release, the
+# A successful build of upstream's main is also published as a GitHub release, the
 # newest marked latest, so that
 # https://github.com/<repository>/releases/latest/download/<file> always
-# gives the latest build; the last five are kept.
+# gives the latest build; the last five are kept. Forks keep CI artifacts
+# without automatically publishing releases or posting to Discord.
 on:
   push:
     paths-ignore:
@@ -219,9 +220,9 @@ jobs:
     # The six builds as a release, tagged build-<run number> and marked latest
     # (every file keeps its name from release to release, for the README's
     # latest/download links); then all but the newest five build-* releases
-    # go, tags and all. Only for main, and only when every platform built.
+    # go, tags and all. Only for upstream's main, and when every platform built.
     needs: [linux, android, windows]
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.repository == 'cybersecurity/halo-ce-universal' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -275,7 +276,7 @@ jobs:
     # with each platform's result, this run's release (main only), and links
     # to the latest release's builds.
     needs: [linux, android, windows, release]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && github.repository == 'cybersecurity/halo-ce-universal' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

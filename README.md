@@ -45,10 +45,11 @@ The game updates itself. At start-up it looks for a newer release, and asks
 if you want to install it. Refer to "Updates" in
 [port/linux/README.md](port/linux/README.md#updates).
 
-Each build of the `main` branch that passes on all three platforms is a new
+Each build of the upstream `main` branch that passes on all three platforms is a new
 release. The [Releases](https://github.com/cybersecurity/halo-ce-universal/releases)
 page keeps the last five releases. If the latest build has a problem, get
-an older build from that page.
+an older build from that page. This fork keeps CI builds as artifacts;
+working on its `main` does not automatically publish a release or post to Discord.
 
 ## Game data
 

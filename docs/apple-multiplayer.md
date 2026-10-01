@@ -39,7 +39,7 @@ host migration, or a browser client. See the
 [upstream connection notes](../port/linux/README.md#connection).
 
 The current integration keeps the Apple ARM64/Metal renderer and merges
-cybersecurity upstream through `083eef0c` (player and machine name validation). This
+cybersecurity upstream through `cdd0291a` (console log verbosity). This
 includes repeated-match input and client-role fixes, map compatibility checks,
 mouse aiming changes, compressed networking updates, stronger hit and movement
 validation, score/death replication, and version-9 distributed netcode. Invite
@@ -52,6 +52,11 @@ cleanup between games and vehicles waking after a client's movement. Clients
 use the host's game rules; hosts can detect sustained speed hacks and ban
 players, and received player and machine names are cleaned before display.
 See the [shared netcode notes](../port/linux/NETCODE.md) for these rules.
+
+The console now shows important messages by default. Set `console_log` in
+the `[game]` section of `config.toml` to `"all"`, `"important"`, or `"none"`;
+command responses and stopping asserts remain visible. This setting is
+config-only in this fork.
 
 The original Xbox decompilation was reviewed through `901aee16`, including
 the new text and circular-queue matching work. This port already implements
@@ -193,6 +198,11 @@ cover current invite lengths, Discord socket ownership, Command-W handling,
 and occupied UDP ports used by UPnP cleanup. A private mock Discord RPC test
 delivers the current join secret into the real game without changing Discord
 activity:
+
+Build 7 adds the console logging update. It passed the seven input-binding
+checks, the private Discord invite test, and a 65-second encrypted two-instance
+match. These tests use isolated saves; the installed app keeps existing player
+profiles, controls and audio settings.
 
 ```sh
 python3 tools/macos_discord_smoke.py

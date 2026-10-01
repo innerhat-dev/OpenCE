@@ -7,8 +7,8 @@ the iPhone build also uses native ARM code and ANGLE's Metal renderer.
 ## 1. Clone and install public dependencies
 
 ```sh
-git clone https://github.com/zimm3rmann/halo-ce-ios-macos.git
-cd halo-ce-ios-macos
+git clone https://github.com/pfista/halo-ce-universal.git
+cd halo-ce-universal
 ```
 
 Install Xcode Command Line Tools for a Mac-only build, or full Xcode 26 or later
@@ -125,6 +125,24 @@ The generated report includes local paths and stays under ignored `build/`.
 The tested devices are an M5 Mac on macOS 26.5.1 and an iPhone 17 Pro Max on
 iOS 26.6.2. The Mac bundle declares macOS 14+, and the iPhone build targets
 iOS 26+, but other OS/device combinations have not been exhaustively tested.
+
+## Development workflow
+
+Use `main` in [pfista/halo-ce-universal](https://github.com/pfista/halo-ce-universal)
+as the working branch. `origin` points to that fork; `upstream` points to
+[cybersecurity/halo-ce-universal](https://github.com/cybersecurity/halo-ce-universal).
+For a fresh clone, add the upstream remote:
+
+```sh
+git remote add upstream https://github.com/cybersecurity/halo-ce-universal.git
+git fetch upstream
+```
+
+Bring upstream changes into our `main`, retaining the Apple port and testing
+before pushing. When a contribution is ready, prepare a focused branch against
+`upstream/main` and open a pull request into that repository. CI still checks
+fork pushes; automatic releases and Discord build notifications run only in
+the upstream repository.
 
 ## Source-only sharing
 
