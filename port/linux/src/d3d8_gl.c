@@ -25,6 +25,9 @@ Conventions carried over from the Xbox:
 #include "sdl_platform.h"
 #include "halo_ui_pointer.h"
 #include "port_config.h"
+#ifdef HALO_MACOS
+#include "../../macos/renderer_config.h"
+#endif
 
 #include <math.h>
 #include <stdio.h>
@@ -2817,6 +2820,9 @@ never change once loaded. The mirror keeps a copy of that memory in GL
 buffers (one per segment, created when first needed) and uploads a page
 only when it is first drawn from or after the game has written it: pages
 are write-protected once uploaded, as cached textures are (memory_watch.c).
+The optional Mac cache checks a bounded CPU shadow on every use instead;
+write-watch generations alone missed geometry replaced by a later map.
+Streaming is the default on Mac and iOS until the cache improves frame time.
 Pages the game rewrites frame after frame (dynamic vertices) would fault on
 every write; after a few such rewrites a page counts as volatile for a
 while, and draws that use it stream their data as before. */
@@ -2825,6 +2831,9 @@ while, and draws that use it stream their data as before. */
 #define MIRROR_SEGMENT_COUNT (PLATFORM_CONTIGUOUS_SIZE / MIRROR_SEGMENT_SIZE)
 #define MIRROR_PAGE_SIZE 0x1000UL
 #define MIRROR_PAGE_COUNT (PLATFORM_CONTIGUOUS_SIZE / MIRROR_PAGE_SIZE)
+#if defined(HALO_MACOS) && !defined(HALO_IOS) && HALO_MACOS_GEOMETRY_CACHE
+#define MIRROR_VERIFY_CONTENTS 1
+#endif
 /* rewrites no more than this many frames apart ... */
 #define MIRROR_REWRITE_FRAMES 2
 /* ... this many times in a row make a page volatile ... */
@@ -2844,10 +2853,35 @@ static struct
 	GLuint buffers[MIRROR_SEGMENT_COUNT];
 	unsigned char state[MIRROR_PAGE_COUNT];
 	unsigned char rewrites[MIRROR_PAGE_COUNT];
-	/* the page's memory_watch generation when it was uploaded */
+	/* Upload serial on Mac, memory_watch generation on other platforms. */
 	unsigned long generation[MIRROR_PAGE_COUNT];
 	unsigned long rewritten_frame[MIRROR_PAGE_COUNT];
+#ifdef MIRROR_VERIFY_CONTENTS
+	/* The rebased guest can miss write-watch invalidations across map loads.
+	   Verify the actual bytes on every use, including same-frame rewrites.
+	   Shadows are allocated only for segments the game draws from. */
+	unsigned char *contents[MIRROR_SEGMENT_COUNT];
+	unsigned long upload_serial;
+#endif
 } mirror;
+
+#ifdef MIRROR_VERIFY_CONTENTS
+static BOOL mirror_page_equal(const unsigned char *current, const unsigned char *uploaded)
+{
+	unsigned long offset;
+	/* The guest libc compares one byte at a time. Fixed-size copies become
+	   word loads without type-punning vertex data or reading past the page. */
+	for (offset = 0; offset < MIRROR_PAGE_SIZE; offset += sizeof(unsigned long long))
+	{
+		unsigned long long current_word, uploaded_word;
+		__builtin_memcpy(&current_word, current + offset, sizeof(current_word));
+		__builtin_memcpy(&uploaded_word, uploaded + offset, sizeof(uploaded_word));
+		if (current_word != uploaded_word)
+			return FALSE;
+	}
+	return TRUE;
+}
+#endif
 
 /* uploads the pages of [first, last) that are absent or stale; FALSE if one
 of them turns out to be volatile */
@@ -2871,8 +2905,14 @@ static BOOL mirror_refresh(unsigned long first, unsigned long last)
 	for (page = first; page < last; page++)
 	{
 		BOOL written = mirror.state[page] == _mirror_page_present &&
+#ifdef MIRROR_VERIFY_CONTENTS
+			!mirror_page_equal((const void *)(PLATFORM_CONTIGUOUS_BASE + page * MIRROR_PAGE_SIZE),
+				mirror.contents[page * MIRROR_PAGE_SIZE / MIRROR_SEGMENT_SIZE] +
+				(page * MIRROR_PAGE_SIZE % MIRROR_SEGMENT_SIZE));
+#else
 			memory_watch_generation(PLATFORM_CONTIGUOUS_BASE + page * MIRROR_PAGE_SIZE, MIRROR_PAGE_SIZE) >
 			mirror.generation[page];
+#endif
 
 		stale[page - first] = mirror.state[page] != _mirror_page_present || written;
 		if (written)
@@ -2895,6 +2935,7 @@ static BOOL mirror_refresh(unsigned long first, unsigned long last)
 	{
 		unsigned long segment = page * MIRROR_PAGE_SIZE / MIRROR_SEGMENT_SIZE;
 		unsigned long address, size;
+		const void *upload;
 		/* no queued draw can read pages uploaded for the first time */
 		BOOL unused = TRUE;
 
@@ -2917,12 +2958,29 @@ static BOOL mirror_refresh(unsigned long first, unsigned long last)
 		}
 		address = PLATFORM_CONTIGUOUS_BASE + page * MIRROR_PAGE_SIZE;
 		size = (run - page) * MIRROR_PAGE_SIZE;
+#ifdef MIRROR_VERIFY_CONTENTS
+		if (!mirror.contents[segment])
+		{
+			mirror.contents[segment] = malloc(MIRROR_SEGMENT_SIZE);
+			if (!mirror.contents[segment])
+				return FALSE;
+		}
+		unsigned char *copy = mirror.contents[segment] + (page * MIRROR_PAGE_SIZE % MIRROR_SEGMENT_SIZE);
+		memcpy(copy, (const void *)address, size);
+		upload = copy;
+#else
 		/* protect first, so a write racing with the upload is noticed */
 		memory_watch_protect(address, size);
+		upload = (const void *)address;
+#endif
 		for (; page < run; page++)
 		{
+#ifdef MIRROR_VERIFY_CONTENTS
+			mirror.generation[page] = ++mirror.upload_serial;
+#else
 			mirror.generation[page] = memory_watch_generation(PLATFORM_CONTIGUOUS_BASE + page * MIRROR_PAGE_SIZE,
 				MIRROR_PAGE_SIZE);
+#endif
 			mirror.state[page] = _mirror_page_present;
 		}
 		if (!mirror.buffers[segment])
@@ -2940,14 +2998,14 @@ static BOOL mirror_refresh(unsigned long first, unsigned long last)
 		{
 			host_gl_buffer_write(GL_COPY_WRITE_BUFFER,
 				(unsigned int)(address - PLATFORM_CONTIGUOUS_BASE - segment * MIRROR_SEGMENT_SIZE),
-				(unsigned int)size, (const void *)address);
+				(unsigned int)size, upload);
 			continue;
 		}
 #else
 		(void)unused;
 #endif
 		glBufferSubData(GL_COPY_WRITE_BUFFER, (GLintptr)(address - PLATFORM_CONTIGUOUS_BASE - segment * MIRROR_SEGMENT_SIZE),
-			(GLsizeiptr)size, (const void *)address);
+			(GLsizeiptr)size, upload);
 	}
 	return TRUE;
 }
@@ -2963,14 +3021,13 @@ static BOOL mirror_range(unsigned long address, unsigned long size, GLuint *buff
 	unsigned long segment, first, last, page, oldest = ~0UL, newest = 0;
 	BOOL present = TRUE;
 
-#ifdef HALO_MACOS
-	/* The rebased Mac guest can leave stale geometry in the page mirror
-	   after a map change (reproduced on Prisoner -> Chill Out). Stream the
-	   current vertices and indices until its write tracking is reliable. */
+#if defined(HALO_IOS) || (defined(HALO_MACOS) && !HALO_MACOS_GEOMETRY_CACHE)
+	/* Stable Apple default; the verified Mac cache remains a build experiment. */
 	return FALSE;
 #endif
 
-	if (!size || address < PLATFORM_CONTIGUOUS_BASE || start + size > PLATFORM_CONTIGUOUS_SIZE)
+	if (!size || address < PLATFORM_CONTIGUOUS_BASE || start >= PLATFORM_CONTIGUOUS_SIZE ||
+		size > PLATFORM_CONTIGUOUS_SIZE - start)
 		return FALSE;
 	segment = start / MIRROR_SEGMENT_SIZE;
 	if ((start + size - 1) / MIRROR_SEGMENT_SIZE != segment)
@@ -2997,7 +3054,12 @@ static BOOL mirror_range(unsigned long address, unsigned long size, GLuint *buff
 				newest = mirror.generation[page];
 		}
 	}
+#ifdef MIRROR_VERIFY_CONTENTS
+	(void)present;
+	(void)oldest;
+#else
 	if (!present || memory_watch_generation(address, size) > oldest)
+#endif
 	{
 		if (!mirror_refresh(first, last))
 			return FALSE;
@@ -3748,6 +3810,7 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 	{
 		struct render_target_entry *back_buffer = render_target_get(&device.back_buffer);
 		int window_width, window_height, width, height, x, y;
+		GLuint read_framebuffer;
 
 		if (trace_frame())
 			platform_log("present back buffer %08lx texture %u", (unsigned long)device.back_buffer.Data,
@@ -3766,16 +3829,20 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		}
 		x = (window_width - width) / 2;
 		y = (window_height - height) / 2;
+		/* Creating an FBO binds both read and draw targets. Resolve it before
+		   selecting the window, including on the first/loading frame. */
+		read_framebuffer = framebuffer_get(back_buffer->target.texture, 0);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 		glDisable(GL_SCISSOR_TEST);
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
-		glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_get(back_buffer->target.texture, 0));
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, read_framebuffer);
 		/* row 0 of the render target is the top of the picture */
 		glBlitFramebuffer(0, 0, (GLint)back_buffer->target.gl_width, (GLint)back_buffer->target.gl_height,
 			x, y + height, x + width, y, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 		platform_video_swap();
+		gl_check_errors("present");
 		xgpu_gl_state_invalidate();
 		xgpu_texture_cache_begin_frame();
 #ifdef HALO_ANDROID

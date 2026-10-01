@@ -197,10 +197,17 @@ access to its neighbors. Texture write tracking therefore has 16 KB granularity.
 Fresh heap mappings are explicitly recreated: Darwin's `MADV_DONTNEED` alone
 does not guarantee the zero-filled pages expected by musl.
 
-The Mac renderer streams current vertex and index data instead of reusing the
-contiguous geometry mirror. This prevents missing walls after switching maps
-(reproduced from Prisoner to Chill Out). It increases geometry upload work;
-the cache can be restored once its Mac write tracking is reliable.
+The Mac renderer streams current geometry by default. The optional cache in
+`renderer_config.h` compares current vertex and index pages with a CPU shadow
+before reusing the contiguous geometry mirror. This detects reused map memory
+and writes missed by page tracking, including changes within one frame. Shadows
+are allocated lazily and bounded by the original 128 MB contiguous arena;
+frequently rewritten geometry, allocation failures and unsupported ranges use
+the existing streaming path. The cache reduced uploads but did not improve
+median frame time, so it remains disabled. iOS continues streaming until its
+cache is validated on a device. The cache prototype passed Prisoner → Chill Out
+→ a10 → b30 → Prisoner; captured Chill Out geometry matched the streamed
+reference after a map change.
 
 SDL video stays on the real main thread. Audio mixing runs on a guest-stack
 worker, with the results returned to SDL's callback thread before submission.
@@ -228,7 +235,8 @@ Completed:
 - Real menu rendering, campaign gameplay, mouse capture, sound, and clean timed
   test shutdown; gameplay, audio and input confirmed on the target Mac.
 
-Not yet exhaustively validated: all campaign missions, checkpoint save/reload,
+Not yet exhaustively validated: all campaign missions, checkpoint save/reload
+outside the tested a30 scene,
 controllers, split screen, multiplayer across physical devices/networks,
 128-player sessions, other M-series GPUs, and older macOS.
 Bink startup videos are skipped by the existing native port. CPU and rendering
@@ -250,8 +258,9 @@ only for the vertices in the draw. This avoids ANGLE's conversion of entire
 Occlusion queries also use the last completed result instead of spinning on
 unfinished Metal work, matching the existing desktop query-buffer behavior.
 
-Seventy-second `a30` tests with a grenade effect every two seconds, starting at
-20 seconds, gave these results on the M5 Mac (vsync enabled):
+Historical seventy-second `a30` launch profiles gave these results on the M5
+Mac (vsync enabled). Their requested grenade workload was not acknowledged by
+the engine, so they are not evidence of grenade stress-test coverage:
 
 | Build/mode | Median frame | 95th percentile | Peak physical footprint |
 | --- | --- | --- | --- |
@@ -259,10 +268,10 @@ Seventy-second `a30` tests with a grenade effect every two seconds, starting at
 | After fixes, 4:3 | 16.67 ms | 17.41 ms | 468 MB |
 | After fixes, native aspect fullscreen | 16.67 ms | 17.88 ms | 511 MB |
 
-A final 70-second test requesting an explosion every 0.25 seconds also completed:
-16.67 ms median, 17.25 ms p95, 460 MB peak footprint. An earlier high-cadence run
-stopped in the Xbox assertion stack walker before preserving the assertion;
-the final retest did not reproduce it. Longer stress testing is still needed.
+A historical 70-second launch profile requesting an explosion every 0.25 seconds
+recorded 16.67 ms median, 17.25 ms p95 and 460 MB peak footprint. That workload
+was also unverified. The current benchmark fails when the engine rejects a
+command, the console disconnects, the game exits early or rendering faults.
 
 These runs show reduced memory demand, not a measured increase in maximum FPS:
 both versions reached the 60 FPS presentation limit. The after runs also captured
@@ -276,13 +285,21 @@ With other Halo instances closed, reproduce the test using isolated saves:
 python3 tools/macos_benchmark.py --output build/macos/performance/retest --effects --fullscreen
 ```
 
-`--guest` chooses a comparison image; `--level a10|a30|b30`, `--seconds`, and
-`--interval` control the scene and effect cadence. The helper uses the game's
-existing local developer console and keeps maps linked and saves separate.
-The CSV, console transcript, and game log are under the output directory.
+`--host` and `--guest` choose a comparison build. `--levels` accepts an ordered
+list of campaign or test multiplayer maps; `--cycle-seconds` repeats that list.
+`--checkpoints` requests a normal safe save and checks the completed revert
+before continuing. Use a30 for this check: the initial a10 cryo scene can refuse
+an unsafe save. `--screenshot-every N` captures every N frames. The helper uses
+the existing private loopback developer console and creates fresh settings and
+saves; its output directory must not already exist. Multiplayer test maps use
+Slayer so a player is created. The CSV, console transcript, game log and
+`validation.json` record completed work and the actual guest image hash.
 Set `HALO_PERF_LOG=/absolute/path/frames.csv` for profiling an ordinary launch.
 Driver draw time includes waits (including drawable/vsync waits); it is not a
 GPU timestamp measurement. Normal launches do not enable per-draw profiling.
+
+See [Apple regression checks](../../docs/apple-regression-checks.md) for the
+source-only CI boundary, local gameplay checks and measured upload comparison.
 
 ## Phase two
 

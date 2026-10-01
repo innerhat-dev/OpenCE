@@ -1,6 +1,7 @@
 #ifndef HALO_MAC_MENU_H
 #define HALO_MAC_MENU_H
 #include <stddef.h>
+void host_menu_initialize_application(void);
 int host_menu_prepare(const char *support, const char *fallback, char *data, size_t capacity);
 void host_menu_begin_game(void);
 void host_menu_finish_game(int exit_code);

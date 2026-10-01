@@ -8,6 +8,9 @@ import sys
 def main():
     llvm = Path(os.environ.get('HALO_MACOS_LLVM_BIN', '/opt/homebrew/opt/llvm/bin'))
     args = sys.argv[1:]
+    mac_check = '--mac-check' in args
+    if mac_check:
+        args.remove('--mac-check')
     if '-S' not in args:
         return subprocess.call([str(llvm / 'clang'), *args])
     output_index = args.index('-o') + 1
@@ -16,8 +19,9 @@ def main():
     args[output_index] = str(ir)
     subprocess.run([llvm / 'clang', *args, '-emit-llvm', '-femulated-tls', '-DHALO_MACOS=1', '-DHALO_IOS=1'], check=True)
     rebased = ir.with_suffix('.rebased.ll')
+    pipeline = 'halo-rebase-ios-mac-check' if mac_check else 'halo-rebase-ios'
     subprocess.run([llvm / 'opt', '-load-pass-plugin=build/ios/guest_rebase.dylib',
-                    '-emulated-tls', '-passes=lower-emutls,halo-rebase-ios,verify', '-S', ir, '-o', rebased], check=True)
+                    '-emulated-tls', '-passes=lower-emutls,' + pipeline + ',verify', '-S', ir, '-o', rebased], check=True)
     subprocess.run([llvm / 'llc', '-O2', '-mtriple=arm64_32-apple-watchos',
                     '-aarch64-neon-syntax=generic', '-emulated-tls', rebased, '-o', output], check=True)
     return 0

@@ -123,10 +123,14 @@ The generated report includes local paths and stays under ignored `build/`.
   checks without device signing; it does not establish device performance.
 
 The tested devices are an M5 Mac on macOS 26.5.1 and an iPhone 17 Pro Max on
-iOS 26.6.2. The Mac bundle declares macOS 14+, and the iPhone build targets
-iOS 26+, but other OS/device combinations have not been exhaustively tested.
+iOS 26.6.2. The current bundled SDL3 requires macOS 26.0, which packaging
+enforces in the app's minimum version; the iPhone build targets iOS 26+.
+Other OS/device combinations have not been exhaustively tested.
 
 ## Development workflow
+
+[Apple regression checks](apple-regression-checks.md) covers source-only CI,
+native menu responsiveness and local gameplay/renderer validation.
 
 Use `main` in [pfista/halo-ce-universal](https://github.com/pfista/halo-ce-universal)
 as the working branch. `origin` points to that fork; `upstream` points to

@@ -40,7 +40,9 @@ retain earlier imports rather than deleting the person's files.
 `macos-settings.json` in the existing Application Support directory records the
 data/source-image paths and fullscreen preference. Saves, profiles, cache and
 `config.toml` stay in their established locations outside the signed app.
-Settings pauses the main game loop. Data changes apply on the next launch.
+Settings, file-picker sheets and disc imports return control to SDL while the
+game is running, so the simulation and networking continue. First-launch data
+selection can wait before the engine starts. Data changes apply on the next launch.
 Advanced Settings opens `config.toml` in TextEdit; restart to apply control edits.
 
 Existing `HALO_DATA_ROOT`, `HALO_SAVE_ROOT` and `HALO_WINDOWED` development
@@ -145,6 +147,7 @@ public signing.
 
 ```sh
 python3 tools/test_macos_menu.py
+python3 tools/test_macos_menu.py --check-ui
 HALO_MACOS_LLVM_BIN=/opt/homebrew/opt/llvm@22/bin python3 tools/test_macos_runtime.py
 ```
 

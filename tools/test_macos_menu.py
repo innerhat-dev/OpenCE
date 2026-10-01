@@ -4,6 +4,7 @@
 Creates tiny authored XDVDFS/map-header fixtures; contains no game assets.
 """
 import base64
+import os
 from pathlib import Path
 import plistlib
 import shutil
@@ -19,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tools.macos_build import update_configuration, minimum_macos_version, SDL
 from tools.macos_release import audit_bundle, appcast, NAMESPACE
+from tools.macos_sparkle import setup_sparkle
 
 
 def map_header(name, version=5, build="01.01.14.2342"):
@@ -120,6 +122,51 @@ def build_ui_test():
     print("Run with arguments:", saves, ROOT / "assets")
 
 
+def native_menu_loop():
+    """Compile the shipped menu and SDL bridge without SDK headers or game data."""
+    output = ROOT / "build/macos/tests/menu-loop"
+    output.mkdir(parents=True, exist_ok=True)
+    sparkle = setup_sparkle().parent
+    egl = ROOT / "build/macos/angle/dist/EGL.xcframework/macos-arm64"
+    flags = ["-arch", "arm64", "-mmacosx-version-min=14.0", "-O2", "-Wall", "-Wextra",
+             "-DHALO_MACOS=1", "-D_DARWIN_C_SOURCE", "-I.", "-Iport/macos/host",
+             "-Iport/macos/native", "-Iport/linux/src", "-Iport/android/include",
+             "-Ibuild/macos/toolchain/gl", f"-I{SDL / 'include'}", f"-F{sparkle}"]
+    sources = ("port/macos/tests/menu_ui.m", "port/macos/tests/menu_support.c",
+               "port/macos/native/host_menu.m", "port/macos/native/HaloPreferences.m",
+               "port/macos/host/host_sdl.c", "port/macos/host/host_invite.c",
+               "port/macos/host/posix_files.c", "port/linux/src/xiso.c")
+    objects = []
+    for source in sources:
+        obj = output / (Path(source).name + '.o')
+        subprocess.run(["clang", *flags, *(["-fobjc-arc", "-fblocks"] if source.endswith('.m') else []),
+                        "-c", source, "-o", obj], cwd=ROOT, check=True)
+        objects.append(obj)
+    app = output / "HaloMenuLoop.app"
+    executable = app / "Contents/MacOS/menu-loop"
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    (app / 'Contents/Info.plist').write_bytes(plistlib.dumps({
+        'CFBundleExecutable': 'menu-loop', 'CFBundleIdentifier': 'local.halo.ce.menu-loop-tests',
+        'CFBundleName': 'HaloMenuLoop', 'CFBundlePackageType': 'APPL',
+        'CFBundleVersion': '1', 'CFBundleShortVersionString': '1.0'}))
+    subprocess.run(["clang", *objects, f"-L{SDL / 'lib'}", "-lSDL3", f"-F{egl}",
+                    "-framework", "libEGL", f"-F{sparkle}", "-framework", "Sparkle", "-framework", "Cocoa",
+                    f"-Wl,-rpath,{egl}", f"-Wl,-rpath,{sparkle}", "-o", executable], check=True)
+    subprocess.run(['codesign', '--force', '--sign', '-', app], check=True)
+    with tempfile.TemporaryDirectory(prefix="fixtures-", dir=output) as temporary:
+        directory = Path(temporary)
+        maps = directory / 'data/maps'
+        maps.mkdir(parents=True)
+        for name in ('ui', 'a10'):
+            (maps / (name + '.map')).write_bytes(map_header(name))
+        image = directory / 'disc.iso'
+        image.write_bytes(disc_image(map_header('ui'), map_header('a10')))
+        environment = {k: v for k, v in os.environ.items() if not k.startswith('HALO_')}
+        environment['HALO_WINDOWED'] = '1'
+        subprocess.run([executable, directory / 'saves', maps.parent, image],
+                       env=environment, check=True, timeout=20)
+
+
 class ReleaseBoundary(unittest.TestCase):
     def test_os_requirement_ignores_linker_tool_and_source_versions(self):
         output = "Load command 1\n cmd LC_BUILD_VERSION\n minos 14.0\n tool 3\n version 27037.1\nLoad command 2\n cmd LC_SOURCE_VERSION\n version 1000.0\nLoad command 3\n cmd LC_VERSION_MIN_MACOSX\n version 15.0\n"
@@ -169,6 +216,8 @@ class ReleaseBoundary(unittest.TestCase):
 if __name__ == "__main__":
     if sys.argv[1:] == ["--build-ui"]:
         build_ui_test()
+    elif sys.argv[1:] == ["--check-ui"]:
+        native_menu_loop()
     else:
         native_preferences()
         unittest.main(argv=[sys.argv[0]])

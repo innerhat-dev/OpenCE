@@ -1425,6 +1425,8 @@ static void main_new_map(
 	{
 		create_local_players();
 		game_time_start();
+		if (debug_game_save)
+			console_printf(FALSE, "\nloaded map %s\n", options->map_name);
 	}
 	else
 	{

@@ -24,9 +24,10 @@ bool isHandle(StringRef name, unsigned argument) {
 }
 struct RebasePass : PassInfoMixin<RebasePass> {
     bool ios = false;
-    explicit RebasePass(bool ios = false) : ios(ios) {}
+    bool macCheck = false;
+    explicit RebasePass(bool ios = false, bool macCheck = false) : ios(ios), macCheck(macCheck) {}
     PreservedAnalyses run(Module &module, ModuleAnalysisManager &) {
-        const uint64_t bias = ios ? 0x400000000ULL : GuestBias;
+        const uint64_t bias = ios && !macCheck ? 0x400000000ULL : GuestBias;
         if (module.getDataLayout().getPointerSize(0) != 4 ||
             module.getDataLayout().getPointerSize(272) != 8)
             report_fatal_error("Halo rebase requires arm64_32 with 64-bit address space 272");
@@ -283,9 +284,12 @@ extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
                 builder.registerPipelineParsingCallback([](StringRef name,
                                                            ModulePassManager &manager,
                                                            ArrayRef<PassBuilder::PipelineElement>) {
-                    if (name != "halo-rebase" && name != "halo-rebase-ios")
+                    if (name != "halo-rebase" && name != "halo-rebase-ios" && name != "halo-rebase-ios-mac-check")
                         return false;
-                    manager.addPass(RebasePass(name == "halo-rebase-ios"));
+                    // macOS reserves the iOS data arena on some OS versions.
+                    // Source-only CI uses identical signed-image lowering with
+                    // the Mac arena; the device pipeline retains its own bias.
+                    manager.addPass(RebasePass(name != "halo-rebase", name == "halo-rebase-ios-mac-check"));
                     return true;
                 });
             }};

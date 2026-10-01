@@ -20,7 +20,8 @@
 @property(nonatomic) BOOL gameRunning;
 @property(nonatomic) BOOL waitingForUpdate;
 @property(nonatomic) BOOL importing;
-@property(nonatomic) BOOL modalSettings;
+@property(nonatomic) BOOL settingsVisible;
+@property(nonatomic) BOOL quitting;
 @property(nonatomic, copy) void (^pendingInstall)(void);
 @property(nonatomic, copy) NSString *availableVersion;
 @property(nonatomic, copy) NSString *launchDataPath;
@@ -28,6 +29,9 @@
 - (void)refreshFullscreen;
 - (BOOL)chooseFolder;
 - (BOOL)chooseImage;
+- (void)showSettings:(id)sender;
+- (void)closeSettings:(id)sender;
+- (void)importImage:(NSURL *)image completion:(void (^)(BOOL))completion;
 @end
 
 static HaloMenu *menu;
@@ -36,7 +40,12 @@ static void showError(NSError *error) {
     NSAlert *alert = [[NSAlert alloc] init];
     alert.messageText = @"Halo could not use that setting";
     alert.informativeText = error.localizedDescription ?: @"Please try again.";
-    [alert runModal];
+    if (menu.gameRunning) {
+        [menu showSettings:nil];
+        [alert beginSheetModalForWindow:menu.settingsWindow completionHandler:nil];
+    } else {
+        [alert runModal];
+    }
 }
 
 static NSMenuItem *item(NSMenu *parent, NSString *title, SEL action, NSString *key) {
@@ -89,7 +98,9 @@ static void importProgress(void *context, const char *file, unsigned long long d
     (void)sender;
     if (self.importing) return NSTerminateCancel;
     if (self.gameRunning) {
-        if (self.modalSettings) [NSApp stopModal];
+        self.quitting = YES;
+        if (NSApp.modalWindow) [NSApp stopModal];
+        [self closeSettings:nil];
         host_sdl_request_quit();
         return NSTerminateCancel;
     }
@@ -177,7 +188,7 @@ static void importProgress(void *context, const char *file, unsigned long long d
     }
     if (![self.preferences setWindowed:!fullscreen error:&error]) showError(error);
     [self refreshFullscreen];
-    if (self.modalSettings) {
+    if (self.settingsVisible) {
         host_sdl_release_mouse();
         [self.settingsWindow makeKeyAndOrderFront:self];
     }
@@ -187,7 +198,8 @@ static void importProgress(void *context, const char *file, unsigned long long d
 - (void)quit:(id)sender {
     (void)sender;
     if (self.importing) return;
-    if (self.modalSettings) [NSApp stopModal];
+    self.quitting = YES;
+    [self closeSettings:nil];
     if (self.gameRunning) host_sdl_request_quit();
     else [NSApp terminate:self];
 }
@@ -230,21 +242,24 @@ static void importProgress(void *context, const char *file, unsigned long long d
 }
 - (void)showSettings:(id)sender {
     (void)sender;
-    if (self.modalSettings) return;
     host_sdl_release_mouse();
     if (!self.settingsWindow) [self buildSettings];
     [self refreshSettings];
     [self.settingsWindow center];
     [NSApp activateIgnoringOtherApps:YES];
     [self.settingsWindow makeKeyAndOrderFront:self];
-    /* A modal settings panel pauses the game's main loop while editing. */
-    self.modalSettings = YES;
-    [NSApp runModalForWindow:self.settingsWindow];
-    self.modalSettings = NO;
-    [self.settingsWindow orderOut:self];
-    if (self.gameRunning) host_sdl_show_game();
+    /* Return to SDL immediately: the guest must keep servicing its network
+       connections while native settings are open. */
+    self.settingsVisible = YES;
 }
-- (void)closeSettings:(id)sender { (void)sender; [NSApp stopModal]; }
+- (void)closeSettings:(id)sender {
+    (void)sender;
+    if (self.settingsWindow.attachedSheet)
+        [self.settingsWindow endSheet:self.settingsWindow.attachedSheet returnCode:NSModalResponseCancel];
+    self.settingsVisible = NO;
+    [self.settingsWindow orderOut:self];
+    if (self.gameRunning && !self.quitting) host_sdl_show_game();
+}
 - (void)automaticUpdates:(NSButton *)sender {
     self.updater.updater.automaticallyChecksForUpdates = sender.state == NSControlStateValueOn;
 }
@@ -264,7 +279,12 @@ static void importProgress(void *context, const char *file, unsigned long long d
         NSAlert *alert = [[NSAlert alloc] init];
         alert.messageText = @"Advanced settings appear after the first game launch";
         alert.informativeText = @"Start Halo once to create its controls and advanced settings file.";
-        [alert runModal];
+        if (self.gameRunning) {
+            [self showSettings:nil];
+            [alert beginSheetModalForWindow:self.settingsWindow completionHandler:nil];
+        } else {
+            [alert runModal];
+        }
     }
 }
 - (BOOL)chooseFolder {
@@ -275,7 +295,8 @@ static void importProgress(void *context, const char *file, unsigned long long d
     panel.canChooseDirectories = YES;
     panel.canChooseFiles = NO;
     panel.allowsMultipleSelection = NO;
-    if ([panel runModal] != NSModalResponseOK) return NO;
+    NSModalResponse result = [panel runModal];
+    if (result != NSModalResponseOK) return NO;
     NSError *error = nil;
     if (![self.preferences selectDataRoot:panel.URL iso:nil error:&error]) { showError(error); return NO; }
     [self refreshSettings];
@@ -289,8 +310,17 @@ static void importProgress(void *context, const char *file, unsigned long long d
     panel.canChooseDirectories = NO;
     panel.canChooseFiles = YES;
     panel.allowsMultipleSelection = NO;
-    if ([panel runModal] != NSModalResponseOK) return NO;
-    NSURL *image = panel.URL;
+    NSModalResponse result = [panel runModal];
+    if (result != NSModalResponseOK) return NO;
+    __block BOOL finished = NO, succeeded = NO;
+    [self importImage:panel.URL completion:^(BOOL success) { succeeded = success; finished = YES; }];
+    /* The first-launch chooser runs before the engine starts. Runtime imports
+       use the asynchronous completion directly and never enter this loop. */
+    while (!finished)
+        [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+    return succeeded;
+}
+- (void)importImage:(NSURL *)image completion:(void (^)(BOOL))completion {
     NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 470, 130)
         styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
     window.title = @"Importing Halo Maps";
@@ -306,33 +336,66 @@ static void importProgress(void *context, const char *file, unsigned long long d
     [window makeKeyAndOrderFront:self];
     self.importing = YES;
     __block struct import_progress progress = {progressLabel, bar};
-    __block NSURL *imported = nil;
-    __block NSError *error = nil;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        imported = HaloImportDiscImage(image, self.preferences.supportDirectory, importProgress, &progress, &error);
-        dispatch_async(dispatch_get_main_queue(), ^{ [NSApp stopModal]; });
+        NSError *error = nil;
+        NSURL *imported = HaloImportDiscImage(image, self.preferences.supportDirectory, importProgress, &progress, &error);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.importing = NO;
+            [window orderOut:self];
+            NSError *selectionError = error;
+            BOOL succeeded = imported && [self.preferences selectDataRoot:imported iso:image error:&selectionError];
+            if (!succeeded) {
+                if (imported) [NSFileManager.defaultManager removeItemAtURL:imported error:nil];
+                showError(selectionError);
+            } else {
+                [self refreshSettings];
+            }
+            completion(succeeded);
+        });
     });
-    [NSApp runModalForWindow:window];
-    self.importing = NO;
-    [window orderOut:self];
-    if (!imported) { showError(error); return NO; }
-    if (![self.preferences selectDataRoot:imported iso:image error:&error]) {
-        [NSFileManager.defaultManager removeItemAtURL:imported error:nil];
-        showError(error);
-        return NO;
-    }
-    [self refreshSettings];
-    return YES;
 }
 - (void)changedDataNotice {
     if (!self.gameRunning) return;
     NSAlert *alert = [[NSAlert alloc] init];
     alert.messageText = @"Game data updated";
     alert.informativeText = @"Halo will use your selection the next time it opens. Your current game can continue.";
-    [alert runModal];
+    [self showSettings:nil];
+    [alert beginSheetModalForWindow:self.settingsWindow completionHandler:nil];
 }
-- (void)selectFolder:(id)sender { (void)sender; if ([self chooseFolder]) [self changedDataNotice]; }
-- (void)selectImage:(id)sender { (void)sender; if ([self chooseImage]) [self changedDataNotice]; }
+- (void)selectFolder:(id)sender {
+    (void)sender;
+    if (self.importing || self.settingsWindow.attachedSheet) return;
+    if (!self.gameRunning) { [self chooseFolder]; return; }
+    [self showSettings:nil];
+    NSOpenPanel *panel = NSOpenPanel.openPanel;
+    panel.title = @"Choose Your Xbox Halo Maps";
+    panel.message = @"Choose an extracted game folder or its maps folder.";
+    panel.canChooseDirectories = YES;
+    panel.canChooseFiles = NO;
+    panel.allowsMultipleSelection = NO;
+    [panel beginSheetModalForWindow:self.settingsWindow completionHandler:^(NSModalResponse response) {
+        if (self.quitting || response != NSModalResponseOK) return;
+        NSError *error = nil;
+        if (![self.preferences selectDataRoot:panel.URL iso:nil error:&error]) showError(error);
+        else { [self refreshSettings]; [self changedDataNotice]; }
+    }];
+}
+- (void)selectImage:(id)sender {
+    (void)sender;
+    if (self.importing || self.settingsWindow.attachedSheet) return;
+    if (!self.gameRunning) { [self chooseImage]; return; }
+    [self showSettings:nil];
+    NSOpenPanel *panel = NSOpenPanel.openPanel;
+    panel.title = @"Choose Your Xbox Halo Disc Image";
+    panel.message = @"The app imports only the maps from your local disc image.";
+    panel.canChooseDirectories = NO;
+    panel.canChooseFiles = YES;
+    panel.allowsMultipleSelection = NO;
+    [panel beginSheetModalForWindow:self.settingsWindow completionHandler:^(NSModalResponse response) {
+        if (self.quitting || response != NSModalResponseOK) return;
+        [self importImage:panel.URL completion:^(BOOL success) { if (success) [self changedDataNotice]; }];
+    }];
+}
 - (void)checkUpdates:(id)sender {
     (void)sender;
     host_sdl_release_mouse();
@@ -367,6 +430,17 @@ static void importProgress(void *context, const char *file, unsigned long long d
 }
 @end
 
+void host_menu_initialize_application(void) {
+    @autoreleasepool {
+        /* SDL's NSApplication subclass intercepts terminate: without consulting
+           delegates. Use Cocoa's normal lifecycle so settings can close and
+           Sparkle can terminate after the guest saves and exits. SDL supports
+           an existing NSApplication and still pumps its native input/events. */
+        [NSApplication sharedApplication];
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+    }
+}
+
 int host_menu_prepare(const char *support, const char *fallback, char *data, size_t capacity) {
     @autoreleasepool {
         menu = [[HaloMenu alloc] init];
@@ -376,6 +450,7 @@ int host_menu_prepare(const char *support, const char *fallback, char *data, siz
         if (HaloUpdateConfigurationIsValid(NSBundle.mainBundle.infoDictionary))
             menu.updater = [[SPUStandardUpdaterController alloc] initWithStartingUpdater:YES updaterDelegate:menu userDriverDelegate:menu];
         [menu buildMenus];
+        [NSApp finishLaunching];
         NSString *selected = menu.preferences.dataPath;
         const char *override = getenv("HALO_DATA_ROOT");
         if (override && *override) selected = @(override);
@@ -408,6 +483,8 @@ void host_menu_begin_game(void) { menu.gameRunning = YES; [menu refreshFullscree
 void host_menu_window_changed(void) { [menu refreshFullscreen]; }
 void host_menu_finish_game(int exit_code) {
     @autoreleasepool {
+        menu.quitting = YES;
+        [menu closeSettings:nil];
         menu.gameRunning = NO;
         if (!exit_code && menu.pendingInstall) {
             menu.waitingForUpdate = YES;

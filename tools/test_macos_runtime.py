@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run compiled ABI probes on Apple Silicon after building macos_guest."""
+import argparse
 import os
 from pathlib import Path
 import subprocess
@@ -18,6 +19,10 @@ def run(*args):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--standalone', action='store_true',
+                        help='Use authored memory routines instead of the full game libc (source-only CI)')
+    args = parser.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     run(sys.executable, "tools/macos_guest_cc.py", "--target=arm64_32-apple-watchos",
         "-mcpu=cortex-a53", "-O2", "-fno-stack-protector", "-fno-unwind-tables",
@@ -25,9 +30,17 @@ def main():
         "-o", OUT / "guest.darwin.s")
     run(sys.executable, "tools/android_asm_convert.py", OUT / "guest.darwin.s", OUT / "guest.s")
     run(LLVM / "clang", "--target=aarch64-linux-android", "-c", OUT / "guest.s", "-o", OUT / "guest.o")
+    libc = ROOT / 'build/macos/guest/libguestc.a'
+    if args.standalone:
+        run(sys.executable, "tools/macos_guest_cc.py", "--target=arm64_32-apple-watchos",
+            "-mcpu=cortex-a53", "-O2", "-ffreestanding", "-fno-stack-protector", "-S",
+            "port/ios/tests/guest_libc.c", "-o", OUT / "libc.darwin.s")
+        run(sys.executable, "tools/android_asm_convert.py", OUT / "libc.darwin.s", OUT / "libc.s")
+        run(LLVM / "clang", "--target=aarch64-linux-android", "-c", OUT / "libc.s", "-o", OUT / "libc.o")
+        libc = OUT / 'libc.o'
     run("build/macos/toolchain/bin/ld.lld", "-m", "aarch64linux", "-static", "-nostdlib",
         "-Ttext=0x88000000", "-e", "guest_test", OUT / "guest.o",
-        "build/macos/guest/libguestc.a", "-o", OUT / "guest.elf")
+        libc, "-o", OUT / "guest.elf")
     run("clang", "-arch", "arm64", "-O2", "-Wall", "port/macos/tests/memory_host.c",
         "-o", OUT / "memory_host")
     run(OUT / "memory_host", OUT / "guest.elf")

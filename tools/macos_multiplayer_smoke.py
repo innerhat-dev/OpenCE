@@ -23,7 +23,10 @@ def prepare(folder, role, mode, seconds, host_address, client_address, variants,
     saves.mkdir(parents=True, exist_ok=True)
     data = folder / "data"
     data.mkdir()
-    (data / "maps").symlink_to(ROOT / "assets/maps", target_is_directory=True)
+    (data / "maps").mkdir()
+    for path in (ROOT / "assets/maps").iterdir():
+        if path.is_file():
+            (data / "maps" / path.name).symlink_to(path.resolve())
     # Use configured addresses only: Linux's arbitrary 127.x loopback
     # aliases fail on Darwin. Invite mode supports LAN plus 127.0.0.1.
     address = host_address if role == "host" else client_address
@@ -58,7 +61,9 @@ exit_after = {seconds}.0
 
 
 def read_log(folder):
-    return (folder / "game.log").read_text(errors="replace")
+    # GUI launches keep native/guest stderr in their isolated save directory.
+    return ''.join(path.read_text(errors="replace") for path in
+                   (folder / "game.log", folder / "saves/halo.log") if path.exists())
 
 
 def main():
@@ -73,9 +78,13 @@ def main():
     parser.add_argument("--guest", type=Path, default=BUILD / "halo_guest.elf")
     parser.add_argument("--executable", type=Path, default=BUILD / "halo",
                         help="Native executable, including one inside a candidate app bundle")
+    parser.add_argument("--native-menu", action="store_true",
+                        help="Use the app bundle's guest and native menus (requires --executable inside the app)")
     parser.add_argument("--host-address", help="A configured local IPv4 address, other than 127.0.0.1")
     parser.add_argument("--client-address", help="Another configured local IPv4 address")
     args = parser.parse_args()
+    if args.native_menu and args.executable.parent.name != 'MacOS':
+        parser.error('--native-menu requires an executable inside the candidate app bundle')
     if args.score < 0 or not re.fullmatch(r"[a-zA-Z0-9_ -]+(?:,[a-zA-Z0-9_ -]+)*", args.variants):
         parser.error("Use non-empty variant names and a nonnegative score")
     host_address = args.host_address
@@ -114,7 +123,9 @@ def main():
             folders[role] = folder
             environment = prepare(folder, role, args.mode, args.seconds, host_address, client_address,
                                   args.variants, args.score)
-            command = [str(args.executable.resolve()), str(args.guest.resolve())]
+            command = [str(args.executable.resolve())]
+            if not args.native_menu:
+                command.append(str(args.guest.resolve()))
             if role == "client" and args.mode == "invite":
                 deadline = time.monotonic() + 40
                 invite = None
@@ -164,6 +175,7 @@ def main():
                 restarts[role] = sum(current < previous for previous, current in zip(times, times[1:]))
             checks["both_played_consecutive_matches"] = all(count >= expected_matches - 1 for count in restarts.values())
         result = {"mode": args.mode, "scope": "two real instances on one Mac",
+                  "native_menu": args.native_menu,
                   "variants": args.variants, "score_to_win": args.score,
                   "exit_codes": codes, "logged_ticks": {k: len(v) for k, v in ticks.items()},
                   "checks": checks, "passed": all(checks.values())}
