@@ -12,9 +12,12 @@ special entitlement, or security-setting change is required for this local build
 ## Launch
 
 Open `build/macos/Halo CE Universal.app` in Finder. There is no automatic timeout.
-The app includes SDL3, ANGLE, and the compiled game image. Its local game-data
-configuration points to this checkout's `assets/` directory; keep that directory
-in place. The original downloaded ISO and SDK archive are not used at runtime.
+The app includes SDL3, ANGLE, Sparkle, and the compiled game image. It remembers
+your chosen local data location. Development builds can fall back to this
+checkout's `assets/` directory. The helmet menu icon opens Settings, changes
+fullscreen, and selects your own disc image or maps folder. See
+[Mac menu and releases](../../docs/macos-menu-and-releases.md) for first launch,
+data import and the intentionally unconfigured release hosting.
 
 The app defaults to borderless fullscreen at the desktop's aspect ratio, with
 Retina output. The 3D field of view widens; the image is not stretched. Rendering
@@ -153,12 +156,13 @@ python3 -m unittest tools.test_visibility_queries
 
 Packaging creates the Mac app icon from the existing
 `port/ios/Assets.xcassets/AppIcon.appiconset/AppIcon.png` artwork. The built-in
-macOS `sips` and `iconutil` tools generate the standard and Retina sizes and
-embed `AppIcon.icns` in the bundle before signing.
+macOS `sips` tool generates standard and Retina PNG sizes, which packaging embeds
+in `AppIcon.icns` before signing. The editable menu icon is `Helmet.svg`.
 
 The shared settings are read from `config.toml` in the save directory, with
 `HALO_*` environment overrides still supported. The Mac host keeps its
-`HALO_WINDOWED` setting and 480-line render scale; the upstream desktop-only
+`HALO_WINDOWED` override and 480-line render scale, with fullscreen also available
+in the native menu; the upstream desktop-only
 F11/menu-pointer path is not yet bridged through the ARM host.
 
 The default LLVM path is `/opt/homebrew/opt/llvm/bin`. `HALO_MACOS_SDL_PREFIX`

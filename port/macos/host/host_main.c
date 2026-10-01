@@ -1,5 +1,6 @@
 /* Native macOS entry point. SDL video remains on the real main thread. */
 #include "host.h"
+#include "../native/host_menu.h"
 #define SDL_MAIN_HANDLED
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -49,6 +50,7 @@ void host_fatal(const char *format, ...) {
 void host_abort(const char *reason) { host_fatal("guest abort: %s", reason); }
 void host_exit(int code) {
     host_logf(HOST_LOG_INFO, "Game exited (%d)", code);
+    host_menu_finish_game(code);
     exit(code);
 }
 int host_errno(void) { return host_linux_errno(errno); }
@@ -120,11 +122,6 @@ int main(int argc, char **argv) {
             fclose(setting);
         }
     }
-    const char *root = getenv("HALO_DATA_ROOT");
-    if (!root)
-        root = !image_argument ? default_data : "assets";
-    if (!realpath(root, data_root))
-        host_fatal("Game data folder is missing: %s", root);
     const char *home = getenv("HOME");
     if (!home)
         host_fatal("HOME is not set");
@@ -135,6 +132,22 @@ int main(int argc, char **argv) {
         saves = !image_argument ? default_saves : "build/macos/saves";
     if (create_directories(saves) || !realpath(saves, save_root))
         host_fatal("Cannot open saves folder: %s", saves);
+    SDL_SetMainReady();
+    SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, "0");
+    SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_MENU_VISIBILITY, "1");
+    /* Keep native settings/file panels and the menu bar above borderless video. */
+    SDL_SetHint(SDL_HINT_WINDOW_ALLOW_TOPMOST, "0");
+    if (!SDL_InitSubSystem(SDL_INIT_VIDEO))
+        host_fatal("Cannot initialize display: %s", SDL_GetError());
+    const char *root = getenv("HALO_DATA_ROOT");
+    if (!root) root = !image_argument ? default_data : "assets";
+    char selected_data[4096];
+    if (!image_argument) {
+        if (!host_menu_prepare(save_root, root, selected_data, sizeof(selected_data))) return 0;
+        root = selected_data;
+    }
+    if (!realpath(root, data_root))
+        host_fatal("Game data folder is missing: %s", root);
     if (!image_argument) {
         char log_path[4096];
         snprintf(log_path, sizeof(log_path), "%s/halo.log", save_root);
@@ -154,10 +167,6 @@ int main(int argc, char **argv) {
     }
     setenv("HALO_DATA_ROOT", data_root, 1);
     setenv("HALO_SAVE_ROOT", save_root, 1);
-    SDL_SetMainReady();
-    SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, "0");
-    if (!SDL_InitSubSystem(SDL_INIT_VIDEO))
-        host_fatal("Cannot initialize display: %s", SDL_GetError());
     const SDL_DisplayMode *display = SDL_GetDesktopDisplayMode(SDL_GetPrimaryDisplay());
     if (display && display->h > 0) {
         char width[32];
@@ -189,5 +198,6 @@ int main(int argc, char **argv) {
         host_fatal("Cannot allocate main stack");
     mprotect(stack, HALO_MACOS_PAGE, PROT_NONE);
     host_logf(HOST_LOG_INFO, "Halo ARM64 starting: data %s; saves %s", data_root, save_root);
+    if (!image_argument) host_menu_begin_game();
     macos_enter_guest_stack(stack + stack_size + HALO_MACOS_PAGE, boot);
 }

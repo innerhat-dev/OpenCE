@@ -1,5 +1,10 @@
 {
   "llvm_major": 22,
+  "sparkle": {
+    "version": "2.10.0",
+    "url": "https://github.com/sparkle-project/Sparkle/releases/download/2.10.0/Sparkle-2.10.0.tar.xz",
+    "sha256": "c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c"
+  },
   "angle": {
     "url": "https://github.com/EdgeFirstAI/angle-package/releases/download/v2.1.28252/angle-xcframeworks-v2.1.28252.zip",
     "sha256": "59e4b1f68956c92441cde4dca0e9eb1a835bbccd107cefdd1d3d3d60e27410be"

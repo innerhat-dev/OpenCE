@@ -11,6 +11,9 @@ SDL's stream lock recursively from a different thread.
 */
 
 #include "host.h"
+#ifndef HALO_IOS
+#include "../native/host_menu.h"
+#endif
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -152,6 +155,32 @@ uint32_t host_sdl_create_window(const char *title, int width, int height, int64_
     }
     return handle_new(_handle_window, metal_window);
 }
+
+#ifndef HALO_IOS
+int host_sdl_is_fullscreen(void) {
+    return metal_window && (SDL_GetWindowFlags(metal_window) & SDL_WINDOW_FULLSCREEN) != 0;
+}
+int host_sdl_set_fullscreen(int enabled) {
+    if (!metal_window || !SDL_SetWindowFullscreen(metal_window, enabled != 0)) return 0;
+    SDL_SyncWindow(metal_window);
+    SDL_setenv_unsafe("HALO_WINDOWED", enabled ? "0" : "1", 1);
+    host_menu_window_changed();
+    return 1;
+}
+void host_sdl_release_mouse(void) {
+    if (metal_window) SDL_SetWindowRelativeMouseMode(metal_window, false);
+}
+void host_sdl_show_game(void) {
+    if (metal_window) {
+        SDL_RaiseWindow(metal_window);
+        if (!metal_window_hidden) SDL_SetWindowRelativeMouseMode(metal_window, true);
+    }
+}
+void host_sdl_request_quit(void) {
+    SDL_Event event = {.type = SDL_EVENT_QUIT};
+    SDL_PushEvent(&event);
+}
+#endif
 
 void host_sdl_window_size_in_pixels(uint32_t window, int *width, int *height) {
     SDL_Window *object = handle_get(window, _handle_window);

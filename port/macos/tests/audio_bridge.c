@@ -16,6 +16,7 @@ extern int host_sdl_init(uint32_t);
 extern int host_sdl_poll_event(void *);
 static unsigned mixed_callbacks;
 void host_perf_frame(double swap_ms) { (void)swap_ms; }
+void host_menu_window_changed(void) {}
 
 void host_logf(int priority, const char *format, ...) {
     (void)priority;
