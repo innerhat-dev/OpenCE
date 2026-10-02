@@ -110,6 +110,20 @@ bool SDL_GetWindowSizeInPixels(SDL_Window *window, int *width, int *height)
 	return true;
 }
 
+bool SDL_GetWindowSize(SDL_Window *window, int *width, int *height)
+{
+	int w = 0, h = 0;
+	host_sdl_window_size((unsigned int)window, &w, &h);
+	if (width) *width = w;
+	if (height) *height = h;
+	return w > 0 && h > 0;
+}
+
+void SDL_WarpMouseInWindow(SDL_Window *window, float x, float y)
+{
+	host_sdl_warp_mouse((unsigned int)window, x, y);
+}
+
 bool SDL_SetWindowRelativeMouseMode(SDL_Window *window, bool enabled)
 {
 	return host_sdl_set_relative_mouse((unsigned int)window, enabled) != 0;

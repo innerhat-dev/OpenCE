@@ -120,6 +120,9 @@ struct game_options;
 
 #include "cseries/cseries.h"
 #include "game/game.h"
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+#include "../../port/linux/game/performance_options.h"
+#endif
 #include "ai/ai.h"
 #include "bink/bink_playback.h"
 #include "bungie_net/network/transport.h"
@@ -336,6 +339,9 @@ void game_tick(
 	game_engine_update();
 	editor_update();
 	hs_update();
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+	performance_options_update();
+#endif
 	recorded_animations_update();
 	objects_update();
 	players_update_after_game();
@@ -629,6 +635,9 @@ void game_initialize_for_new_map(
 	/* (the map's objects, placed as on the host: a distributed client's own
 	from now on go elsewhere, port/linux/game/network_objects.c) */
 	network_objects_placed();
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+	performance_options_initialize_for_new_map();
+#endif
 	ui_widgets_safe_to_load(TRUE);
 
 	return;
@@ -820,6 +829,9 @@ void game_precache_new_map(
 void game_dispose_from_old_map(
 	void)
 {
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+	performance_options_dispose_from_old_map();
+#endif
 	rasterizer_dispose_from_old_map();
 	game_state_dispose_from_old_map();
 	cheats_dispose_from_old_map();

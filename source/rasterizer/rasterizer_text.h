@@ -9,6 +9,7 @@ RASTERIZER_TEXT.H
 /* ---------- headers */
 
 #include "cseries.h"
+#include "math/integer_math.h"
 
 /* ---------- structures */
 
@@ -33,5 +34,17 @@ void rasterizer_text_begin(
 	struct rasterizer_dynamic_screen_geometry_parameters const *parameters);
 void rasterizer_text_end(
 	void);
+
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+/* Scale only this text's glyph quads and stock shadows, leaving font layout,
+ * texture coordinates, projection and later text draws unchanged. */
+void rasterizer_draw_string_scaled(
+	rectangle2d const *bounds,
+	rectangle2d const *clip,
+	char const *string,
+	float scale,
+	float anchor_x,
+	float anchor_y);
+#endif
 
 #endif // __RASTERIZER_TEXT_H

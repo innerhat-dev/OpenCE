@@ -356,6 +356,7 @@ symbols in this file:
 #include "text/unicode.h"
 #ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
 #include "halo_custom_maps.h"
+#include "game/performance_variant.h"
 #endif
 
 /* ---------- constants */
@@ -778,6 +779,12 @@ static void settings_menu_update_extended_description(
 			"expected a text box widget for the settings select list extended description text");
 
 		description_picture->animation.current_frame_index = index;
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+		/* The local settings chooser reuses the original profile artwork:
+		 * Spartans for Profile Settings, controller for Game Settings. */
+		if (!strcmp(tag_get_name(list_widget->definition_tag_index), "ui\\native_settings\\menu"))
+			description_picture->animation.current_frame_index = index ? 1 : 3;
+#endif
 		description_text->parameters.text_box.string_list_index = index;
 	}
 	return;
@@ -3254,6 +3261,28 @@ static void variant_profile_update_cache_for_nwide_list(
 	return;
 }
 
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+/* The card has 256 UTF-16 characters and room for one more small-ui line.
+Keep the indication generic as additional performance options are introduced. */
+static void playlist_profile_append_performance_status(
+	wchar_t *description,
+	struct playlist_profile const *profile)
+{
+	static wchar_t const status[] = L"\r\nPB options active";
+	unsigned long length;
+	wchar_t const *suffix;
+	unsigned long suffix_length;
+
+	if (!description || !performance_variant_get_flags((struct game_variant const *)profile))
+		return;
+	length = ustrnlen(description, 0x100);
+	suffix = description[0] ? status : status + 2;
+	suffix_length = ustrlen(suffix);
+	if (length + suffix_length < 0x100)
+		ustrncpy(description + length, suffix, suffix_length + 1);
+}
+#endif
+
 static void mutliplayer_settings_select_list_update_displayed_items(
 	struct widget_instance *list_widget)
 {
@@ -3408,6 +3437,9 @@ static void mutliplayer_settings_select_list_update_displayed_items(
 					label_box->parameters.text_box.text[0xFF] = 0;
 				}
 				description_container->visible = TRUE;
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+				playlist_profile_append_performance_status(label_box->parameters.text_box.text, profile);
+#endif
 				continue;
 			}
 
@@ -3520,6 +3552,9 @@ static void mutliplayer_settings_select_list_update_displayed_items(
 				break;
 			}
 
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+			playlist_profile_append_performance_status(label_box->parameters.text_box.text, profile);
+#endif
 			continue;
 		}
 

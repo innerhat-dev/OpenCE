@@ -109,6 +109,9 @@ MUSL_FILES = [
     "misc/syscall.c", "network/htonl.c", "network/htons.c", "network/ntohl.c",
     "network/ntohs.c", "network/inet_addr.c", "network/inet_aton.c",
     "network/inet_ntoa.c", "network/inet_pton.c", "network/inet_ntop.c",
+    # Atomic config saves create a same-directory file with O_EXCL before
+    # replacing the old file. Include mkstemp's complete helper chain.
+    "temp/mkstemp.c", "temp/mkostemps.c", "temp/__randname.c",
 ]
 MUSL_THREAD_PREFIXES = (
     "pthread_attr_", "pthread_cond", "pthread_mutex", "pthread_rwlock",

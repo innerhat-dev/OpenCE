@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 from urllib.parse import urlparse
+from xml.parsers.expat import ExpatError
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -290,6 +291,22 @@ def package_into(app, data_root, *, sign_identity, release, version, build):
     run("codesign", "--verify", "--deep", "--strict", app)
 
 
+def development_app_bundles(build_root):
+    """Find generated app packages without entering packages or old archives."""
+    for directory, subdirectories, _ in os.walk(build_root):
+        descend = []
+        for name in sorted(subdirectories):
+            candidate = Path(directory) / name
+            if (candidate.is_symlink() or name == "app-backups.noindex" or
+                    name.endswith(".app.backup")):
+                continue
+            if name.endswith(".app"):
+                yield candidate
+            else:
+                descend.append(name)
+        subdirectories[:] = descend
+
+
 def install_app(app, applications):
     """Stage and verify a complete app before replacing an installed copy."""
     app = require(app.resolve())
@@ -336,8 +353,11 @@ def install_app(app, applications):
             prior.rename(prior.with_name(prior.name + ".backup"))
     # Spotlight can rediscover unregistered development bundles, and launching
     # by name can then choose one of them instead of the installed version.
+    # Include renamed pilots outside build/macos, and preserve unrelated app
+    # packages (including their nested helpers) by checking the bundle ID.
     # Preserve generated copies outside its index with a non-app extension.
-    development_apps = list(BUILD.rglob("Halo CE Universal.app"))
+    development_root = ROOT / "build"
+    development_apps = list(development_app_bundles(development_root))
     backup_root = BUILD / "app-backups.noindex" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     for development_app in development_apps:
         if development_app.resolve() == destination:
@@ -345,12 +365,15 @@ def install_app(app, applications):
         info_path = development_app / "Contents/Info.plist"
         if not info_path.is_file():
             continue
-        with info_path.open("rb") as stream:
-            info = plistlib.load(stream)
-        if info.get("CFBundleIdentifier") != "local.halo.ce-universal":
+        try:
+            with info_path.open("rb") as stream:
+                info = plistlib.load(stream)
+        except (OSError, plistlib.InvalidFileException, ValueError, ExpatError):
+            continue
+        if not isinstance(info, dict) or info.get("CFBundleIdentifier") != "local.halo.ce-universal":
             continue
         unregister(development_app)
-        backup = backup_root / development_app.relative_to(BUILD)
+        backup = backup_root / development_app.relative_to(development_root)
         backup = backup.with_name(backup.name + ".backup")
         backup.parent.mkdir(parents=True, exist_ok=True)
         development_app.rename(backup)

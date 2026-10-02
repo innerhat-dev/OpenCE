@@ -2398,7 +2398,10 @@ static void dsound_channel_set_properties(
 		982,
 		channel->stream);
 
-	if (!realcmp_epsilon(gain, channel->gain, 0.001f) || !dsound_globals.initialized)
+	/* A zero gain is an explicit mute. Epsilon filtering must not preserve a
+	 * faint old voice, or prevent restoring a very quiet voice from silence. */
+	if ((gain == 0.f) != (channel->gain == 0.f) ||
+		!realcmp_epsilon(gain, channel->gain, 0.001f) || !dsound_globals.initialized)
 	{
 		HRESULT result= IDirectSoundStream_SetVolume(
 			channel->stream,

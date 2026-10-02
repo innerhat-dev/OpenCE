@@ -82,6 +82,9 @@ symbols in this file:
 #include "cutscene/cinematics.h"
 #include "devices/device_controls.h"
 #include "game/game_engine.h"
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+#include "../../port/linux/game/performance_options.h"
+#endif
 #include "game/game_globals.h"
 #include "game/players.h"
 #include "interface/hud.h"
@@ -1161,6 +1164,9 @@ void hud_draw_screen(
 				hud_show_action_response(player_index);
 				hud_play_unit_sounds(player, hud_scripted_globals->show_hud);
 			}
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+			performance_options_render();
+#endif
 		}
 		else
 		{

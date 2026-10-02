@@ -26,6 +26,9 @@ void console_warning(const char *format, ...);
 void console_startup(void);
 void console_dispose(void);
 boolean console_update(void);
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+boolean console_process_native_command(char const *command);
+#endif
 
 /* ---------- globals */
 

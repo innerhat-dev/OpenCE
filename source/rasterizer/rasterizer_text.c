@@ -194,6 +194,32 @@ static pixel32 global_shadow_color = 0;
 static short rasterizer_text_unused = 0;
 static short magic_number= 12;
 
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+static struct rasterizer_text_transform
+{
+	real scale, anchor_x, anchor_y;
+} rasterizer_text_transform = { 1.0f, 0.0f, 0.0f };
+#endif
+
+static void rasterizer_text_submit_character(
+	struct dynamic_screen_vertex *vertices)
+{
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+	if (rasterizer_text_transform.scale != 1.0f)
+	{
+		short index;
+		for (index = 0; index < NUMBER_OF_VERTICES_PER_QUADRILATERAL; ++index)
+		{
+			vertices[index].position.x = rasterizer_text_transform.anchor_x +
+				(vertices[index].position.x - rasterizer_text_transform.anchor_x) * rasterizer_text_transform.scale;
+			vertices[index].position.y = rasterizer_text_transform.anchor_y +
+				(vertices[index].position.y - rasterizer_text_transform.anchor_y) * rasterizer_text_transform.scale;
+		}
+	}
+#endif
+	rasterizer_text_draw_character(vertices);
+}
+
 /* ---------- public code */
 
 void lock_rasterizer_text_data(
@@ -330,7 +356,7 @@ rasterizer_draw_character(
 		vertices[0].texture_coordinates.y = vertices[1].texture_coordinates.y = (real)v0;
 		vertices[2].texture_coordinates.y = vertices[3].texture_coordinates.y = (real)(v0 + dy);
 
-		rasterizer_text_draw_character(vertices);
+		rasterizer_text_submit_character(vertices);
 	}
 
 	return;
@@ -431,6 +457,25 @@ rasterizer_draw_string(
 
 	return;
 }
+
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+void rasterizer_draw_string_scaled(
+	rectangle2d const *bounds,
+	rectangle2d const *clip,
+	char const *string,
+	float scale,
+	float anchor_x,
+	float anchor_y)
+{
+	struct rasterizer_text_transform previous = rasterizer_text_transform;
+	/* Shrinking about a point inside the viewport preserves stock clipping. */
+	rasterizer_text_transform.scale = scale >= 0.5f && scale <= 1.0f ? scale : 1.0f;
+	rasterizer_text_transform.anchor_x = anchor_x;
+	rasterizer_text_transform.anchor_y = anchor_y;
+	rasterizer_draw_string(bounds, clip, NULL, 0, string);
+	rasterizer_text_transform = previous;
+}
+#endif
 
 void
 rasterizer_draw_unicode_string(
@@ -581,7 +626,7 @@ rasterizer_draw_character_with_dropshadow(
 			vertices[0].texture_coordinates.y = vertices[1].texture_coordinates.y = (real)v0;
 			vertices[2].texture_coordinates.y = vertices[3].texture_coordinates.y = (real)(v0 + dy);
 
-			rasterizer_text_draw_character(vertices);
+			rasterizer_text_submit_character(vertices);
 
 			if (!shadow)
 				break;

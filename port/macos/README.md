@@ -76,7 +76,8 @@ Keyboard/mouse controls:
 | Left / right mouse button | Fire / grenade |
 | Space or Enter | Jump / accept |
 | E or R | Action / reload (X) |
-| F, Escape or Backspace | Melee / back (B) |
+| F or Backspace | Melee / back (B) |
+| Escape | Pause and release mouse / back in menus |
 | Q, Tab or mouse wheel | Change weapon (Y) |
 | L | Flashlight |
 | X | Change grenade type |
@@ -86,6 +87,13 @@ Keyboard/mouse controls:
 | Backtick (`) or F1 | Hold for scoreboard (Back/Select) |
 | F2 | Open / close developer console |
 | F12 (Fn-F12 on some keyboards) | Release or recapture mouse |
+
+Menus support mouse navigation. The cursor stays free after switching apps or
+closing a native panel; choose Resume or click gameplay to capture it. That
+first capture click does not fire. Windowed play keeps a resizable native frame
+with its title/buttons hidden; drag the top strip while the cursor is released.
+See [native settings](../../docs/native-settings.md) for live Audio/Video options
+in the main and pause menus.
 
 All keyboard/controller actions and mouse buttons can be changed in the
 `[bindings]` section of `~/Library/Application Support/Halo CE Universal/config.toml`.

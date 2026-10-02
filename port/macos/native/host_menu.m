@@ -180,13 +180,11 @@ static void importProgress(void *context, const char *file, unsigned long long d
 - (void)toggleFullscreen:(id)sender {
     (void)sender;
     BOOL fullscreen = self.gameRunning ? !host_sdl_is_fullscreen() : self.preferences.windowed;
-    NSError *error = nil;
-    if (self.gameRunning && !host_sdl_set_fullscreen(fullscreen)) {
+    if (!host_menu_set_fullscreen(fullscreen)) {
         showError([NSError errorWithDomain:@"Halo" code:1 userInfo:@{NSLocalizedDescriptionKey:@"The display could not change modes."}]);
         [self refreshFullscreen];
         return;
     }
-    if (![self.preferences setWindowed:!fullscreen error:&error]) showError(error);
     [self refreshFullscreen];
     if (self.settingsVisible) {
         host_sdl_release_mouse();
@@ -429,6 +427,36 @@ static void importProgress(void *context, const char *file, unsigned long long d
     self.waitingForUpdate = NO;
 }
 @end
+
+void host_menu_style_window(void *window) {
+    SDL_Window *sdlWindow = window;
+    NSWindow *native = (__bridge NSWindow *)SDL_GetPointerProperty(SDL_GetWindowProperties(sdlWindow),
+        SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, NULL);
+    if (!native) return;
+    native.titleVisibility = NSWindowTitleHidden;
+    native.titlebarAppearsTransparent = YES;
+    native.styleMask |= NSWindowStyleMaskFullSizeContentView;
+    native.movableByWindowBackground = NO;
+    [native standardWindowButton:NSWindowCloseButton].hidden = YES;
+    [native standardWindowButton:NSWindowMiniaturizeButton].hidden = YES;
+    [native standardWindowButton:NSWindowZoomButton].hidden = YES;
+}
+
+int host_menu_set_fullscreen(int enabled) {
+    /* Before first launch the settings panel edits the next launch's mode. */
+    if (menu.preferences && !menu.gameRunning)
+        return [menu.preferences setWindowed:!enabled error:nil];
+    BOOL wasFullscreen = host_sdl_is_fullscreen();
+    if (!host_sdl_set_fullscreen(enabled)) return 0;
+    if (menu.preferences) {
+        NSError *error = nil;
+        if (![menu.preferences setWindowed:!enabled error:&error]) {
+            host_sdl_set_fullscreen(wasFullscreen);
+            return 0;
+        }
+    }
+    return 1;
+}
 
 void host_menu_initialize_application(void) {
     @autoreleasepool {

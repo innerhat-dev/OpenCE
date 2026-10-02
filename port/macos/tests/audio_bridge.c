@@ -17,6 +17,8 @@ extern int host_sdl_poll_event(void *);
 static unsigned mixed_callbacks;
 void host_perf_frame(double swap_ms) { (void)swap_ms; }
 void host_menu_window_changed(void) {}
+void host_menu_style_window(void *window) { (void)window; }
+int host_menu_set_fullscreen(int enabled) { (void)enabled; return 0; }
 
 void host_logf(int priority, const char *format, ...) {
     (void)priority;

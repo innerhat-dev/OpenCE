@@ -6,6 +6,8 @@ int host_menu_prepare(const char *support, const char *fallback, char *data, siz
 void host_menu_begin_game(void);
 void host_menu_finish_game(int exit_code);
 void host_menu_window_changed(void);
+void host_menu_style_window(void *window);
+int host_menu_set_fullscreen(int enabled);
 /* SDL operations stay on its real main thread. */
 int host_sdl_is_fullscreen(void);
 int host_sdl_set_fullscreen(int enabled);

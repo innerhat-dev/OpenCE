@@ -13,6 +13,7 @@ SDL's stream lock recursively from a different thread.
 #include "host.h"
 #ifndef HALO_IOS
 #include "../native/host_menu.h"
+#include "../../linux/include/native_input_events.h"
 #endif
 
 #include <EGL/egl.h>
@@ -121,6 +122,18 @@ int64_t host_sdl_thread_id(void) { return (int64_t)SDL_GetCurrentThreadID(); }
 static void SDLCALL ios_refresh_hint(void *unused) { (void)unused; }
 #endif
 
+#ifndef HALO_IOS
+/* The transparent title area remains draggable only while the cursor is
+   released. Border resizing is provided by the normal Cocoa window frame. */
+static SDL_HitTestResult SDLCALL window_hit_test(SDL_Window *window, const SDL_Point *point, void *unused) {
+    (void)unused;
+    if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) &&
+        !SDL_GetWindowRelativeMouseMode(window) && point->y >= 6 && point->y < 24)
+        return SDL_HITTEST_DRAGGABLE;
+    return SDL_HITTEST_NORMAL;
+}
+#endif
+
 uint32_t host_sdl_create_window(const char *title, int width, int height, int64_t flags) {
     const char *windowed = SDL_getenv("HALO_WINDOWED");
     SDL_WindowFlags mode = SDL_WINDOW_METAL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
@@ -131,6 +144,10 @@ uint32_t host_sdl_create_window(const char *title, int width, int height, int64_
                                     mode);
     if (metal_window) {
         SDL_SyncWindow(metal_window);
+#ifndef HALO_IOS
+        host_menu_style_window(metal_window);
+        SDL_SetWindowHitTest(metal_window, window_hit_test, NULL);
+#endif
 #if defined(HALO_IOS) && !defined(HALO_IOS_MAC_CHECK)
         const SDL_DisplayMode *display = SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(metal_window));
         const char *rate = SDL_getenv("HALO_IOS_REFRESH_RATE");
@@ -164,16 +181,22 @@ int host_sdl_set_fullscreen(int enabled) {
     if (!metal_window || !SDL_SetWindowFullscreen(metal_window, enabled != 0)) return 0;
     SDL_SyncWindow(metal_window);
     SDL_setenv_unsafe("HALO_WINDOWED", enabled ? "0" : "1", 1);
+    host_menu_style_window(metal_window);
     host_menu_window_changed();
     return 1;
 }
 void host_sdl_release_mouse(void) {
     if (metal_window) SDL_SetWindowRelativeMouseMode(metal_window, false);
+    /* The guest owns gameplay input. Keep its release state and held-input
+       snapshot in step when Cocoa menus/panels release SDL's cursor. */
+    SDL_Event event = {.type = SDL_EVENT_USER};
+    event.user.code = HALO_NATIVE_MOUSE_RELEASE;
+    SDL_PushEvent(&event);
 }
 void host_sdl_show_game(void) {
     if (metal_window) {
         SDL_RaiseWindow(metal_window);
-        if (!metal_window_hidden) SDL_SetWindowRelativeMouseMode(metal_window, true);
+        host_sdl_release_mouse();
     }
 }
 void host_sdl_request_quit(void) {
@@ -189,6 +212,28 @@ void host_sdl_window_size_in_pixels(uint32_t window, int *width, int *height) {
     *height = 0;
     if (object)
         SDL_GetWindowSizeInPixels(object, width, height);
+}
+
+void host_sdl_window_size(uint32_t window, int *width, int *height) {
+    SDL_Window *object = handle_get(window, _handle_window);
+    *width = *height = 0;
+    if (object) SDL_GetWindowSize(object, width, height);
+}
+
+void host_sdl_warp_mouse(uint32_t window, float x, float y) {
+    SDL_Window *object = handle_get(window, _handle_window);
+    if (object) SDL_WarpMouseInWindow(object, x, y);
+}
+
+int host_sdl_video_fullscreen(uint32_t window, int enabled) {
+    SDL_Window *object = handle_get(window, _handle_window);
+    if (!object) return 0;
+    if (enabled < 0) return (SDL_GetWindowFlags(object) & SDL_WINDOW_FULLSCREEN) != 0;
+#ifndef HALO_IOS
+    return object == metal_window && host_menu_set_fullscreen(enabled);
+#else
+    return enabled != 0;
+#endif
 }
 
 int host_sdl_set_relative_mouse(uint32_t window, int enabled) {

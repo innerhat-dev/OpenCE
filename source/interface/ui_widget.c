@@ -680,6 +680,11 @@ struct widget_instance;
 #ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
 #include "halo_custom_maps.h"
 #include "port_config.h"
+#include "../../port/linux/game/performance_options.h"
+#include "game/game.h"
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+#include "native_video.h"
+#endif
 #endif
 
 /* ---------- constants */
@@ -1424,6 +1429,14 @@ static void widget_instance_process_one_event_recursive(
 static boolean ui_check_for_pause_game(
 	void);
 
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+#include "../../port/linux/game/device_settings.h"
+#include "performance_editor_menu.inc"
+#include "native_pause_frame.inc"
+#include "performance_pause_menu.inc"
+#include "game_settings_menu.inc"
+#endif
+
 /* ---------- globals */
 
 static struct ui_widget_bss_prefix ui_widget_globals_storage;
@@ -1618,14 +1631,15 @@ static __inline real compute_offset_coordinate(
 		1.0);
 }
 
-void draw_bitmap_in_rect(
+static void draw_bitmap_region_in_rect(
 	struct bitmap_data *bitmap,
 	rectangle2d *rect,
 	rectangle2d *bitmap_rect,
 	rectangle2d *clip_rect,
 	pixel32 argb,
 	struct rasterizer_dynamic_screen_geometry_parameters *multitexture_params,
-	boolean no_plasma)
+	boolean no_plasma,
+	rectangle2d const *source_region)
 {
 	if (bitmap && rect)
 	{
@@ -1714,6 +1728,24 @@ void draw_bitmap_in_rect(
 				(vertex_index > 1) ? texture_height : 0.0f;
 			vertices[vertex_index].position = points[vertex_index];
 		}
+		/* Explicit source regions are reserved for runtime native pause
+		 * frames. Preserve the stock path above, including its texel-sized
+		 * clipping, for every authored widget. */
+		if (source_region)
+		{
+			if (rectangle_width <= 0 || rectangle_height <= 0 ||
+				points[0].x >= points[1].x || points[0].y >= points[2].y)
+				return;
+			for (vertex_index = 0; vertex_index < NUMBER_OF_POINTS_PER_RECTANGLE; vertex_index++)
+			{
+				real x = (points[vertex_index].x - rectangle_x0) / rectangle_width;
+				real y = (points[vertex_index].y - rectangle_y0) / rectangle_height;
+				vertices[vertex_index].texture_coordinates.x =
+					(source_region->x0 + x * (source_region->x1 - source_region->x0)) / bitmap_width;
+				vertices[vertex_index].texture_coordinates.y =
+					(source_region->y0 + y * (source_region->y1 - source_region->y0)) / bitmap_height;
+			}
+		}
 
 		csmemset(&parameters, 0, sizeof(parameters));
 		if (no_plasma)
@@ -1784,6 +1816,39 @@ void draw_bitmap_in_rect(
 
 	return;
 }
+
+void draw_bitmap_in_rect(
+	struct bitmap_data *bitmap, rectangle2d *rect, rectangle2d *bitmap_rect,
+	rectangle2d *clip_rect, pixel32 argb,
+	struct rasterizer_dynamic_screen_geometry_parameters *multitexture_params,
+	boolean no_plasma)
+{
+	draw_bitmap_region_in_rect(bitmap, rect, bitmap_rect, clip_rect, argb,
+		multitexture_params, no_plasma, NULL);
+}
+
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+static void native_pause_frame_render(struct widget_instance *widget,
+	rectangle2d *clip, point2d origin, real alpha)
+{
+	short piece, band;
+	if (!native_pause_frame_is_widget(widget->definition_tag_index)) return;
+	for (piece = 0; piece < 3; piece++)
+	{
+		struct bitmap_data *bitmap = bitmap_group_get_bitmap_from_sequence(
+			native_pause_frame_bitmaps[piece], 0, 0);
+		for (band = 0; band < 3; band++)
+		{
+			rectangle2d destination, source;
+			native_pause_frame_slice(piece, band,
+				ui_widget_definition_get(widget->definition_tag_index)->bounds.y1,
+				origin, &destination, &source);
+			draw_bitmap_region_in_rect(bitmap, &destination, &source, clip,
+				modulate_pixel32_by_real_alpha(0xFFFFFFFF, alpha), NULL, FALSE, &source);
+		}
+	}
+}
+#endif
 
 void ui_widgets_set_fade_value(
 	real value)
@@ -3147,6 +3212,19 @@ static void event_handler_dispatch(
 	boolean close_widget_after = FALSE;
 	boolean close_current = FALSE;
 	boolean close_all = FALSE;
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+	struct ui_widget_event_handler_reference settings_handler;
+	handler = game_settings_route_handler(&widget, handler, &settings_handler);
+#endif
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+	boolean resume_mouse = FALSE;
+	char const *event_widget_name = tag_get_name(widget->definition_tag_index);
+	if ((handler->event_type == _gamepad_analog_button_a ||
+		handler->event_type == _gamepad_binary_button_start) && event_widget_name &&
+		(!csstrcmp(event_widget_name, "ui\\shell\\multiplayer_game\\pause_game\\resume_game_button") ||
+		 !csstrcmp(event_widget_name, "ui\\shell\\solo_game\\pause_game\\resume_game_button")))
+		resume_mouse = TRUE;
+#endif
 
 	if (TEST_FLAG(handler->flags, _event_handler_run_scenario_script_bit) &&
 		handler->script[0])
@@ -3156,11 +3234,16 @@ static void event_handler_dispatch(
 	}
 	if (TEST_FLAG(handler->flags, _event_handler_run_function_bit) &&
 		!widget_deleted &&
-		!ui_widget_event_handler_function_invoke(
-			widget,
-			event,
-			handler->function,
-			&widget_deleted))
+		!(
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+			handler->function >= 31970 && handler->function <= 31999 ?
+				game_settings_event(widget, handler->function) :
+			handler->function >= 32000 && handler->function <= 32001 ?
+				performance_editor_event(widget, handler->function) :
+			handler->function >= 32010 && handler->function <= 32019 ?
+				performance_pause_event(widget, handler->function) :
+#endif
+			ui_widget_event_handler_function_invoke(widget, event, handler->function, &widget_deleted)))
 	{
 		error(_error_silent, "event handler function failed");
 		function_failed = TRUE;
@@ -3408,6 +3491,10 @@ static void event_handler_dispatch(
 			}
 		}
 	}
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+	if (resume_mouse && widget_deleted && success && !function_failed)
+		platform_mouse_resume_gameplay();
+#endif
 	ui_play_audio_feedback_sound(audio_feedback);
 	*calling_widget_deleted = widget_deleted;
 
@@ -3682,6 +3769,11 @@ struct widget_instance *ui_widget_load_by_name_or_tag(
 		tag_index = tag_loaded(UI_WIDGET_DEFINITION_TAG, name);
 	if (tag_index != NONE)
 	{
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+		tag_index = performance_editor_remap_tag(tag_index);
+		tag_index = performance_pause_remap_tag(tag_index);
+		tag_index = game_settings_remap_tag(tag_index);
+#endif
 		definition = ui_widget_definition_get(tag_index);
 		widget = pool_new_pointer(
 			widget_memory_pool,
@@ -4000,6 +4092,16 @@ void ui_start_main_menu_music(
 
 	return;
 }
+
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+void ui_apply_main_menu_music_setting(void)
+{
+	if (!config_boolean("audio.menu_music"))
+		ui_stop_main_menu_music();
+	else if (we_are_at_the_main_menu)
+		ui_start_main_menu_music();
+}
+#endif
 
 void ui_stop_main_menu_music(
 	void)
@@ -5161,6 +5263,15 @@ static void widget_instance_render_spinner_list(
 				bounds.y1 += offset.y;
 				bounds.x0 += offset.x;
 				bounds.y0 += offset.y;
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+				/* These runtime selectors retain the original pause button's
+				 * three-pixel text inset. Authored spinner tags are unchanged. */
+				if (performance_pause_is_spinner(widget))
+				{
+					bounds.x0 += definition->horizontal_offset;
+					bounds.y0 += definition->vertical_offset;
+				}
+#endif
 				if (focus)
 				{
 					color.alpha = definition->text_color.alpha;
@@ -5439,6 +5550,17 @@ static void ui_mouse_note_target(
 		if (!parent || ui_mouse_list_shows_several(widget) || !widget_instance_can_receive_events(widget))
 			return;
 		kind = _ui_mouse_target_value;
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+		if (game_settings_is_native_spinner(widget) || performance_editor_is_spinner(widget))
+		{
+			/* Native option arrows sit just outside the text rectangle. A
+			 * missed arrow would select the row and send its Accept button. */
+			bounds.x0 = MIN(bounds.x0, definition->list_header_bounds.x0 + offset.x);
+			bounds.x1 = MAX(bounds.x1, definition->list_footer_bounds.x1 + offset.x);
+			bounds.y0 = MIN(bounds.y0, definition->list_header_bounds.y0 + offset.y);
+			bounds.y1 = MAX(bounds.y1, definition->list_footer_bounds.y1 + offset.y);
+		}
+#endif
 	}
 	else if (ui_mouse_widget_is_item(widget))
 	{
@@ -5516,6 +5638,9 @@ static void ui_mouse_list_directions(
 	struct ui_widget_definition *definition = ui_widget_definition_get(widget->definition_tag_index);
 
 	if (TEST_FLAG(definition->flags, _widget_dpad_leftright_tabs_thru_list_items_bit) ||
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+		game_settings_is_native_spinner(widget) ||
+#endif
 		TEST_FLAG(definition->flags, _widget_dpad_leftright_tabs_thru_children_bit))
 	{
 		*back = _widget_event_dpad_left;
@@ -5564,10 +5689,14 @@ static struct widget_instance *ui_mouse_wheel_widget(
 	{
 		struct ui_widget_definition *definition = ui_widget_definition_get(widget->definition_tag_index);
 
-		if (definition->flags & (FLAG(_widget_dpad_updown_tabs_thru_children_bit) |
+		if (
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+			game_settings_is_native_spinner(widget) ||
+#endif
+			(definition->flags & (FLAG(_widget_dpad_updown_tabs_thru_children_bit) |
 			FLAG(_widget_dpad_leftright_tabs_thru_children_bit) |
 			FLAG(_widget_dpad_updown_tabs_thru_list_items_bit) |
-			FLAG(_widget_dpad_leftright_tabs_thru_list_items_bit)))
+			FLAG(_widget_dpad_leftright_tabs_thru_list_items_bit))))
 		{
 			result = widget;
 		}
@@ -5673,6 +5802,12 @@ static void ui_widgets_process_mouse(
 				{
 				case _ui_mouse_target_item:
 					ui_mouse_give_focus(target->widget);
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+					if (game_settings_is_adjustable(target->widget))
+						ui_mouse_press(ui_mouse_click_x < (target->bounds.x0 + target->bounds.x1) / 2 ?
+							_widget_event_dpad_left : _widget_event_dpad_right);
+					else
+#endif
 					ui_mouse_press(_gamepad_analog_button_a);
 					break;
 				case _ui_mouse_target_value:
@@ -5738,6 +5873,10 @@ static void widget_instance_render_recursive(
 	struct widget_instance *child;
 	struct bitmap_data *bitmap;
 
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+	if (!widget->parent)
+		performance_pause_update(widget);
+#endif
 	if (!use_nifty_plasma_fx &&
 		TEST_FLAG(definition->flags, _widget_always_render_with_nifty_fx_bit))
 	{
@@ -5754,11 +5893,24 @@ static void widget_instance_render_recursive(
 				definition->game_data_inputs.address +
 			input_index;
 
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+		if (input->function >= 32000 && input->function <= 32001)
+			performance_editor_input(widget, input->function);
+		else
+#endif
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+		if (input->function == _device_settings_chooser_preview || input->function == _device_settings_option_help)
+			game_settings_input(widget, input->function);
+		else
+#endif
 		ui_widget_game_data_function_invoke(widget, input->function);
 	}
 	if (!widget->visible)
 		return;
 	ui_mouse_note_target(widget, definition, offset);
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+	native_pause_frame_render(widget, clip_rect, offset, alpha_modifier);
+#endif
 	bitmap = bitmap_group_get_bitmap_from_sequence(
 		definition->background_bitmap.index,
 		0,

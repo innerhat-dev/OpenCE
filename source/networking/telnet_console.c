@@ -48,6 +48,7 @@ symbols in this file:
 #include "bungie_net/network/transport_endpoint.h"
 #include "hs/hs.h"
 #include "networking/telnet_console.h"
+#include "main/console.h"
 
 /* ---------- constants */
 
@@ -367,7 +368,11 @@ static boolean process_telnet_client_buffer(
 					expression[TELNET_CLIENT_BUFFER_SIZE-1] = 0;
 					client->buffer[0] = 0;
 
-					if (hs_compile_and_evaluate(expression))
+					if (
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+						console_process_native_command(expression) ||
+#endif
+						hs_compile_and_evaluate(expression))
 					{
 						telnet_client_write(client, "\r\n", 2);
 					}

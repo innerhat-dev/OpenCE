@@ -6,8 +6,8 @@ The native ports' settings (port_config.h), parsed with tomlc17
 type, default, the HALO_* environment variable that overrides it and the
 comment written into a new file. The file is read once, on the first
 question; unknown keys and values of the wrong type are reported in the log
-and the defaults used instead, and the file itself is never rewritten once
-it exists, so that the player's edits and comments stay.
+and the defaults used instead. Missing defaults and explicitly saved settings
+preserve the player's other values, edits and comments.
 */
 
 #include "platform.h"
@@ -16,10 +16,16 @@ it exists, so that the player's edits and comments stay.
 
 #include <SDL3/SDL.h>
 #include <ctype.h>
+#include <limits.h>
+#include <math.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 /* ---------- the settings */
 
@@ -79,6 +85,10 @@ static const struct config_setting config_settings[] =
 	{ "display.interpolation", _config_boolean, "false", "HALO_INTERPOLATION", _environment_value, _platform_all,
 		"Draw a frame for every display refresh, blending between the game's 30\n"
 		"ticks a second; false keeps the original 30 frames a second." },
+	{ "display.timer_position", _config_integer, "0", NULL, _environment_value, _platform_all,
+		"PB timer position: 0 is top center, 1 bottom center, 2 bottom right." },
+	{ "display.timer_scale", _config_real, "1.0", NULL, _environment_value, _platform_all,
+		"PB timer size, 0.5 to 1.0. These preferences do not enable the timer." },
 	{ "display.direct_camera", _config_boolean, "false", "HALO_DIRECT_CAMERA", _environment_value, _platform_desktop,
 		"In first person, point the view where the player aims now instead of\n"
 		"where the last tick left it: the view turns the frame the mouse moves,\n"
@@ -92,9 +102,26 @@ static const struct config_setting config_settings[] =
 		"Play sound." },
 	{ "audio.volume", _config_real, "1.0", "HALO_VOLUME", _environment_value, _platform_all,
 		"The volume of everything, 0.0 to 1.0." },
+	{ "audio.music_volume", _config_real, "1.0", NULL, _environment_value, _platform_all,
+		"Music volume, 0.0 to 1.0, in addition to the master volume." },
+	{ "audio.effects_volume", _config_real, "1.0", NULL, _environment_value, _platform_all,
+		"Sound effects and multiplayer announcer volume, 0.0 to 1.0." },
+	{ "audio.dialogue_volume", _config_real, "1.0", NULL, _environment_value, _platform_all,
+		"Unit and scripted dialogue volume, 0.0 to 1.0." },
+	{ "audio.timer_volume", _config_real, "1.0", NULL, _environment_value, _platform_all,
+		"Optional Performance Build timer recordings volume, 0.0 to 1.0." },
+	{ "audio.timer_countdown", _config_boolean, "true", NULL, _environment_value, _platform_all,
+		"Play countdown announcements when the host enables PB Timer Sounds." },
+	{ "audio.timer_beeps", _config_boolean, "true", NULL, _environment_value, _platform_all,
+		"Play countdown beeps when the host enables PB Timer Sounds." },
+	{ "audio.timer_minutes", _config_boolean, "true", NULL, _environment_value, _platform_all,
+		"Announce elapsed minutes when the host enables PB Timer Sounds." },
+	{ "audio.timer_items", _config_boolean, "false", NULL, _environment_value, _platform_all,
+		"Announce scheduled rockets and powerups on supported maps when the\n"
+		"host enables PB Timer Sounds. Off preserves the existing timer audio." },
 	{ "audio.menu_music", _config_boolean, "true", NULL, _environment_value, _platform_all,
 		"Play the main menu title music. False keeps menu effects and gameplay\n"
-		"audio enabled. Restart the game after changing this setting." },
+		"audio enabled. In-game audio settings apply immediately when accepted." },
 
 	{ "input.mouse_sensitivity", _config_real, "1.0", "HALO_MOUSE_SENSITIVITY", _environment_value, _platform_desktop,
 		"How far the view turns for the mouse's movement." },
@@ -687,7 +714,7 @@ static void config_report_unknown_keys(toml_datum_t table)
 	}
 }
 
-static void config_load(void)
+static void config_load(int complete_file)
 {
 	char path[1024];
 	size_t size = 0;
@@ -725,7 +752,7 @@ static void config_load(void)
 				config_set_from_file(&config_values[index], &config_settings[index], result.toptab);
 			config_report_unknown_keys(result.toptab);
 			platform_log("settings: %s", path);
-			completed = config_add_missing(text, result.toptab);
+			completed = complete_file ? config_add_missing(text, result.toptab) : NULL;
 			if (completed && !config_write_file(path, completed))
 				platform_log("settings: cannot write %s", path);
 			free(completed);
@@ -737,7 +764,7 @@ static void config_load(void)
 		toml_free(result);
 		free(text);
 	}
-	else
+	else if (complete_file)
 	{
 		char *defaults = config_default_text();
 
@@ -770,159 +797,324 @@ static void config_load(void)
 	}
 }
 
-static const struct config_value *config_value(const char *name, enum config_type type)
+static struct config_value config_value(const char *name, enum config_type type)
 {
-	static const struct config_value none = { 0, 0, 0.0, "" };
-	long index;
+	struct config_value result = { 0, 0, 0.0, "" };
+	long index = config_setting_index(name);
 
 	pthread_mutex_lock(&config_lock);
 	if (!config_loaded)
 	{
-		config_load();
+		config_load(1);
 		config_loaded = 1;
 	}
-	pthread_mutex_unlock(&config_lock);
-	index = config_setting_index(name);
-	if (index < 0 || config_settings[index].type != type)
-	{
+	if (index >= 0 && config_settings[index].type == type)
+		result = config_values[index];
+	else
 		platform_log("settings: no %s setting %s", type == _config_string ? "string" : "such", name);
-		return &none;
-	}
-	return &config_values[index];
+	pthread_mutex_unlock(&config_lock);
+	/* Scalar reads are copied while locked, so saves cannot race the mixer
+	or other native callers. Strings are immutable after the initial load. */
+	return result;
 }
 
 /* ---------- writing a setting */
 
-/* the line's key, if it is "key = ..." (after spaces), in key */
-static int config_line_key(const char *line, const char *end, const char *key)
+/* Source locations come from the parsed TOML, so comments, quoted keys and
+inline tables are preserved rather than recognized by a line-shaped guess. */
+static const char *config_source_line(const char *text, int number)
 {
-	size_t length = strlen(key);
-
-	while (line < end && (*line == ' ' || *line == '\t'))
-		line++;
-	if ((size_t)(end - line) <= length || strncmp(line, key, length) != 0)
-		return 0;
-	line += length;
-	while (line < end && (*line == ' ' || *line == '\t'))
-		line++;
-	return line < end && *line == '=';
+	if (number < 1)
+		return NULL;
+	while (--number)
+	{
+		text = strchr(text, '\n');
+		if (!text)
+			return NULL;
+		text++;
+	}
+	return text;
 }
 
-/* the section the line opens, if it is "[section]" (after spaces) */
-static int config_line_section(const char *line, const char *end, char *section, size_t size)
+static char *config_replace_text(const char *text, size_t size, size_t offset, size_t length, const char *replacement)
 {
-	const char *close;
+	size_t added = strlen(replacement);
+	char *updated;
 
-	while (line < end && (*line == ' ' || *line == '\t'))
-		line++;
-	if (line >= end || *line != '[')
-		return 0;
-	close = memchr(line, ']', (size_t)(end - line));
-	if (!close || (size_t)(close - line - 1) >= size)
-		return 0;
-	memcpy(section, line + 1, (size_t)(close - line - 1));
-	section[close - line - 1] = 0;
-	return 1;
+	if (offset > size || length > size - offset || added > SIZE_MAX - size - 1)
+		return NULL;
+	updated = malloc(size - length + added + 1);
+	if (!updated)
+		return NULL;
+	memcpy(updated, text, offset);
+	memcpy(updated + offset, replacement, added);
+	memcpy(updated + offset + added, text + offset + length, size - offset - length);
+	updated[size - length + added] = 0;
+	return updated;
 }
 
-/* sets a boolean setting, for now and in config.toml: its line there is
-changed (or added), the rest of the file kept as it is */
-int config_write_boolean(const char *name, int value)
+/* Replace the complete file only after its temporary sibling has been written
+and closed successfully. A failed write must leave the original file intact. */
+static int config_write_file_atomic(const char *path, const char *text)
 {
-	const char *dot = strchr(name, '.');
-	long index = config_setting_index(name);
-	char section[64], key[64], wanted[80], current[64] = "", line_text[96], path[1024];
-	struct config_text out = { 0 };
+	char temporary[1100];
+	int succeeded = 0;
+#ifdef _WIN32
+	SDL_IOStream *file;
+	size_t size = strlen(text);
+
+	snprintf(temporary, sizeof(temporary), "%s.%llu.tmp", path,
+		(unsigned long long)SDL_GetPerformanceCounter());
+	file = SDL_IOFromFile(temporary, "wbx");
+	if (!file)
+		return 0;
+	succeeded = SDL_WriteIO(file, text, size) == size;
+	if (!SDL_CloseIO(file))
+		succeeded = 0;
+	if (succeeded)
+		succeeded = SDL_RenamePath(temporary, path);
+	if (!succeeded)
+		SDL_RemovePath(temporary);
+#else
+	struct stat attributes;
+	FILE *file;
+	int descriptor;
+
+	/* Respect a deliberately read-only config, even though replacing a file
+	would otherwise require only write access to its parent directory. */
+	if (stat(path, &attributes) || !S_ISREG(attributes.st_mode) || access(path, W_OK))
+		return 0;
+	snprintf(temporary, sizeof(temporary), "%s.XXXXXX", path);
+	descriptor = mkstemp(temporary);
+	if (descriptor < 0)
+		return 0;
+	file = fdopen(descriptor, "wb");
+	if (file)
+	{
+		size_t size = strlen(text);
+
+		succeeded = !fchmod(descriptor, attributes.st_mode & 0777) &&
+			fwrite(text, 1, size, file) == size && !fflush(file) && !fsync(descriptor);
+		if (fclose(file))
+			succeeded = 0;
+	}
+	else
+		close(descriptor);
+	if (succeeded)
+		succeeded = !rename(temporary, path);
+	if (!succeeded)
+		unlink(temporary);
+#endif
+	return succeeded;
+}
+
+static int config_number_matches(toml_datum_t datum, enum config_type type, double value)
+{
+	switch (type)
+	{
+	case _config_boolean:
+		return datum.type == TOML_BOOLEAN && datum.u.boolean == (value != 0.0);
+	case _config_integer:
+		return datum.type == TOML_INT64 && datum.u.int64 == (long)value;
+	case _config_real:
+		return (datum.type == TOML_FP64 && datum.u.fp64 == value) ||
+			(datum.type == TOML_INT64 && (double)datum.u.int64 == value);
+	default:
+		return 0;
+	}
+}
+
+/* Source locations come from TOML, including dotted/quoted keys and inline
+ tables. Only the value token is replaced; all surrounding text is retained. */
+static char *config_edit_number(const char *text, size_t size, const struct config_setting *setting, double value)
+{
+	const char *name = setting->name, *dot = strchr(name, '.');
+	char section[64], addition[256], number[64];
+	char *updated = NULL;
+	toml_result_t parsed = toml_parse(text, (int)size);
+	toml_datum_t datum;
+
+	if (!parsed.ok || !dot || (size_t)(dot - name) >= sizeof(section))
+		goto done;
+	if (setting->type == _config_boolean)
+		snprintf(number, sizeof(number), "%s", value ? "true" : "false");
+	else if (setting->type == _config_integer)
+		snprintf(number, sizeof(number), "%ld", (long)value);
+	else
+	{
+		snprintf(number, sizeof(number), "%.17g", value);
+		if (!strpbrk(number, ".eE"))
+			strcat(number, ".0");
+	}
+	datum = toml_seek(parsed.toptab, name);
+	if ((setting->type == _config_boolean && datum.type == TOML_BOOLEAN) ||
+		(setting->type == _config_integer && datum.type == TOML_INT64) ||
+		(setting->type == _config_real && (datum.type == TOML_FP64 || datum.type == TOML_INT64)))
+	{
+		const char *line = config_source_line(text, datum.lineno);
+
+		if (line && datum.colno > 0 && (size_t)(datum.colno - 1) < strcspn(line, "\r\n"))
+		{
+			const char *token = line + datum.colno - 1;
+			size_t length = strcspn(token, " \t\r\n,#}]");
+
+			if (length)
+				updated = config_replace_text(text, size, (size_t)(token - text), length, number);
+		}
+	}
+	else if (datum.type == TOML_UNKNOWN)
+	{
+		toml_datum_t table;
+		const char *line;
+
+		snprintf(section, sizeof(section), "%.*s", (int)(dot - name), name);
+		table = toml_get(parsed.toptab, section);
+		line = config_source_line(text, table.lineno);
+		if (line)
+			while (*line == ' ' || *line == '\t') line++;
+		if (table.type == TOML_UNKNOWN)
+		{
+			snprintf(addition, sizeof(addition), "%s[%s]\n%s = %s\n",
+				size && text[size - 1] != '\n' ? "\n" : "", section, dot + 1, number);
+			updated = config_replace_text(text, size, size, 0, addition);
+		}
+		else if (table.type == TOML_TABLE && line && *line == '[' && line[1] != '[')
+		{
+			const char *end = strchr(line, '\n');
+			size_t offset = end ? (size_t)(end + 1 - text) : size;
+
+			snprintf(addition, sizeof(addition), "%s%s = %s\n", end ? "" : "\n", dot + 1, number);
+			updated = config_replace_text(text, size, offset, 0, addition);
+		}
+		else if (table.type == TOML_TABLE)
+		{
+			/* Dotted-key tables can be extended at top level. Inline tables
+			are closed; the final parse rejects extending them. */
+			snprintf(addition, sizeof(addition), "%s = %s\n", name, number);
+			updated = config_replace_text(text, size, 0, 0, addition);
+		}
+	}
+ done:
+	toml_free(parsed);
+	return updated;
+}
+
+int config_write_numbers(const char *const *names, const double *values, unsigned count)
+{
+	long indices[NUMBER_OF_CONFIG_SETTINGS];
+	char path[1024], *text = NULL;
 	size_t size = 0;
-	char *text;
-	const char *line;
-	int written = 0, in_section = 0, succeeded;
+	unsigned item;
+	int succeeded = 0;
 
-	if (index < 0 || config_settings[index].type != _config_boolean || !dot || (size_t)(dot - name) >= sizeof(section))
+	if (count > NUMBER_OF_CONFIG_SETTINGS || (count && (!names || !values)))
 		return 0;
-	/* (the file read first, as the other settings are) */
-	config_boolean(name);
+	if (!count)
+		return 1;
+	for (item = 0; item < count; item++)
+	{
+		long index = names[item] ? config_setting_index(names[item]) : -1;
+		double value = values[item];
+		unsigned previous;
+
+		if (index < 0 || !isfinite(value) || config_settings[index].type == _config_string)
+			return 0;
+		if (config_settings[index].type == _config_boolean && value != 0.0 && value != 1.0)
+			return 0;
+		if (config_settings[index].type == _config_integer &&
+			(value < (double)LONG_MIN || value >= -(double)LONG_MIN || (double)(long)value != value))
+			return 0;
+		for (previous = 0; previous < item; previous++)
+			if (indices[previous] == index)
+				return 0;
+		indices[item] = index;
+	}
 	pthread_mutex_lock(&config_lock);
-	config_values[index].boolean = value != 0;
-	snprintf(section, sizeof(section), "%.*s", (int)(dot - name), name);
-	snprintf(key, sizeof(key), "%s", dot + 1);
-	snprintf(line_text, sizeof(line_text), "%s = %s\n", key, value ? "true" : "false");
-	snprintf(wanted, sizeof(wanted), "%s", section);
+	if (!config_loaded)
+	{
+		/* A save as the first config operation must not rewrite missing
+		defaults before the requested batch has been validated and committed. */
+		config_load(0);
+		config_loaded = 1;
+	}
 	config_path(path, sizeof(path));
 	text = config_read_file(path, &size);
-	for (line = text ? text : ""; *line;)
+	if (!text || size > INT_MAX)
+		goto done;
+	for (item = 0; item < count; item++)
 	{
-		const char *end = line + strcspn(line, "\n");
-		const char *next = *end ? end + 1 : end;
+		char *updated = config_edit_number(text, size, &config_settings[indices[item]], values[item]);
 
-		if (config_line_section(line, end, current, sizeof(current)))
-		{
-			/* (leaving the section without the key: it goes at its end) */
-			if (in_section && !written)
-			{
-				config_append(&out, line_text);
-				written = 1;
-			}
-			in_section = !strcmp(current, wanted);
-		}
-		else if (in_section && !written && config_line_key(line, end, key))
-		{
-			config_append(&out, line_text);
-			written = 1;
-			line = next;
-			continue;
-		}
-		{
-			char *copy = config_copy(line, (size_t)(next - line));
-
-			if (copy)
-			{
-				config_append(&out, copy);
-				free(copy);
-			}
-		}
-		line = next;
+		if (!updated)
+			goto done;
+		free(text);
+		text = updated;
+		size = strlen(text);
+		if (size > INT_MAX)
+			goto done;
 	}
-	if (!written)
 	{
-		if (out.length && out.buffer[out.length - 1] != '\n')
-			config_append(&out, "\n");
-		if (!in_section)
-		{
-			char header[80];
+		toml_result_t check = toml_parse(text, (int)size);
+		int valid = check.ok;
 
-			snprintf(header, sizeof(header), "\n[%s]\n", section);
-			config_append(&out, header);
-		}
-		config_append(&out, line_text);
+		for (item = 0; valid && item < count; item++)
+			valid = config_number_matches(toml_seek(check.toptab, names[item]),
+				config_settings[indices[item]].type, values[item]);
+		toml_free(check);
+		if (valid)
+			succeeded = config_write_file_atomic(path, text);
 	}
-	succeeded = out.buffer && config_write_file(path, out.buffer);
+	if (succeeded)
+	{
+		for (item = 0; item < count; item++)
+		{
+			struct config_value *saved = &config_values[indices[item]];
+
+			switch (config_settings[indices[item]].type)
+			{
+			case _config_boolean: saved->boolean = values[item] != 0.0; break;
+			case _config_integer: saved->integer = (long)values[item]; break;
+			case _config_real: saved->real = values[item]; break;
+			default: break;
+			}
+		}
+	}
+ done:
 	pthread_mutex_unlock(&config_lock);
-	free(out.buffer);
 	free(text);
 	return succeeded;
+}
+
+int config_write_boolean(const char *name, int value)
+{
+	long index = name ? config_setting_index(name) : -1;
+	double number = value != 0;
+
+	if (index < 0 || config_settings[index].type != _config_boolean)
+		return 0;
+	return config_write_numbers(&name, &number, 1);
 }
 
 /* ---------- public code */
 
 int config_boolean(const char *name)
 {
-	return config_value(name, _config_boolean)->boolean;
+	return config_value(name, _config_boolean).boolean;
 }
 
 long config_integer(const char *name)
 {
-	return config_value(name, _config_integer)->integer;
+	return config_value(name, _config_integer).integer;
 }
 
 double config_real(const char *name)
 {
-	return config_value(name, _config_real)->real;
+	return config_value(name, _config_real).real;
 }
 
 const char *config_string(const char *name)
 {
-	const char *string = config_value(name, _config_string)->string;
+	const char *string = config_value(name, _config_string).string;
 
 	return string ? string : "";
 }

@@ -253,12 +253,14 @@ symbols in this file:
 #include "bungie_net/network/transport_endpoint_winsock.h"
 #include "game/game.h"
 #include "game/game_engine.h"
+#include "game/performance_variant.h"
 #include "game/players.h"
 #include "networking/network_connection.h"
 #include "networking/network_game_globals.h"
 #include "networking/network_game_manager.h"
 #include "networking/network_game_protocol.h"
 #include "networking/network_messages.h"
+#include "networking/network_performance_protocol.h"
 #include "networking/network_server_manager_internal.h"
 #include "networking/network_server_message_handler.h"
 #include "text/unicode.h"
@@ -1267,6 +1269,19 @@ boolean network_game_server_handle_client_message(
 				break;
 
 			case _message_type_data:
+			{
+				unsigned performance_flags;
+
+				/* This handler reads the client's reliable connection only.
+				 * Capability is allowed before joining; no client may send
+				 * host settings or change its capability after admission. */
+				if (!network_game_server_client_machine_is_joined_to_game(server, machine) &&
+					network_performance_decode((byte const *)message, message_buffer_size,
+						NETWORK_PERFORMANCE_CAPABILITY, &performance_flags))
+				{
+					network_game_server_performance_capability(machine, performance_flags);
+					break;
+				}
 				/* the distributed netcode's messages (port/linux/NETCODE.md) */
 				/* (in game, from a machine that has loaded it, as a datagram
 				is: else dropped) */
@@ -1280,6 +1295,7 @@ boolean network_game_server_handle_client_message(
 					network_distributed_handle_message(machine_index, message, message_buffer_size);
 				}
 				break;
+			}
 
 			case _message_type_error:
 				if (message_buffer_size >= MINIMUM_TRANSPORT_ERROR_MESSAGE_SIZE)
@@ -1615,10 +1631,14 @@ static boolean network_game_server_handle_message_client_broadcast_game_search(
 			/* the native builds' network version and netcode (a client
 			refuses a host of another version, or of the lockstep netcode
 			older builds had: network_client_manager.c) */
-			advertisement.reserved[HALO_PORT_ADVERTISED_VERSION_OFFSET] = (byte)(HALO_PORT_NETWORK_VERSION & 0xFF);
-			advertisement.reserved[HALO_PORT_ADVERTISED_VERSION_OFFSET + 1] = (byte)(HALO_PORT_NETWORK_VERSION >> 8);
+			{
+				unsigned version = network_performance_advertised_version(
+					performance_variant_get_flags(&game->variant), HALO_PORT_NETWORK_VERSION);
+				advertisement.reserved[HALO_PORT_ADVERTISED_VERSION_OFFSET] = (byte)(version & 0xFF);
+				advertisement.reserved[HALO_PORT_ADVERTISED_VERSION_OFFSET + 1] = (byte)(version >> 8);
+			}
 			advertisement.reserved[HALO_PORT_ADVERTISED_FLAGS_OFFSET] =
-				HALO_PORT_ADVERTISED_DISTRIBUTED_FLAG;
+				HALO_PORT_ADVERTISED_DISTRIBUTED_FLAG | NETWORK_PERFORMANCE_ADVERTISED_FLAG;
 			/* (open to joins: not while the machines load the game, nor
 			once it is over, nor in progress when no player can join it) */
 			if (network_game_server_get_state(server, NULL) == _network_game_server_state_ingame
@@ -1743,6 +1763,20 @@ static boolean network_game_server_handle_message_client_join_game_request(
 			the countdown for ever */
 			boolean full = network_game_server_get_state(server, NULL) == _network_game_server_state_pregame &&
 				!network_game_has_free_player_slot(network_game_server_get_game(server));
+
+			/* Discovery prevents stock clients joining an enabled session;
+			 * enforce it here too for stale advertisements and direct joins. */
+			if (!network_game_server_performance_supported(server_client_machine,
+				performance_variant_get_flags(&network_game_server_get_game(server)->variant)))
+			{
+				struct message_server_machine_rejected rejection = { _rejection_code_version_too_old };
+				void *reply = create_network_game_message(_message_server_machine_rejected, &rejection, sizeof(rejection));
+
+				network_event("refusing client: this match enables practice options; an updated client with practice support is required");
+				if (reply)
+					network_game_server_send_message_to_client_machine(server, server_client_machine, reply);
+				return FALSE;
+			}
 
 			/* port: its hardware id, as it tells it: hex only (anything else
 			left out), no more than its field; the host logs it, and refuses

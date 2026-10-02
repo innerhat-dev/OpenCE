@@ -171,6 +171,18 @@ short cache_file_read(
 
 unsigned long tag_get_group_tag(long tag_index);
 
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+/* Native UI definitions can reuse the stock widget engine without changing
+the map's tag table or checksum. Only DeLa and ustr are accepted. The name and
+definition are borrowed and must remain valid until scenario_tags_unload().
+The exact same registration is idempotent; conflicting names or aliases fail.
+Returns NONE on failure. These tags are not part of the cache tag iterator. */
+long cache_files_register_runtime_ui_tag(
+	long group_tag,
+	char const *name,
+	void *definition);
+#endif
+
 /* ---------- prototypes/XBOX_TEXTURE_CACHE.C */
 
 void texture_cache_bitmap_new(

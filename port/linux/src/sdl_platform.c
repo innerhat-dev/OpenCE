@@ -16,6 +16,12 @@ and the debug keyboard that the game's console reads.
 #include "input_bindings.h"
 #include "p2p.h"
 #include "xiso.h"
+#include "native_video.h"
+#include "native_input_events.h"
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+#include "guest_host.h"
+extern unsigned char console_is_active(void);
+#endif
 
 #include <SDL3/SDL.h>
 #include <stdio.h>
@@ -34,7 +40,7 @@ static struct platform_input_state input_state;
 /* keys pressed since the last read, so a press and release between two
 reads still counts as a press (input injected on Android, or a slow frame) */
 static unsigned char keys_pressed[SDL_SCANCODE_COUNT];
-#ifndef HALO_ANDROID
+#if !defined(HALO_ANDROID) || (defined(HALO_MACOS) && !defined(HALO_IOS))
 /* the menus' pointer (platform_ui_pointer_set_active), under input_lock */
 static struct platform_ui_pointer ui_pointer;
 static float ui_pointer_wheel;
@@ -304,11 +310,39 @@ BOOL platform_offer_game_data(const char *destination)
 
 int halo_interpolation_enabled(void)
 {
-	static int enabled = -1;
+	return config_boolean("display.interpolation");
+}
 
-	if (enabled < 0)
-		enabled = config_boolean("display.interpolation");
-	return enabled;
+int halo_video_fullscreen_get(void)
+{
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+	return platform_window && host_sdl_video_fullscreen((unsigned int)platform_window, -1);
+#elif !defined(HALO_ANDROID)
+	return platform_window && (SDL_GetWindowFlags(platform_window) & SDL_WINDOW_FULLSCREEN) != 0;
+#else
+	return 1;
+#endif
+}
+
+int halo_video_fullscreen_set(int enabled)
+{
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+	return platform_window && host_sdl_video_fullscreen((unsigned int)platform_window, enabled != 0);
+#elif !defined(HALO_ANDROID)
+	return platform_window && SDL_SetWindowFullscreen(platform_window, enabled != 0);
+#else
+	return enabled != 0;
+#endif
+}
+
+int halo_video_apply_settings(void)
+{
+	extern void render_interpolation_reset(void);
+	if (!platform_gl_context || !SDL_GL_SetSwapInterval(config_boolean("display.vsync") ? 1 : 0))
+		return 0;
+	/* Previous snapshots can be minutes old when interpolation is re-enabled. */
+	render_interpolation_reset();
+	return 1;
 }
 
 #ifndef HALO_ANDROID
@@ -420,7 +454,12 @@ BOOL platform_video_initialize(unsigned long width, unsigned long height)
 	platform_event_thread = SDL_GetCurrentThreadID();
 	platform_log("OpenGL %s on %s", (const char *)glGetString(GL_VERSION), (const char *)glGetString(GL_RENDERER));
 #if !defined(HALO_ANDROID) || defined(HALO_MACOS)
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+	input_state.mouse_released = TRUE;
+	platform_mouse_capture(FALSE);
+#else
 	platform_mouse_capture(TRUE);
+#endif
 #endif
 	return TRUE;
 }
@@ -438,7 +477,48 @@ void platform_video_swap(void)
 void platform_mouse_capture(BOOL capture)
 {
 	if (platform_window)
-		SDL_SetWindowRelativeMouseMode(platform_window, capture ? true : false);
+	{
+		if (!SDL_SetWindowRelativeMouseMode(platform_window, capture ? true : false) && capture)
+		{
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+			input_state.mouse_released = TRUE;
+#endif
+			platform_log("mouse capture failed: %s", SDL_GetError());
+		}
+	}
+}
+
+/* Called with input_lock held; discard both held and queued input so a
+   native panel or Resume click cannot leak movement/fire into gameplay. */
+static void platform_input_clear(void)
+{
+	memset(input_state.keys, 0, sizeof(input_state.keys));
+	memset(keys_pressed, 0, sizeof(keys_pressed));
+	memset(input_state.mouse_buttons, 0, sizeof(input_state.mouse_buttons));
+	input_state.mouse_dx = input_state.mouse_dy = input_state.mouse_wheel = 0.0f;
+	input_state.pause_pressed = input_state.menu_back_pressed = FALSE;
+	keystroke_head = keystroke_count = 0;
+}
+
+static void platform_mouse_released_set(BOOL released)
+{
+	platform_input_clear();
+	input_state.mouse_released = released;
+	platform_mouse_capture(!released && !input_state.ui_pointer);
+}
+
+void platform_mouse_release_gameplay(void)
+{
+	pthread_mutex_lock(&input_lock);
+	platform_mouse_released_set(TRUE);
+	pthread_mutex_unlock(&input_lock);
+}
+
+void platform_mouse_resume_gameplay(void)
+{
+	pthread_mutex_lock(&input_lock);
+	platform_mouse_released_set(FALSE);
+	pthread_mutex_unlock(&input_lock);
 }
 
 /* ---------- keyboard translation */
@@ -746,7 +826,33 @@ void platform_pump_events(void)
 			exit(EXIT_SUCCESS);
 		case SDL_EVENT_KEY_DOWN:
 		case SDL_EVENT_KEY_UP:
-			if (event.key.scancode < SDL_SCANCODE_COUNT)
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+			/* Escape has context, even when an older config still binds it to
+			melee. The console receives Escape for its own close operation. */
+			if (event.key.scancode == SDL_SCANCODE_ESCAPE && !console_is_active())
+			{
+				if (event.key.down && !event.key.repeat)
+				{
+					BOOL menu = input_state.ui_pointer;
+					platform_mouse_released_set(TRUE);
+					input_state.menu_back_pressed = menu;
+					input_state.pause_pressed = !menu;
+				}
+				break;
+			}
+			if (event.key.down && !event.key.repeat && !input_state.ui_pointer &&
+				!console_is_active() && input_binding_matches_key(_binding_start, event.key.scancode))
+			{
+				platform_mouse_released_set(TRUE);
+				input_state.pause_pressed = TRUE;
+				break;
+			}
+			if (event.key.down && !event.key.repeat &&
+				(input_binding_matches_key(_binding_console, event.key.scancode) ||
+				(event.key.scancode == SDL_SCANCODE_ESCAPE && console_is_active())))
+				platform_mouse_released_set(TRUE);
+#endif
+			if (event.key.scancode < SDL_SCANCODE_COUNT && (!event.key.down || !event.key.repeat))
 			{
 				input_state.keys[event.key.scancode] = event.key.down;
 				if (event.key.down)
@@ -756,8 +862,12 @@ void platform_pump_events(void)
 			/* The configured mouse-release key releases or recaptures it. */
 			if (event.key.down && !event.key.repeat && input_binding_matches_key(_binding_release_mouse, event.key.scancode))
 			{
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+				platform_mouse_released_set(input_state.ui_pointer || !input_state.mouse_released);
+#else
 				input_state.mouse_released = !input_state.mouse_released;
 				platform_mouse_capture(!input_state.mouse_released && !input_state.ui_pointer);
+#endif
 			}
 #ifndef HALO_ANDROID
 			/* F11 switches between fullscreen and the window (SDL keeps the
@@ -770,7 +880,7 @@ void platform_pump_events(void)
 #endif
 			break;
 		case SDL_EVENT_MOUSE_MOTION:
-#ifndef HALO_ANDROID
+#if !defined(HALO_ANDROID) || (defined(HALO_MACOS) && !defined(HALO_IOS))
 			/* in the menus the mouse moves the pointer, not the view */
 			if (input_state.ui_pointer)
 			{
@@ -785,7 +895,7 @@ void platform_pump_events(void)
 			break;
 		case SDL_EVENT_MOUSE_BUTTON_DOWN:
 		case SDL_EVENT_MOUSE_BUTTON_UP:
-#ifndef HALO_ANDROID
+#if !defined(HALO_ANDROID) || (defined(HALO_MACOS) && !defined(HALO_IOS))
 			/* clicks in the menus go to the pointer; a button held down
 			when the menu closes stays up until pressed again, so the click
 			that resumes the game does not also fire */
@@ -804,11 +914,21 @@ void platform_pump_events(void)
 				break;
 			}
 #endif
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+			if (input_state.mouse_released)
+			{
+				/* Clicking back into gameplay captures, but this press never
+				fires. A later, distinct click can use its gameplay binding. */
+				if (event.button.down && event.button.button == SDL_BUTTON_LEFT)
+					platform_mouse_released_set(FALSE);
+				break;
+			}
+#endif
 			if (event.button.button < PLATFORM_MOUSE_BUTTON_COUNT)
 				input_state.mouse_buttons[event.button.button] = event.button.down;
 			break;
 		case SDL_EVENT_MOUSE_WHEEL:
-#ifndef HALO_ANDROID
+#if !defined(HALO_ANDROID) || (defined(HALO_MACOS) && !defined(HALO_IOS))
 			if (input_state.ui_pointer)
 			{
 				/* whole notches: smooth-scrolling wheels send fractions */
@@ -829,18 +949,28 @@ void platform_pump_events(void)
 			input_state.mouse_wheel += event.wheel.y;
 			break;
 		case SDL_EVENT_WINDOW_FOCUS_LOST:
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+			platform_mouse_released_set(TRUE);
+#else
 			memset(input_state.keys, 0, sizeof(input_state.keys));
 			memset(input_state.mouse_buttons, 0, sizeof(input_state.mouse_buttons));
+#endif
 			input_state.focused = FALSE;
 			break;
 		case SDL_EVENT_WINDOW_FOCUS_GAINED:
 			input_state.focused = TRUE;
 			look_at_clipboard = TRUE;
-#if !defined(HALO_ANDROID) || defined(HALO_MACOS)
+#if !defined(HALO_ANDROID)
 			if (!input_state.mouse_released && !input_state.ui_pointer)
 				platform_mouse_capture(TRUE);
 #endif
 			break;
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+		case SDL_EVENT_USER:
+			if (event.user.code == HALO_NATIVE_MOUSE_RELEASE)
+				platform_mouse_released_set(TRUE);
+			break;
+#endif
 		case SDL_EVENT_GAMEPAD_ADDED:
 			SDL_OpenGamepad(event.gdevice.which);
 			break;
@@ -853,7 +983,7 @@ void platform_pump_events(void)
 	platform_invite_clipboard(look_at_clipboard);
 }
 
-#ifndef HALO_ANDROID
+#if !defined(HALO_ANDROID) || (defined(HALO_MACOS) && !defined(HALO_IOS))
 /* ---------- the menus' pointer */
 
 /* While a menu is up the mouse is released, its pointer shows (centered when
@@ -865,6 +995,13 @@ void platform_ui_pointer_set_active(BOOL active)
 		return;
 	pthread_mutex_lock(&input_lock);
 	input_state.ui_pointer = active;
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+	/* Menus always free the pointer. Only an explicit Resume can authorize
+	   capture as they close; Escape/Back and navigation never do. */
+	if (active)
+		input_state.mouse_released = TRUE;
+	platform_input_clear();
+#endif
 	memset(&ui_pointer, 0, sizeof(ui_pointer));
 	ui_pointer_wheel = 0.0f;
 	input_state.mouse_dx = 0.0f;
@@ -927,6 +1064,8 @@ void platform_input_read(struct platform_input_state *state, BOOL consume_motion
 		input_state.mouse_dx = 0;
 		input_state.mouse_dy = 0;
 		input_state.mouse_wheel = 0;
+		input_state.pause_pressed = FALSE;
+		input_state.menu_back_pressed = FALSE;
 	}
 	pthread_mutex_unlock(&input_lock);
 }

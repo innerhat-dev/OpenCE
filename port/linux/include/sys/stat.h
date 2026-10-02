@@ -9,6 +9,12 @@ the game is built with -malign-double, which changes the layout of its
 #ifndef __HALO_LINUX_SYS_STAT_H
 #define __HALO_LINUX_SYS_STAT_H
 
+/* Native platform code needs POSIX file operations as well as the MSVC
+declarations implemented by msvc_crt.c. Game code keeps only the Xbox ABI. */
+#ifdef HALO_LINUX_PLATFORM_LAYER
+#include_next <sys/stat.h>
+#endif
+
 #include <sys/types.h>
 #include <time.h>
 

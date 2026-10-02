@@ -125,6 +125,10 @@ symbols in this file:
 #include "sound/sound_manager.h"
 #include "units/units.h"
 
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+#include "performance_sound.h"
+#endif
+
 /* ---------- constants */
 
 enum
@@ -1743,6 +1747,9 @@ static void first_person_weapon_update(
 		long sound_definition_index;
 		short animation_update_result;
 		boolean moving;
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+		unsigned animation_sound_role;
+#endif
 
 		model_definition_get(weapon_definition->weapon.interface_definition.first_person_model.index);
 		animation_graph= animation_graph_definition_get(
@@ -1769,6 +1776,13 @@ static void first_person_weapon_update(
 
 		/* port: a PAL map's first-person animation at the NTSC maps' pace,
 		which the weapon's timing keeps (port/linux/game/pal_tags.c) */
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+		/* The last sound frame may also advance this state below. */
+		animation_sound_role =
+			first_person_weapon->state==_first_person_weapon_state_ready ||
+			first_person_weapon->state==_first_person_weapon_state_put_away ?
+				_performance_sound_weapon_ready : _performance_sound_normal;
+#endif
 		if (!pal_tags_first_person_advance(local_player_index,
 			weapon_definition->weapon.interface_definition.first_person_animations.index,
 			first_person_weapon->state_animation.index, first_person_weapon->state_animation.frame_index))
@@ -1793,6 +1807,9 @@ static void first_person_weapon_update(
 		if (sound_definition_index!=NONE &&
 			director_get_perspective(local_player_index)==_director_perspective_first_person)
 		{
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+			unsigned previous_sound_role = performance_sound_push(animation_sound_role);
+#endif
 			first_person_weapon->current_sound_index= object_impulse_sound_new(
 				first_person_weapon->weapon_index,
 				sound_definition_index,
@@ -1800,6 +1817,9 @@ static void first_person_weapon_update(
 				global_origin3d,
 				global_forward3d,
 				1.0f);
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+			performance_sound_pop(previous_sound_role);
+#endif
 			first_person_weapon->current_sound_state= first_person_weapon->state;
 		}
 
@@ -2125,6 +2145,12 @@ static void weapon_play_first_person_weapon_sound(
 
 							if (definition_index!=NONE)
 							{
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+								unsigned previous_sound_role = performance_sound_push(
+									message_type==_first_person_weapon_message_ready ||
+									message_type==_first_person_weapon_message_put_away ?
+										_performance_sound_weapon_ready : _performance_sound_normal);
+#endif
 								object_impulse_sound_new(
 									weapon_index,
 									definition_index,
@@ -2132,6 +2158,9 @@ static void weapon_play_first_person_weapon_sound(
 									global_origin3d,
 									global_forward3d,
 									1.0f);
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+								performance_sound_pop(previous_sound_role);
+#endif
 							}
 						}
 					}

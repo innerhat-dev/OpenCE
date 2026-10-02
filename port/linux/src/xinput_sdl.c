@@ -154,7 +154,7 @@ static void mouse_poll(const struct platform_input_state *input)
 		mouse_pending_x = 0.0f;
 		mouse_pending_y = 0.0f;
 	}
-	if (!input->mouse_released)
+	if (!input->mouse_released && !input->ui_pointer)
 	{
 		mouse_pending_x += input->mouse_dx;
 		mouse_pending_y += input->mouse_dy;
@@ -163,6 +163,11 @@ static void mouse_poll(const struct platform_input_state *input)
 		mouse_wheel_accumulated += input->mouse_wheel;
 		if (input->mouse_wheel != 0.0f)
 			wheel_moved_ms = SDL_GetTicks();
+	}
+	else
+	{
+		mouse_pending_x = mouse_pending_y = mouse_wheel_accumulated = 0.0f;
+		wheel_press_until_ms = 0;
 	}
 	pthread_mutex_unlock(&mouse_lock);
 }
@@ -183,9 +188,21 @@ static void keyboard_gamepad(const struct platform_input_state *input, XINPUT_GA
 	unsigned char gameplay_keys[SDL_SCANCODE_COUNT];
 	int index;
 
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+	if (input->pause_pressed) pad->wButtons |= XINPUT_GAMEPAD_START;
+	if (input->menu_back_pressed) pad->bAnalogButtons[XINPUT_GAMEPAD_B] = 0xff;
+	/* A free cursor cannot leave keyboard movement/fire running. Menu
+	   navigation remains available; physical controllers are independent. */
+	if (input->mouse_released && !input->ui_pointer)
+		return;
+#endif
+
 	/* Console and mouse-release hotkeys are consumed, even if a controller
 	action is also assigned that key. */
 	memcpy(gameplay_keys, k, sizeof(gameplay_keys));
+#if defined(HALO_MACOS) && !defined(HALO_IOS)
+	gameplay_keys[SDL_SCANCODE_ESCAPE] = 0;
+#endif
 	for (index = 1; index < SDL_SCANCODE_COUNT; index++)
 		if (gameplay_keys[index] && (input_binding_matches_key(_binding_console, (SDL_Scancode)index) ||
 			input_binding_matches_key(_binding_release_mouse, (SDL_Scancode)index))) gameplay_keys[index] = 0;
@@ -238,7 +255,8 @@ once a frame, at the display's refresh rate. */
 /* debug.test_input "bot:<seed>": a scripted player for the automated
 network tests (port/linux/game/network_test.c), different for each seed:
 it walks and strafes in circles, turns, fires every few seconds, jumps now
-and then and throws a grenade every seven seconds; "look:<seed>" stands
+and then and throws a grenade every seven seconds; "sound:<seed>" adds
+ordinary switch/reload presses for sound-rule validation; "look:<seed>" stands
 still, only turning and looking up and down (where remote players aim and
 whether they stand) */
 static int test_input_holding_action;
@@ -259,6 +277,7 @@ static void test_input_gamepad(XINPUT_GAMEPAD *pad)
 	static int checked;
 	static int seed = -1;
 	static int looking;
+	static int sound_events;
 	double t;
 
 	if (!checked)
@@ -270,6 +289,11 @@ static void test_input_gamepad(XINPUT_GAMEPAD *pad)
 			seed = atoi(setting + 4);
 		else if (!strcmp(setting, "bot"))
 			seed = 0;
+		else if (!strncmp(setting, "sound:", 6))
+		{
+			seed = atoi(setting + 6);
+			sound_events = 1;
+		}
 		else if (!strncmp(setting, "look:", 5))
 		{
 			seed = atoi(setting + 5);
@@ -301,6 +325,13 @@ static void test_input_gamepad(XINPUT_GAMEPAD *pad)
 		pad->bAnalogButtons[XINPUT_GAMEPAD_A] = 255;
 	if (fmod(t, 7.0) < 0.2)
 		pad->bAnalogButtons[XINPUT_GAMEPAD_LEFT_TRIGGER] = 255;
+	if (sound_events)
+	{
+		if (fmod(t, 11.0) < 0.2)
+			pad->bAnalogButtons[XINPUT_GAMEPAD_Y] = 255;
+		if (fmod(t, 13.0) < 0.2)
+			pad->bAnalogButtons[XINPUT_GAMEPAD_X] = 255;
+	}
 }
 
 static void wheel_update(void)

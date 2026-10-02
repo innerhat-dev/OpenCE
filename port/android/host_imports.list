@@ -20,6 +20,9 @@ host_sdl_ticks
 host_sdl_thread_id
 host_sdl_create_window
 host_sdl_window_size_in_pixels
+host_sdl_window_size
+host_sdl_warp_mouse
+host_sdl_video_fullscreen
 host_sdl_set_relative_mouse
 host_sdl_gl_set_attribute
 host_sdl_gl_create_context

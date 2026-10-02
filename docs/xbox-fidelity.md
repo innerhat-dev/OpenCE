@@ -61,6 +61,27 @@ Generic macOS/v5-map fixes can still be offered upstream as focused contribution
 independently of this fork's presentation choices. This policy does not schedule
 automatic fetching, merging or monitoring.
 
+## Explicit optional PB Options exception
+
+On October 2, 2026, the user separately authorized an optional elapsed match
+timer, separately toggled NHE timer announcements, and spawn markers under
+**PB Options**, including markers derived from stock-map spawn data. All default to off and
+are selected in a saved game type or applied by the host for the session. This
+authorization was extended to host-controlled silent movement and weapon-ready
+sounds, which default to Normal, plus local timer-audio and display preferences.
+These are limited exceptions to the presentation and sound exclusions above;
+they do not authorize other Performance Build mechanics, weapon behavior changes
+or a different simulation rate. The original 30 Hz simulation remains in place.
+
+See [PB Options](performance-options.md) for the native editor and pause-menu
+flows, saved variant format, host authority and v10 compatibility, restrictions
+on inert marker tags, stock-map marker rendering and the single-Mac
+Prisoner/Downrush validation evidence.
+The current marker audits cover 24 placements in converted NHE Prisoner and 19
+in converted Downrush. Original PC v7 caches remain unsupported. Marker drawing
+is included in the engine; optional user-local voice recordings are separate
+from the maps. Retail map checksums are preserved.
+
 ## Defaults and comparison profile
 
 The current implementation creates new `config.toml` files with

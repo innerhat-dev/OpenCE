@@ -56,6 +56,13 @@ boolean network_connection_read(
 	void *buffer,
 	word *buffer_size,
 	struct transport_address *source_address);
+/* Reports whether the returned message came from the reliable stream. */
+boolean network_connection_read_with_transport(
+	struct network_connection *connection,
+	void *buffer,
+	word *buffer_size,
+	struct transport_address *source_address,
+	boolean *reliable);
 boolean network_connection_write(
 	struct network_connection *connection,
 	void *message,

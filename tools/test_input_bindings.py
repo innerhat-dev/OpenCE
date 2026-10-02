@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
     assert(press(SDL_SCANCODE_1).wButtons == XINPUT_GAMEPAD_START);
     assert(!press(SDL_SCANCODE_1).bAnalogButtons[XINPUT_GAMEPAD_Y]);
     assert(!press(SDL_SCANCODE_ESCAPE).wButtons);
-    assert(press(SDL_SCANCODE_ESCAPE).bAnalogButtons[XINPUT_GAMEPAD_B] == 255);
+    assert(!press(SDL_SCANCODE_ESCAPE).bAnalogButtons[XINPUT_GAMEPAD_B]);
     assert(press(SDL_SCANCODE_GRAVE).wButtons == XINPUT_GAMEPAD_BACK);
     assert(press(SDL_SCANCODE_F1).wButtons == XINPUT_GAMEPAD_BACK);
     assert(press(SDL_SCANCODE_LCTRL).wButtons == XINPUT_GAMEPAD_RIGHT_THUMB);
@@ -186,6 +186,19 @@ int main(int argc, char **argv) {
     input.mouse_released = true; wheel_press_until_ms = 200;
     pad = (XINPUT_GAMEPAD){0}; keyboard_gamepad(&input, &pad);
     assert(!pad.bAnalogButtons[XINPUT_GAMEPAD_RIGHT_TRIGGER] && !pad.bAnalogButtons[XINPUT_GAMEPAD_Y]);
+    input.keys[SDL_SCANCODE_W] = input.keys[SDL_SCANCODE_F] = 1;
+    pad = (XINPUT_GAMEPAD){0}; keyboard_gamepad(&input, &pad);
+    assert(!pad.sThumbLY && !pad.bAnalogButtons[XINPUT_GAMEPAD_B]);
+    input.pause_pressed = 1;
+    pad = (XINPUT_GAMEPAD){0}; keyboard_gamepad(&input, &pad);
+    assert(pad.wButtons == XINPUT_GAMEPAD_START && !pad.sThumbLY);
+    input.pause_pressed = 0; input.ui_pointer = 1; input.menu_back_pressed = 1;
+    input.keys[SDL_SCANCODE_DOWN] = 1;
+    pad = (XINPUT_GAMEPAD){0}; keyboard_gamepad(&input, &pad);
+    assert(pad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
+    assert(pad.bAnalogButtons[XINPUT_GAMEPAD_B] == 255);
+    input.ui_pointer = input.menu_back_pressed = 0;
+    memset(input.keys, 0, sizeof(input.keys));
     input.mouse_released = false;
     pad = (XINPUT_GAMEPAD){0}; keyboard_gamepad(&input, &pad); assert(pad.bAnalogButtons[XINPUT_GAMEPAD_Y] == 255);
     ticks = 201;
@@ -256,7 +269,7 @@ class InputBindings(unittest.TestCase):
         self.assertEqual(bindings["zoom"], "Ctrl, MouseMiddle")
         self.assertEqual(bindings["y"], "Q, Tab, Wheel")
         self.assertEqual(bindings["start"], "1")
-        self.assertEqual(bindings["b"], "F, Escape, Backspace, MouseX1, ACBack")
+        self.assertEqual(bindings["b"], "F, Backspace, MouseX1, ACBack")
 
     def test_custom_bindings_disable_old_keys_and_wheel(self):
         self.run_probe("custom", '''[bindings]
@@ -276,7 +289,8 @@ volume = 0.1
 menu_music = false
 ''')
         audio = tomllib.loads(config)["audio"]
-        self.assertEqual(audio, {"enabled": True, "volume": 0.1, "menu_music": False})
+        self.assertEqual({key: audio[key] for key in ("enabled", "volume", "menu_music")},
+                         {"enabled": True, "volume": 0.1, "menu_music": False})
 
     def test_invalid_values_fall_back_without_partial_bindings(self):
         _, log = self.run_probe(config='''[bindings]

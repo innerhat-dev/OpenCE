@@ -230,6 +230,10 @@ symbols in this file:
 #include "units/unit_definitions.h"
 #include "units/units.h"
 
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+#include "performance_sound.h"
+#endif
+
 /* port/linux/game/pal_tags.c's */
 short pal_tags_first_person_frames(long graph_index, short animation_index, short frames);
 
@@ -554,7 +558,17 @@ void weapon_ready(
 	weapon_reset(weapon_index);
 	weapon_set_state(weapon_index, _weapon_state_ready, TRUE);
 	first_person_weapon_message_from_weapon(weapon_index, _first_person_weapon_message_ready);
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+	{
+		unsigned previous_sound_role = performance_sound_push(_performance_sound_weapon_ready);
+
+		/* Keep the ready effect, including visuals and deferred events. */
+#endif
 	weapon_effect_new(weapon_index, weapon_definition->weapon.ready_effect.index, 0.f, 0.f);
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+		performance_sound_pop(previous_sound_role);
+	}
+#endif
 	weapon->weapon.state_timer = weapon_get_first_person_animation_time(weapon_index, 0, _first_person_weapon_animation_ready, NONE);
 
 	return;
