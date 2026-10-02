@@ -83,7 +83,12 @@ static struct tag_reference ref(unsigned slot) {
     return (struct tag_reference){slot==STRINGS_TAG ? 'ustr' : 'DeLa',NULL,0,stock_id(slot)};
 }
 static void setup(void) {
-    if(cache_file_globals.tags_loaded) scenario_tags_unload();
+    if(cache_file_globals.tags_loaded) {
+        unsigned previous_unloads=unload_calls;
+        scenario_tags_unload();
+        assert(unload_calls==previous_unloads+5);
+        assert(!cache_file_globals.tags_loaded && !global_tag_instances);
+    }
     memset(&stock,0,sizeof(stock)); memset(&pb_editor,0,sizeof(pb_editor));
     memset(stock_tags,0,sizeof(stock_tags));
     editing=TRUE; edited.flags=mutation_calls=register_calls=fail_registration=help_calls=0;

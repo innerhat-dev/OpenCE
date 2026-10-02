@@ -383,6 +383,7 @@ static void settings_setup(short mode) {
             performance_pause_child(&original_roots[i][4],resume_id,87,i ? 176:296);
         }
     }
+    snapshot=stock; /* Include this fixture's authored stock screen bounds. */
     memcpy(originals_before,originals,sizeof(originals));
     cache_file_globals.tag_header=&settings_header; global_tag_instances=settings_map;
     register_calls=0; writes=errors=applied_mask=0; save_succeeds=TRUE; rollback_incomplete=FALSE;
@@ -392,9 +393,12 @@ static void settings_setup(short mode) {
     settings_values[_device_setting_timer_position]=0;
 }
 static struct widget_instance *open_settings(short layout,short page,short local) {
+    unsigned previous_unloads=unload_calls;
     struct widget_instance *root=instantiate(device_settings.screen_tags[layout][page],NULL);
     root->local_player_index=local;
     assert(game_settings_event(root,_device_settings_initialize));
+    assert(unload_calls==previous_unloads);
+    assert(!memcmp(&snapshot,&stock,sizeof(stock)));
     assert(root->pause_game_time==(layout>=_ds_solo));
     assert(settings_game_paused==(layout>=_ds_solo) && settings_sound_paused==(layout>=_ds_solo));
     return root;

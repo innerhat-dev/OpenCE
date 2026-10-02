@@ -34,14 +34,16 @@ PREFIX = r'''
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
 #include <strings.h>
+#define _stricmp strcasecmp
+#endif
 #define TRUE 1
 #define FALSE 0
 #define NONE (-1)
 #define HALO_PORT_MAXIMUM_NETWORK_PLAYERS 128
 #define csmemset memset
 #define csstrcmp strcmp
-#define _stricmp strcasecmp
 #define match_assert(file,line,condition) assert(condition)
 #define match_vassert(file,line,condition,message) do { if (!(condition)) { (void)(message); assert(condition); } } while (0)
 #define csprintf(buffer,...) (snprintf(buffer,sizeof(temporary),__VA_ARGS__),buffer)
