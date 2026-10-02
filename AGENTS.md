@@ -48,6 +48,15 @@ Matching decompilation progress refers to the original executable target and
 build configuration. Do not describe a native ARM Mac executable as byte-identical
 to an Xbox executable, or a successful smoke test as proof of full retail parity.
 
+## Local Mac build installation
+
+After each successful local macOS app build, install the built app into
+`/Applications/Halo CE Universal.app`. This is the user's default for this
+project. Use the build script's `--install` option or its `install_app` helper
+for an already-built app; the installer verifies the bundle and preserves the
+previous copy. Verify the installed signature and `Contents/Resources/BuildInfo.txt`
+before reporting completion. Preserve user game data, saves and configuration.
+
 Read [docs/xbox-fidelity.md](docs/xbox-fidelity.md) for the recorded baseline,
 excluded upstream changes, current settings and validation limits, and
 [docs/apple-build.md](docs/apple-build.md) for build and contribution workflow.
