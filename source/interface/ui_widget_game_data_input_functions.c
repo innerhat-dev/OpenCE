@@ -354,6 +354,9 @@ symbols in this file:
 #include "saved games/playlist_profile.h"
 #include "text/text_group.h"
 #include "text/unicode.h"
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+#include "halo_custom_maps.h"
+#endif
 
 /* ---------- constants */
 
@@ -680,6 +683,27 @@ static byte const local_player_controller_bitmap_frames[2][MAXIMUM_LOCAL_PLAYERS
 };
 
 /* ---------- public code */
+
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+static void custom_map_text(struct widget_instance *widget, char const *caption)
+{
+	unsigned int i;
+	int capitalize = TRUE;
+	widget->parameters.text_box.text = ui_widget_realloc(widget->parameters.text_box.text,
+		HALO_CUSTOM_MAP_NAME_SIZE * sizeof(wchar_t), __FILE__, __LINE__);
+	if (!widget->parameters.text_box.text) return;
+	for (i = 0; i < HALO_CUSTOM_MAP_NAME_SIZE - 1 && caption[i]; i++)
+	{
+		unsigned char c = (unsigned char)caption[i];
+		if (c == '_') c = ' ';
+		if (capitalize && c >= 'a' && c <= 'z') c -= 'a' - 'A';
+		widget->parameters.text_box.text[i] = c;
+		capitalize = c == ' ';
+	}
+	widget->parameters.text_box.text[i] = 0;
+	widget->parameters.text_box.string_list_index = HALO_CUSTOM_MAP_TEXT;
+}
+#endif
 
 void ui_widget_game_data_function_invoke(
 	struct widget_instance *widget,
@@ -1137,6 +1161,11 @@ static void server_list_menu_update(
 				}
 
 				map_name = server->map_name;
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+				if (native_map_is_custom(map_name))
+					map_bitmap->animation.current_frame_index = 13;
+				else
+#endif
 				if (strstr(map_name, "beavercreek"))
 					map_bitmap->animation.current_frame_index = 0;
 				else if (strstr(map_name, "sidewinder"))
@@ -1170,6 +1199,10 @@ static void server_list_menu_update(
 					(server->open == TRUE) ? 20 : 21;
 				map_name_text->parameters.text_box.string_list_index =
 					map_bitmap->animation.current_frame_index;
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+				if (native_map_is_custom(map_name))
+					custom_map_text(map_name_text, native_map_basename(map_name));
+#endif
 
 				switch (server->engine_type)
 				{
@@ -2410,6 +2443,13 @@ static void multiplayer_game_set_text_box_for_map_name(
 	if (game)
 	{
 		map_name = game->map.name;
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+		if (native_map_is_custom(map_name))
+		{
+			custom_map_text(widget, native_map_basename(map_name));
+			return;
+		}
+#endif
 	if (strstr(map_name, "beavercreek"))
 	{
 		widget->parameters.text_box.string_list_index = 0;
@@ -2678,6 +2718,13 @@ static void multiplayer_game_set_bitmap_for_map(
 	if (game)
 	{
 		map_name = game->map.name;
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+		if (native_map_is_custom(map_name))
+		{
+			widget->animation.current_frame_index = 13;
+			return;
+		}
+#endif
 	if (strstr(map_name, "beavercreek"))
 	{
 		widget->animation.current_frame_index = 0;
@@ -4227,6 +4274,15 @@ static void mp_level_select_list_update_displayed_items(
 			(short)displayed_item_indices[item_index];
 		map_description->parameters.text_box.string_list_index =
 			(short)displayed_item_indices[item_index];
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+		if (displayed_item_indices[item_index] >= 13)
+		{
+			char *map = ((char **)list_widget->parameters.list.list_items)[displayed_item_indices[item_index]];
+			custom_map_text(map_name, native_map_basename(map));
+			custom_map_text(map_description, "Community map");
+			map_bitmap->animation.current_frame_index = 13;
+		}
+#endif
 	}
 	return;
 }

@@ -142,8 +142,25 @@ git remote add upstream https://github.com/cybersecurity/halo-ce-universal.git
 git fetch upstream
 ```
 
-Bring upstream changes into our `main`, retaining the Apple port and testing
-before pushing. When a contribution is ready, prepare a focused branch against
+This is an independent fork with an [original-Xbox fidelity policy](xbox-fidelity.md).
+Keep the last integrated baseline recorded while staying current with useful core
+improvements through selective review. During upstream-update work, inspect every
+new commit's actual diff and behavioral effects. Prioritize verified matching-
+decompilation progress, performance, stability and platform fixes. Consider netcode
+and potential matchmaking improvements individually, with timing and fairness
+validation. Preserve original Xbox NTSC gameplay and presentation; high-refresh
+rendering can coexist with the original 30 Hz simulation.
+
+Do not merge upstream `main` wholesale. Select or cherry-pick accepted changes and
+split mixed commits to exclude unrelated modifications. Renaming/rebranding,
+replacement fonts/artwork/HUD, overhead player labels and changes to gameplay rules
+are excluded by default unless the user requests them separately. Record each
+commit's hash, category, decision, reason, validation and integration status in the
+update's review ledger, including rejected, deferred and already-equivalent
+changes. Record how far upstream was reviewed separately from how far it was
+integrated. See the fidelity policy for the detailed review criteria.
+
+When a contribution is ready, prepare a focused branch against
 `upstream/main` and open a pull request into that repository. CI still checks
 fork pushes; automatic releases and Discord build notifications run only in
 the upstream repository.

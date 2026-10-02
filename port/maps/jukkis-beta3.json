@@ -1,0 +1,944 @@
+{
+  "package": "JukkisP H1 Performance Build 2.0 Public Beta 3",
+  "invader_commit": "7d25a855f5ef9e4ab8407abf490b21f8780abf27",
+  "profile": "stock-xbox-ntsc",
+  "maps": [
+    {
+      "id": "downrush",
+      "display_name": "Downrush",
+      "scenario": "levels/test/pat_downrush/downrush",
+      "scenario_sha256": "a7f7a9322a9917baa95ac1e36d3acb441a5ea1dd25332958ee67605d241db035",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "octagon",
+      "display_name": "Octagon",
+      "scenario": "levels/test/octagon/octagon",
+      "scenario_sha256": "6740c4381ecceb7ad9e05fadacc596bfd2f91d5efc1a4b8788beeec240c3fdf3",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "octa_garbage_cleanup"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "atlas",
+      "display_name": "Atlas",
+      "scenario": "levels/test/atlas/atlas",
+      "scenario_sha256": "6445abced3945f8954f6f399ad1908929bf275cc60cfd72eeb0ef5aa0c3a91c7",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "badcreek",
+      "display_name": "Badcreek",
+      "scenario": "levels/test/pat_beavercreek/badcreek",
+      "scenario_sha256": "f0e828703aa5fc6ed95fcfee42aef8157d20528e6f7684e5a6e1ab969b46d47a",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "birdhouse",
+      "display_name": "Birdhouse",
+      "scenario": "levels/test/birdhouse/birdhouse",
+      "scenario_sha256": "82fb6fe566bcd415ccf8467bd6e6b8a27aaa17fd79ac9931416a8e50acdbf9cc",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "calam",
+      "display_name": "Calam",
+      "scenario": "levels/test/xbox_calamity_v3/calam",
+      "scenario_sha256": "20981bd94a1861b9d3743b7798b626a98fc1e5d8778a46b002f0d215e3d5deda",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "chilledout",
+      "display_name": "Chilledout",
+      "scenario": "levels/test/au_chillout/chilledout",
+      "scenario_sha256": "84973dd1e9a7d663521dd5d906b5908d44f9f752f801c59bf4d1e454f4796ea3",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "h1pb_chillout",
+      "display_name": "Chillout (H1PB)",
+      "scenario": "levels/test/pat_chillout/chillout",
+      "scenario_sha256": "7eb3c9520db1264ffa3504ef3dbab74a7362f25236a35b7b60c675ee28f1cefb",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "dammy",
+      "display_name": "Dammy",
+      "scenario": "levels/test/win_damnation/dammy",
+      "scenario_sha256": "662f5fdc35af8edb14a5ad33d91c0501d0eecbfccf271e7edea3b78c08695604",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "decidia",
+      "display_name": "Decidia",
+      "scenario": "levels/test/decidia/decidia",
+      "scenario_sha256": "716c43951912fe59e2908513ac24520c1fad0e07f191e81ce1f06bfcfa581289",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "dere",
+      "display_name": "Dere",
+      "scenario": "levels/test/hairousel/dere",
+      "scenario_sha256": "4e65e34cb064a46717078889ce7225cd231d4e78f19b686c16f0d8adf78cbe7b",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "descent",
+      "display_name": "Descent",
+      "scenario": "levels/test/descent/descent",
+      "scenario_sha256": "eb27c60525c0d82600177e9fb44116b2e61dc2d0bbad34dc20487f58281d9a60",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "doubletake",
+      "display_name": "Doubletake",
+      "scenario": "levels/test/doubletake/doubletake",
+      "scenario_sha256": "c5ea3dcc0d5d7d2ccf09a0fd63757162b810eadcf6b354417bd302de9681dd1e",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "downfall",
+      "display_name": "Downfall",
+      "scenario": "levels/test/downrush_au/downfall",
+      "scenario_sha256": "44f7fcaecab58104359bd11f0a095e1fd5ee4753e798b0590307832a0f3abd1d",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "downog",
+      "display_name": "Downog",
+      "scenario": "levels/test/downrush/downog",
+      "scenario_sha256": "691592cec222637c5ac1055089448ce658402bbd7ec0c732be88c0debb7b37f1",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "dread",
+      "display_name": "Dread",
+      "scenario": "levels/test/alt_hairousel/dread",
+      "scenario_sha256": "5c0b8a1d135f2af9c0b5679b10e21745c1782caaebbbbcfda77d501fc0c1829c",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "dread_new",
+      "display_name": "Dread New",
+      "scenario": "levels/test/alt_hairousel/dread_new",
+      "scenario_sha256": "9034e0c7112ec667b7451b2ef83ef94032791f1a2c6a1c7cc59ecdf0708d8503",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "exhibit",
+      "display_name": "Exhibit",
+      "scenario": "levels/test/exhibit/exhibit",
+      "scenario_sha256": "891a1771de3bc678fccf256e96fee56bcb633caa9227c2cbe5d876327490aa93",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "fallout",
+      "display_name": "Fallout",
+      "scenario": "levels/pope/fallout",
+      "scenario_sha256": "09d3269fa165868c69bb1ea694f296de1e76be7a7ae1bec7ed5b7da2fb283db4",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "h1pb_hangemhigh",
+      "display_name": "Hang Em High (H1PB)",
+      "scenario": "levels/test/pat_hangemhigh/hangemhigh",
+      "scenario_sha256": "5af1c211ca738364172558c650dfc1a686e1b17bd4c25871f71c9088f2150ee1",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "hangman",
+      "display_name": "Hangman",
+      "scenario": "levels/test/hangem_au/hangman",
+      "scenario_sha256": "7aaab36bc69158e582cdc4d70f1c6595d7059195305f3f478cb2e4f62d7fc5c7",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "hotbox",
+      "display_name": "Hotbox",
+      "scenario": "levels/test/hotbox/hotbox",
+      "scenario_sha256": "b71684bd8e9ba986dfe8c7de1e9b1800e2cb350d5c8121dcdc228d9f6706ed06",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "imminent",
+      "display_name": "Imminent",
+      "scenario": "levels/test/imminent/imminent",
+      "scenario_sha256": "21ff895fed8b7215976596c6ddf9da3ec563012123b9b4bdf6e602bc5800ef43",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "jaywalk",
+      "display_name": "Jaywalk",
+      "scenario": "levels/mods/jaywalk/jaywalk",
+      "scenario_sha256": "24fe6a72c686e73318dd5fcea1219faaca8ac0cbe4230cc47b967d5d35e08702",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "longshot",
+      "display_name": "Longshot",
+      "scenario": "levels/test/longest_pe/longshot",
+      "scenario_sha256": "331a1e30431a137a19dc8f98eea10f905df525093322a4158811d6acffe3f036",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "octagon_b",
+      "display_name": "Octagon B",
+      "scenario": "levels/octagon/octagon_b",
+      "scenario_sha256": "c581b5e4e013256539e8b266dc61b933f2397c223bb30a8e9f4adbdd0f2cd156",
+      "optional_scripts": [
+        "player_count",
+        "host_setup"
+      ],
+      "cleanup_prefixes": []
+    },
+    {
+      "id": "outbound",
+      "display_name": "Outbound",
+      "scenario": "levels/test/outbound/outbound",
+      "scenario_sha256": "cccd654944bcc0411ef8799ae73793c55bf75e408efccebb6813c6ce47b9ca14",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "show_min",
+        "combined_tens",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "overflow",
+      "display_name": "Overflow",
+      "scenario": "levels/test/pat_overflow/overflow",
+      "scenario_sha256": "39b3f3f4c5fb66e6175eb49c95549d867ca99b2208b2f7d94d8e885443db5bb5",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "patrace",
+      "display_name": "Patrace",
+      "scenario": "levels/test/xbox_patrace/patrace",
+      "scenario_sha256": "53c51d05387be8bf5010b5e5c1a3ac8aa4f9629193b2f2fcb83721947fd9e91f",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "h1pb_prisoner",
+      "display_name": "Prisoner (H1PB)",
+      "scenario": "levels/test/pat_prisoner/prisoner",
+      "scenario_sha256": "72d562399294173227c8babff927266b4ec8564ba2324f69a744f4be2cadcfde",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "redshift",
+      "display_name": "Redshift",
+      "scenario": "levels/test/redshift/redshift",
+      "scenario_sha256": "805a5e23dfe82f5c649a8891f5262e9a8a60eb5492ad9752711eb4c41fe88604",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "salvation",
+      "display_name": "Salvation",
+      "scenario": "levels/test/alt_win_damnation/salvation",
+      "scenario_sha256": "737b0cc463e6cd8a992b7f86bba08d2acf8c8a2190038c55dbc0094aeca13df9",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "slammer",
+      "display_name": "Slammer",
+      "scenario": "levels/test/alt_pat_prisoner/slammer",
+      "scenario_sha256": "03586b075393f5964c0ded8d7eed6ae4f949b5525afce7cd64f11c3c4912c2d6",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "temple",
+      "display_name": "Temple",
+      "scenario": "levels/test/wizard_pe/temple",
+      "scenario_sha256": "c7537542f134a882ac2ab5978bbc0901851c643a382b618656429d3e24519f20",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_overshield_waypoints2",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "tinker",
+      "display_name": "Tinker",
+      "scenario": "levels/test/tinker/tinker",
+      "scenario_sha256": "d2792e9051491e9d27fec09427139f326cd4e9c09737a7741b8ad31008f809a4",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "tinkered",
+      "display_name": "Tinkered",
+      "scenario": "levels/test/tinker/tinkered",
+      "scenario_sha256": "a4675f0fb780e085ba3b5fb569a13b67c3b76d8467a843702937050bf6d23c48",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "weld",
+      "display_name": "Weld",
+      "scenario": "levels/test/weld/weld",
+      "scenario_sha256": "da31c5e42fd38086df52d9f3920ece5a9fe72bda520a375921b09aaa448ebe1c",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_camo_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "whiskey",
+      "display_name": "Whiskey",
+      "scenario": "levels/mods/whiskey/whiskey",
+      "scenario_sha256": "c0867f8df489aacc996147ce73c9590555937bea8a346ec0034f156ee5986f49",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "h1pb_wizard",
+      "display_name": "Wizard (H1PB)",
+      "scenario": "levels/test/wizard/wizard",
+      "scenario_sha256": "0835e9482f34cd61d7d00b65881a9c0c30afa11d553c7dd7d71ebc73582d902a",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_camo_waypoints",
+        "activate_overshield_waypoints",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    },
+    {
+      "id": "worthy",
+      "display_name": "Worthy",
+      "scenario": "levels/pope/worthy",
+      "scenario_sha256": "5e56ad8a93b92cd9c1e28e9ac3df616a3b90d8271b1bfa7416f8f4b7ce95db01",
+      "optional_scripts": [
+        "player_count",
+        "host_setup",
+        "activate_rocket_waypoint",
+        "activate_camo_waypoint",
+        "activate_overshield_waypoint",
+        "deactivate_powerup_waypoints",
+        "beep_every_ten_sec",
+        "announce_min",
+        "combined_tens",
+        "timer_tens",
+        "timer_minutes",
+        "nhe_combined_timer"
+      ],
+      "cleanup_prefixes": [
+        "spawn_marker",
+        "randoms"
+      ]
+    }
+  ]
+}

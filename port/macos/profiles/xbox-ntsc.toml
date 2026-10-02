@@ -1,0 +1,17 @@
+# Reference presentation for original-Xbox gameplay comparisons.
+# Use a separate HALO_SAVE_ROOT; a profile does not certify retail parity.
+# Launch windowed with the existing HALO_SCREEN_WIDTH=640 override for 4:3.
+[display]
+fullscreen = false
+window_scale = 2
+vsync = true
+interpolation = false
+direct_camera = false
+high_res_hud = false
+
+[audio]
+enabled = true
+volume = 1.0
+
+[input]
+mouse_aim_assist = false

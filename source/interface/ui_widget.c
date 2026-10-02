@@ -677,6 +677,10 @@ struct widget_instance;
 #include "text/text_group.h"
 #include "text/unicode.h"
 #include "ui_widget.h"
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+#include "halo_custom_maps.h"
+#include "port_config.h"
+#endif
 
 /* ---------- constants */
 
@@ -3974,6 +3978,10 @@ void draw_string_and_hack_in_icons(
 void ui_start_main_menu_music(
 	void)
 {
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+	if (!config_boolean("audio.menu_music"))
+		return;
+#endif
 	if (!widget_globals.main_menu_music_active && !main_menu_fade_active())
 	{
 		long sound_definition_index = tag_loaded(LOOPING_SOUND_DEFINITION_TAG, "sound\\music\\title1\\title1");
@@ -4864,7 +4872,11 @@ static void widget_instance_render_text_box(
 	rectangle2d bounds;
 	rectangle2d clip;
 
-	if (definition->text_label_string_list.index != NONE)
+	if (definition->text_label_string_list.index != NONE
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+		&& widget->parameters.text_box.string_list_index != HALO_CUSTOM_MAP_TEXT
+#endif
+		)
 	{
 		short string_list_index;
 		wchar_t *string;

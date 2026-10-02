@@ -9,6 +9,12 @@ It builds on the decompilation of Halo: Combat Evolved build 2342
 **Start here: [Apple build setup](docs/apple-build.md)**, then follow the
 [Mac instructions](port/macos/README.md#build) or
 [iPhone instructions](port/ios/README.md#build).
+The [community-map plan](docs/competitive-maps-plan.md) sets the next direction:
+establish original-Xbox gameplay on Mac, then import JukkisP's maps.
+[Community-map support](docs/community-maps.md) imports all 40 package maps as
+Xbox v5 caches with stock gameplay dependencies and normal menu selection.
+This fork follows an [original-Xbox fidelity policy](docs/xbox-fidelity.md):
+review upstream fixes individually and preserve original presentation and rules.
 The Apple renderer uses ANGLE's Metal backend. Mac keyboard/mouse and iPhone
 touch gameplay and audio have been tested; physical iPhone gamepad play and
 the full campaign still need testing.

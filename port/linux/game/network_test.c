@@ -32,6 +32,7 @@ Called from the main loop every frame (main.c).
 */
 
 #include "cseries.h"
+#include "halo_custom_maps.h"
 #include "main/main.h"
 #include "interface/player_ui.h"
 #include "interface/ui_widget.h"
@@ -934,7 +935,13 @@ void network_test_update(
 
 				struct game_variant variant;
 
-				snprintf(path, sizeof(path), "levels\\test\\%s\\%s", network_test.map_name, network_test.map_name);
+				/* Loading a custom cache uses its scenario tag index; its tag
+				   path need not match levels/test/<name>/<name>. A basename
+				   also fits the network's 64-byte scenario-name field. */
+				if (native_map_is_custom(network_test.map_name))
+					snprintf(path, sizeof(path), "%s", network_test.map_name);
+				else
+					snprintf(path, sizeof(path), "levels\\test\\%s\\%s", network_test.map_name, network_test.map_name);
 				network_game_server_change_map_name(global_network_game_server_get(), path);
 				/* the variant, as picking the game settings does */
 				{

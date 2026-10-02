@@ -93,6 +93,12 @@ int main(int argc, char **argv) {
     struct platform_input_state input = {0};
     XINPUT_GAMEPAD pad;
     const char *mode = argc > 1 ? argv[1] : "default";
+    if (!strcmp(mode, "menu_music_off")) {
+        assert(!config_boolean("audio.menu_music"));
+        assert(config_boolean("audio.enabled"));
+        assert(config_real("audio.volume") == 0.1);
+        return 0;
+    }
     if (!strcmp(mode, "parser")) {
         assert(input_binding_parse(" e, Left Ctrl, Right_Shift, `, F24, Keypad9, Mouse Right, Wheel ", &parsed));
         assert(parsed.keys[SDL_SCANCODE_E] && parsed.keys[SDL_SCANCODE_LCTRL]);
@@ -240,7 +246,11 @@ class InputBindings(unittest.TestCase):
 
     def test_mac_defaults_packets_holds_console_and_mouse(self):
         config, _ = self.run_probe()
-        bindings = tomllib.loads(config)["bindings"]
+        settings = tomllib.loads(config)
+        self.assertTrue(settings["audio"]["menu_music"])
+        for key in ("interpolation", "direct_camera", "high_res_hud"):
+            self.assertFalse(settings["display"][key])
+        bindings = settings["bindings"]
         self.assertEqual(bindings["x"], "E, R")
         self.assertEqual(bindings["select"], "Grave, F1")
         self.assertEqual(bindings["zoom"], "Ctrl, MouseMiddle")
@@ -258,6 +268,15 @@ zoom = "RightCtrl"
 console = "F3"
 release_mouse = "F4"
 ''')
+
+    def test_menu_music_toggle_preserves_effects_and_master_volume_settings(self):
+        config, _ = self.run_probe("menu_music_off", '''[audio]
+enabled = true
+volume = 0.1
+menu_music = false
+''')
+        audio = tomllib.loads(config)["audio"]
+        self.assertEqual(audio, {"enabled": True, "volume": 0.1, "menu_music": False})
 
     def test_invalid_values_fall_back_without_partial_bindings(self):
         _, log = self.run_probe(config='''[bindings]

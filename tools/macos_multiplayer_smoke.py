@@ -5,6 +5,7 @@ Uses isolated saves and the upstream scripted network test. This checks a
 single Mac; an internet/NAT test still needs a second physical network.
 """
 import argparse
+import hashlib
 import ipaddress
 import json
 import os
@@ -18,7 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build/macos"
 
 
-def prepare(folder, role, mode, seconds, host_address, client_address, variants, score):
+def prepare(folder, role, mode, seconds, host_address, client_address, variants, score,
+            map_name="bloodgulch", map_source=None, reference_profile=False, screenshot_every=0):
     saves = folder / "saves"
     saves.mkdir(parents=True, exist_ok=True)
     data = folder / "data"
@@ -27,6 +29,11 @@ def prepare(folder, role, mode, seconds, host_address, client_address, variants,
     for path in (ROOT / "assets/maps").iterdir():
         if path.is_file():
             (data / "maps" / path.name).symlink_to(path.resolve())
+    if map_source:
+        target = data / "maps" / (map_name + ".map")
+        if target.exists():
+            raise ValueError("A custom map must have its own filename; do not replace a stock map")
+        target.symlink_to(map_source)
     # Use configured addresses only: Linux's arbitrary 127.x loopback
     # aliases fail on Darwin. Invite mode supports LAN plus 127.0.0.1.
     address = host_address if role == "host" else client_address
@@ -44,7 +51,7 @@ application_id = ""
 
 [debug]
 hidden_window = true
-network_test = "{'host:bloodgulch:' + variants if role == 'host' else 'join'}"
+network_test = "{'host:' + map_name + ':' + variants if role == 'host' else 'join'}"
 network_test_start = 20.0
 network_test_score = {score}
 network_test_shoot = 3.0
@@ -52,6 +59,13 @@ network_test_kill = 12.0
 test_input = "bot:{17 if role == 'host' else 42}"
 exit_after = {seconds}.0
 '''
+    if screenshot_every:
+        frames = folder / "frames"
+        frames.mkdir()
+        config += 'screenshot_directory = ' + json.dumps(str(frames)) + '\n'
+        config += 'screenshot_every = ' + str(screenshot_every) + '\n'
+    if reference_profile:
+        config += '\n[display]\ninterpolation = false\ndirect_camera = false\nhigh_res_hud = false\n'
     (saves / "config.toml").write_text(config)
     # All are existing runtime overrides. Personal saves and settings are unused.
     environment = dict(os.environ, HALO_DATA_ROOT=str(data),
@@ -74,6 +88,10 @@ def main():
                         help="Comma-separated upstream variants; multiple entries test consecutive matches")
     parser.add_argument("--score", type=int, default=0,
                         help="Score to win; use a small score for consecutive matches (0 keeps the default)")
+    parser.add_argument("--map", default="bloodgulch", help="Stock or custom cache name (without .map)")
+    parser.add_argument("--map-source", type=Path, help="Converted v5 cache; linked into isolated test data")
+    parser.add_argument("--reference-profile", action="store_true", help="Original HUD, camera and 30 FPS presentation")
+    parser.add_argument("--screenshot-every", type=int, default=0, help="Capture a frame every N simulation ticks")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--guest", type=Path, default=BUILD / "halo_guest.elf")
     parser.add_argument("--executable", type=Path, default=BUILD / "halo",
@@ -83,6 +101,16 @@ def main():
     parser.add_argument("--host-address", help="A configured local IPv4 address, other than 127.0.0.1")
     parser.add_argument("--client-address", help="Another configured local IPv4 address")
     args = parser.parse_args()
+    if not re.fullmatch(r"[A-Za-z0-9_ -]{1,31}", args.map) or args.screenshot_every < 0:
+        parser.error("Use a safe cache name of at most 31 characters and a nonnegative screenshot interval")
+    map_source = args.map_source.resolve(strict=True) if args.map_source else None
+    if map_source:
+        from community_maps import cache_header
+        header = cache_header(map_source)
+        if header['version'] != 5 or header['type'] != 1 or header['name'] != args.map:
+            parser.error("--map-source must be an Xbox v5 multiplayer cache matching --map")
+        if (ROOT / "assets/maps" / map_source.name).exists():
+            parser.error("The custom map filename collides with a stock map")
     if args.native_menu and args.executable.parent.name != 'MacOS':
         parser.error('--native-menu requires an executable inside the candidate app bundle')
     if args.score < 0 or not re.fullmatch(r"[a-zA-Z0-9_ -]+(?:,[a-zA-Z0-9_ -]+)*", args.variants):
@@ -122,7 +150,8 @@ def main():
             folder = out / role
             folders[role] = folder
             environment = prepare(folder, role, args.mode, args.seconds, host_address, client_address,
-                                  args.variants, args.score)
+                                  args.variants, args.score, args.map, map_source,
+                                  args.reference_profile, args.screenshot_every)
             command = [str(args.executable.resolve())]
             if not args.native_menu:
                 command.append(str(args.guest.resolve()))
@@ -175,6 +204,8 @@ def main():
                 restarts[role] = sum(current < previous for previous, current in zip(times, times[1:]))
             checks["both_played_consecutive_matches"] = all(count >= expected_matches - 1 for count in restarts.values())
         result = {"mode": args.mode, "scope": "two real instances on one Mac",
+                  "map": args.map, "map_sha256": hashlib.sha256(map_source.read_bytes()).hexdigest() if map_source else None,
+                  "reference_profile": args.reference_profile,
                   "native_menu": args.native_menu,
                   "variants": args.variants, "score_to_win": args.score,
                   "exit_codes": codes, "logged_ticks": {k: len(v) for k, v in ticks.items()},
