@@ -281,7 +281,7 @@ have up to 4 players (split screen).
 Obey these rules:
 
 - All the machines in a game must use a build with the same limits.
-- The port uses protocol version 9. It does not see the Xbox game or older
+- The port uses native netcode version 10. It does not see the Xbox game or older
   builds of the port. They do not see the port.
 
 These are the differences from the Xbox:

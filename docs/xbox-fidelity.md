@@ -8,17 +8,20 @@ remain the baseline; an upstream change is not accepted merely because it is new
 
 ## Pinned baseline and upstream review
 
-The last integrated upstream revision is `c55e4e2b` (build 64), merged into the
-Apple fork as `aabe44417431c36e46aaa385a69a89a3c9d685c0`. Keep that baseline until
-a specific later change has been reviewed and validated. This is a record of the
-last integration, not a permanent freeze. During upstream-update work, review all
+The last full upstream integration is `c55e4e2b` (build 64), merged into the
+Apple fork as `aabe44417431c36e46aaa385a69a89a3c9d685c0`. On October 2, the network
+protocol portion of `d1c7243cb20eab4488efa1266e259b1f4d5240f6` was selectively
+adopted for version 10 compatibility, retaining the original scoreboard and
+presentation. See the [per-commit review and validation record](upstream-review-2026-10-02.md).
+This does not integrate intervening upstream changes. During upstream-update work, review all
 changes since the last recorded review so useful core improvements are not missed.
 Fetching upstream does not authorize merging it. Do not merge upstream `main`
 wholesale; select focused changes and split mixed commits when necessary.
 
 The last review covered new commits through upstream revision
-`f2ba71d9af4c6fc65d7419cc22e8f4899b16da88` on October 1, 2026. The following
-additions were inspected and excluded; neither is integrated:
+`d1c7243cb20eab4488efa1266e259b1f4d5240f6` on October 2, 2026. The linked review
+records each of the seven new commits since the October 1 review. The following
+earlier exclusions also remain in force; neither is integrated:
 
 | Upstream change | Category and effect | Decision and reason | Validation / integration status |
 | --- | --- | --- | --- |

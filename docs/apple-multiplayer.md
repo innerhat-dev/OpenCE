@@ -1,7 +1,7 @@
 # Apple multiplayer and Mac invite links
 
 Build both devices from the same revision with the same map set. Native builds
-use protocol version 9 and changed player capacities, so original Xbox games
+use protocol version 10 and changed player capacities, so original Xbox games
 and older native builds cannot join. See the [shared System Link notes](../port/linux/README.md#system-link)
 for protocol details and limits.
 
@@ -38,14 +38,20 @@ prevent a connection. This build does not provide guaranteed connectivity,
 host migration, or a browser client. See the
 [upstream connection notes](../port/linux/README.md#connection).
 
-The current integration keeps the Apple ARM64/Metal renderer and merges
+The last full integration kept the Apple ARM64/Metal renderer and merged
 cybersecurity upstream through `c55e4e2b` (build 64, widescreen UI fills). This
 includes repeated-match input and client-role fixes, map compatibility checks,
 mouse aiming changes, compressed networking updates, stronger hit and movement
 validation, score/death replication, and version-9 distributed netcode. Invite
 codes now contain 64 hex digits, including a longer hash of the host's key.
-Older Mac and iPhone builds must be rebuilt before joining a version-9 room;
-older rooms still require a matching older build.
+On October 2, only the version-10 protocol changes from upstream `d1c7243c`
+were adopted. The host now sends player ping measurements every two seconds;
+the original scoreboard remains, so this fork does not display a new ping
+column. Simulation timing, movement, hit detection and game rules are unchanged
+by that update. Version-9 Mac and iPhone builds must be rebuilt before joining
+a version-10 room; older rooms still require a matching older build. The
+[upstream review](upstream-review-2026-10-02.md) records the included protocol
+files, excluded presentation changes and verification limits.
 
 The updates since the September 30, 5 p.m. Panama review also fix sound-cache
 cleanup between games and vehicles waking after a client's movement. Clients
@@ -62,7 +68,8 @@ The October 1 integration also fixes first-person effects following a dropped
 or deleted weapon, selects the actual weapon object for its sound, and limits
 repeated missing-mouth-data and ignored-advertisement messages. It includes the
 high-resolution HUD artwork, text edge fixes and widescreen menu backgrounds;
-the networking protocol remains version 9.
+that integration used networking protocol version 9, before the selective
+version-10 update described above.
 
 The original Xbox decompilation was reviewed through `901aee16`, including
 the new text and circular-queue matching work. This port already implements
