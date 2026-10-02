@@ -311,6 +311,11 @@ GPU timestamp measurement. Normal launches do not enable per-draw profiling.
 See [Apple regression checks](../../docs/apple-regression-checks.md) for the
 source-only CI boundary, local gameplay checks and measured upload comparison.
 
+The [overshield shadow regression](../../docs/overshield-shadow-fix.md) records
+the GLES border-sampling correction and its fixed-camera/gameplay evidence.
+Run `python3 -m unittest tools.test_texture_border -v` with Metal access for the
+offscreen production-shader pixel checks.
+
 ## Phase two
 
 Use this ANGLE/Metal build as the reference before changing rendering behavior.

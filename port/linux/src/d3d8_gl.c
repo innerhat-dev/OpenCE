@@ -197,6 +197,7 @@ struct draw_uniforms
 	float bump_matrix[4][4];
 	float bump_luminance[4][4];
 	float texture_scale[4][4];
+	float texture_border_color[4][4];
 	float screen_offset;
 	float texture_lod_bias[4];
 };
@@ -214,6 +215,7 @@ struct program_entry
 	GLint ps_c0, ps_c1, ps_final_c0, ps_final_c1;
 	GLint fog_color, fog_parameters, alpha_reference;
 	GLint bump_matrix, bump_luminance, texture_scale;
+	GLint texture_border_color;
 	GLint texture_lod_bias;
 	GLint screen_offset;
 
@@ -1987,6 +1989,7 @@ static struct program_entry *program_get(GLuint vertex_shader, GLuint fragment_s
 	entry->bump_matrix = glGetUniformLocation(entry->program, "bump_matrix");
 	entry->bump_luminance = glGetUniformLocation(entry->program, "bump_luminance");
 	entry->texture_scale = glGetUniformLocation(entry->program, "texture_scale");
+	entry->texture_border_color = glGetUniformLocation(entry->program, "texture_border_color");
 	entry->texture_lod_bias = glGetUniformLocation(entry->program, "texture_lod_bias");
 	entry->screen_offset = glGetUniformLocation(entry->program, "screen_offset");
 	for (stage = 0; stage < D3DTSS_MAXSTAGES; stage++)
@@ -2201,6 +2204,35 @@ static GLuint mip_composite_get(const struct xgpu_texture_description *descripti
 	return composite->texture;
 }
 
+/* Border emulation is exact for a single 2D level. Mipmapped, anisotropic,
+3D and cube sampling need different footprints; do not apply a level-zero
+coverage estimate to those paths. The shadow render targets have one level. */
+static void texture_border_key(struct nv2a_pixel_shader_key *key, int stage,
+	GLenum target, const struct xgpu_texture_description *description)
+{
+#ifdef HALO_ANDROID
+	DWORD *state = D3D__TextureState[stage];
+	DWORD min_filter = description->hires ? D3DTEXF_LINEAR : state[D3DTSS_MINFILTER];
+	DWORD mag_filter = description->hires ? D3DTEXF_LINEAR : state[D3DTSS_MAGFILTER];
+
+	if (!xgpu_capabilities.border_clamp && target == GL_TEXTURE_2D && description->levels == 1 &&
+		min_filter != D3DTEXF_ANISOTROPIC && mag_filter != D3DTEXF_ANISOTROPIC)
+	{
+		key->border_axes[stage] = (state[D3DTSS_ADDRESSU] == D3DTADDRESS_BORDER ? 1 : 0) |
+			(state[D3DTSS_ADDRESSV] == D3DTADDRESS_BORDER ? 2 : 0);
+		if (key->border_axes[stage])
+		{
+			key->border_filter[stage] = (min_filter == D3DTEXF_POINT ? 0 : 1) |
+				(mag_filter == D3DTEXF_POINT ? 0 : 2);
+			/* A positive minimum LOD forces minification filtering even for
+			a single-level texture, as configured on the native sampler. */
+			if (!description->hires && state[D3DTSS_MAXMIPLEVEL])
+				key->border_filter[stage] = (key->border_filter[stage] & 1) ? 3 : 0;
+		}
+	}
+#endif
+}
+
 static void bind_textures(struct nv2a_pixel_shader_key *key, float texture_scale[4][4])
 {
 	int stage;
@@ -2255,6 +2287,7 @@ static void bind_textures(struct nv2a_pixel_shader_key *key, float texture_scale
 			state_texture(stage, gl_target, gl_texture);
 			state_sampler(stage, device.samplers[stage]);
 			configure_sampler(stage, description.levels > 1, description.hires);
+			texture_border_key(key, stage, gl_target, &description);
 			if (stage == 0)
 				key->coverage_alpha = description.hires_coverage != FALSE;
 			key->sampler_type[stage] = gl_target == GL_TEXTURE_CUBE_MAP ? _xgpu_sampler_cube :
@@ -2486,7 +2519,7 @@ static void gl_check_errors(const char *where)
 
 /* the uniforms of the latest draws, converted from these inputs; the serial
 counts the conversions */
-#define DRAW_UNIFORM_INPUT_COUNT (4 + 4 + 16 + 1 + 16 + 2 + 4 + 1 + 1 + 7 * D3DTSS_MAXSTAGES)
+#define DRAW_UNIFORM_INPUT_COUNT (4 + 4 + 16 + 1 + 16 + 2 + 4 + 1 + 1 + 8 * D3DTSS_MAXSTAGES)
 
 static DWORD draw_uniform_inputs[DRAW_UNIFORM_INPUT_COUNT];
 static struct draw_uniforms draw_uniforms;
@@ -2667,6 +2700,7 @@ static struct program_entry *prepare_draw(BOOL immediate)
 			inputs[count++] = state[D3DTSS_BUMPENVLSCALE];
 			inputs[count++] = state[D3DTSS_BUMPENVLOFFSET];
 			inputs[count++] = state[D3DTSS_MIPMAPLODBIAS];
+			inputs[count++] = state[D3DTSS_BORDERCOLOR];
 		}
 		if (!draw_uniforms_serial || memcmp(inputs, draw_uniform_inputs, sizeof(inputs)))
 		{
@@ -2704,6 +2738,7 @@ static struct program_entry *prepare_draw(BOOL immediate)
 				converted->bump_luminance[stage][1] = dword_to_float(state[D3DTSS_BUMPENVLOFFSET]);
 				converted->bump_luminance[stage][2] = converted->bump_luminance[stage][3] = 0.0f;
 				converted->texture_lod_bias[stage] = dword_to_float(state[D3DTSS_MIPMAPLODBIAS]);
+				color_to_vec4(state[D3DTSS_BORDERCOLOR], converted->texture_border_color[stage]);
 			}
 			converted->screen_offset = (float)UI_OFFSET;
 		}
@@ -2725,6 +2760,7 @@ static struct program_entry *prepare_draw(BOOL immediate)
 	uniform_vec4(entry->bump_matrix, entry->uniforms.bump_matrix[0], draw_uniforms.bump_matrix[0], 4);
 	uniform_vec4(entry->bump_luminance, entry->uniforms.bump_luminance[0], draw_uniforms.bump_luminance[0], 4);
 	uniform_vec4(entry->texture_scale, entry->uniforms.texture_scale[0], draw_uniforms.texture_scale[0], 4);
+	uniform_vec4(entry->texture_border_color, entry->uniforms.texture_border_color[0], draw_uniforms.texture_border_color[0], 4);
 	uniform_float(entry->screen_offset, &entry->uniforms.screen_offset, draw_uniforms.screen_offset);
 	uniform_vec4(entry->texture_lod_bias, entry->uniforms.texture_lod_bias, draw_uniforms.texture_lod_bias, 1);
 	return entry;
