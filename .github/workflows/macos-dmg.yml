@@ -1,0 +1,93 @@
+name: macOS DMG
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-dmg-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dmg:
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      HALO_MACOS_LLVM_BIN: /opt/homebrew/opt/llvm@22/bin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Public toolchain
+        run: |
+          test "$(uname -m)" = arm64
+          brew install llvm@22 lld@22 sdl3 ninja
+          printf '%s\n' /opt/homebrew/opt/lld@22/bin >> "$GITHUB_PATH"
+      - name: Prepare dependencies
+        run: python3 tools/macos_setup.py
+      - name: Build app without bundled game data
+        # The default build is optimized and ad-hoc signed. --release is the
+        # separate Developer ID / Sparkle path and requires signing credentials.
+        run: python3 tools/macos_build.py --no-data-path --sign-identity - --build-number "$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT"
+      - name: Check packaging rules
+        run: python3 -m unittest tools.test_macos_menu.ReleaseBoundary
+      - name: Create DMG
+        run: python3 tools/macos_release.py local-dmg --output dist/macos/Halo-CE-Universal-macos-arm64.dmg
+      - name: Verify packaged app and record download details
+        run: |
+          hdiutil verify dist/macos/Halo-CE-Universal-macos-arm64.dmg
+          dmg_mount="$(mktemp -d "$RUNNER_TEMP/halo-dmg.XXXXXX")"
+          hdiutil attach dist/macos/Halo-CE-Universal-macos-arm64.dmg -mountpoint "$dmg_mount" -nobrowse -readonly
+          trap 'hdiutil detach "$dmg_mount"' EXIT
+          bundle="$dmg_mount/Halo CE Universal.app"
+          codesign --verify --deep --strict "$bundle"
+          lipo -verify_arch arm64 "$bundle/Contents/MacOS/halo"
+          python3 - "$bundle" <<'PY'
+          import os
+          from pathlib import Path
+          import plistlib
+          import sys
+          from tools.macos_release import audit_bundle, audit_adhoc_signing
+
+          app = Path(sys.argv[1])
+          audit_bundle(app)
+          audit_adhoc_signing(app)
+          contents = app / "Contents"
+          info = plistlib.loads((contents / "Info.plist").read_bytes())
+          build_info = (contents / "Resources/BuildInfo.txt").read_text()
+          assert f"Source: {os.environ['GITHUB_SHA']}\n" in build_info, build_info
+          output = Path("dist/macos")
+          (output / "BuildInfo.txt").write_text(build_info)
+          notes = (
+              "Halo CE Universal - macOS CI build\n\n"
+              f"Requires Apple Silicon and macOS {info['LSMinimumSystemVersion']} or later.\n"
+              "Open the DMG and drag Halo CE Universal to Applications.\n"
+              "Supply your own original Xbox Halo game data on first launch.\n"
+              "No game maps, disc images, or local data paths are included.\n"
+              "This build is ad-hoc signed and not notarized; macOS may block first launch.\n"
+              "Signing uses no personal developer certificate or Apple Team ID.\n"
+              "See https://support.apple.com/en-us/102445 for Apple's opening instructions.\n"
+              "Automatic updates are disabled for CI builds.\n\n"
+              + build_info
+          )
+          (output / "README.txt").write_text(notes)
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as summary:
+              summary.write("## macOS download\n\nDownload **halo-macos-arm64-dmg** from this run's Artifacts.\n\n")
+              summary.write("```text\n" + notes + "```\n")
+          PY
+          (cd dist/macos && shasum -a 256 Halo-CE-Universal-macos-arm64.dmg > SHA256SUMS)
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: halo-macos-arm64-dmg
+          path: dist/macos/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

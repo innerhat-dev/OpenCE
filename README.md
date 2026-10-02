@@ -19,10 +19,11 @@ The Apple renderer uses ANGLE's Metal backend. Mac keyboard/mouse and iPhone
 touch gameplay and audio have been tested; physical iPhone gamepad play and
 the full campaign still need testing.
 
-This is a source-only repository. Supply your own original Xbox game data and
-August 2001 XDK headers locally. Game images, maps, the XDK, signing identities,
-provisioning profiles and built apps are not included. iPhone developers use
-their own Apple development team and app identifier.
+Supply your own original Xbox game data. Native builds use the SDK declarations
+checked into the repository and do not require the Xbox SDK. Game images, maps,
+the XDK, signing identities, provisioning profiles and built apps are excluded
+from the Git source tree; GitHub Actions provides builds as separate artifacts.
+iPhone developers use their own Apple development team and app identifier.
 
 ![Halo: Combat Evolved main menu running on Apple Silicon macOS](docs/images/main-menu.png)
 
@@ -31,8 +32,23 @@ That project is a fork of [punpckhdq/halo](https://github.com/punpckhdq/halo).
 
 ## Download
 
-GitHub Actions builds the game for each commit. These links download the
-builds of the latest release:
+For this fork's **Apple Silicon Mac build**, sign in to GitHub and open
+[macOS DMG](https://github.com/pfista/halo-ce-universal/actions/workflows/macos-dmg.yml).
+Choose a successful run, then download **halo-macos-arm64-dmg** under **Artifacts**.
+Extract the ZIP, open `Halo-CE-Universal-macos-arm64.dmg`, and drag the app to
+Applications. Artifacts are retained for 14 days and include `README.txt`,
+`BuildInfo.txt` and `SHA256SUMS`. The workflow runs on code pushes to `main`
+and can be started manually.
+
+The current dependencies require **macOS 26 or later on Apple Silicon**.
+The artifact's `README.txt` records the minimum macOS version for that build.
+This is an experimental, ad hoc signed build without Apple notarization;
+macOS may require an explicit opening approval. No Homebrew or build tools are
+needed to run it. Supply your own original Xbox game data on first launch.
+See [Mac downloads and installation](port/macos/README.md#download) for details.
+
+The following links are **cybersecurity upstream releases**, which can differ
+from this fork's code and multiplayer protocol:
 
 | Platform | Release | Debug |
 | --- | --- | --- |
@@ -40,16 +56,14 @@ builds of the latest release:
 | Windows | [halo-windows-release.zip](https://github.com/cybersecurity/halo-ce-universal/releases/latest/download/halo-windows-release.zip) | [halo-windows-debug.zip](https://github.com/cybersecurity/halo-ce-universal/releases/latest/download/halo-windows-debug.zip) |
 | Android | [halo-android-release.zip](https://github.com/cybersecurity/halo-ce-universal/releases/latest/download/halo-android-release.zip) | [halo-android-debug.zip](https://github.com/cybersecurity/halo-ce-universal/releases/latest/download/halo-android-debug.zip) |
 
-For Apple platforms, use the [Apple build setup](docs/apple-build.md) and
-platform guides above; their scripts configure the build automatically.
-The following instructions also cover the inherited Linux, Windows, Android
-and byte-matching builds.
+To compile the Apple ports yourself, use [Apple build setup](docs/apple-build.md)
+and the platform guides above; their scripts configure the build automatically.
+The [build instructions](#build-the-game) below cover the native ports.
 
-You must source the August 2001 Xbox SDK yourself, and you need Python and [ninja-build](https://ninja-build.org/) on your PATH. Extract the `XDK/xbox` folder from the installer into the repository root such that `xbox/{bin,include}` are valid paths, then run `configure.py` from the repository root.
-
-The game updates itself. At start-up it looks for a newer release, and asks
-if you want to install it. Refer to "Updates" in
-[port/linux/README.md](port/linux/README.md#updates).
+The upstream desktop game updates itself. At start-up it looks for a newer
+release, and asks if you want to install it. Refer to "Updates" in
+[port/linux/README.md](port/linux/README.md#updates). This fork's Mac CI downloads
+do not enable automatic updates; download a newer artifact to update.
 
 Each build of the upstream `main` branch that passes on all three platforms is a new
 release. The [Releases](https://github.com/cybersecurity/halo-ce-universal/releases)

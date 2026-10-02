@@ -68,6 +68,44 @@ def audit_bundle(app):
     return True
 
 
+def audit_adhoc_signing(app):
+    """Check all bundled code without exposing unexpected signing metadata."""
+    with (app / "Contents/Info.plist").open("rb") as stream:
+        if plistlib.load(stream)["CFBundleIdentifier"] != ACCOUNT:
+            raise RuntimeError("Unexpected app bundle identifier")
+    # Inspect every real Mach-O, including nested Sparkle helpers. Vendor
+    # capability entitlements remain intact; no signing certificate or team
+    # identity is allowed, even on a secondary architecture in a fat binary.
+    magic = {bytes.fromhex(value) for value in (
+        "feedface", "cefaedfe", "feedfacf", "cffaedfe",
+        "cafebabe", "bebafeca", "cafebabf", "bfbafeca",
+    )}
+    checked = 0
+    for path in app.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        with path.open("rb") as stream:
+            if stream.read(4) not in magic:
+                continue
+        architectures = subprocess.check_output(["lipo", "-archs", str(path)], text=True).split()
+        if not architectures:
+            raise RuntimeError("No Mach-O architectures found: " + str(path.relative_to(app)))
+        for architecture in architectures:
+            result = subprocess.run(
+                ["codesign", "-d", "--verbose=4", "--arch", architecture, str(path)],
+                capture_output=True, text=True, check=True)
+            fields = result.stderr.splitlines()
+            if ("Signature=adhoc" not in fields or "TeamIdentifier=not set" not in fields
+                    or any(field.startswith("Authority=") for field in fields)):
+                raise RuntimeError("Expected ad-hoc signing without a certificate or team: "
+                                   + str(path.relative_to(app)) + " (" + architecture + ")")
+        checked += 1
+    if not checked:
+        raise RuntimeError("No signed Mach-O code found in app")
+    print(f"Verified {checked} code objects: ad-hoc signing, no certificate authorities or team identifiers")
+    return checked
+
+
 def appcast(record):
     rss = ET.Element("rss", {"version": "2.0"})
     channel = ET.SubElement(rss, "channel")

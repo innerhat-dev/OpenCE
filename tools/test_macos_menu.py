@@ -4,6 +4,8 @@
 Creates tiny authored XDVDFS/map-header fixtures; contains no game assets.
 """
 import base64
+from contextlib import redirect_stderr, redirect_stdout
+import io
 import os
 from pathlib import Path
 import plistlib
@@ -19,7 +21,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tools.macos_build import update_configuration, minimum_macos_version, SDL
-from tools.macos_release import audit_bundle, appcast, NAMESPACE
+from tools.macos_release import audit_adhoc_signing, audit_bundle, appcast, NAMESPACE
 from tools.macos_sparkle import setup_sparkle
 
 
@@ -168,6 +170,97 @@ def native_menu_loop():
 
 
 class ReleaseBoundary(unittest.TestCase):
+    def signing_fixture(self, directory, identifier="local.halo.ce-universal"):
+        app = Path(directory) / "Halo.app"
+        contents = app / "Contents"
+        (contents / "MacOS").mkdir(parents=True)
+        (contents / "Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": identifier}))
+        (contents / "MacOS/halo").write_bytes(bytes.fromhex("cffaedfe"))
+        return app
+
+    def test_adhoc_audit_checks_nested_code_and_every_architecture(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app = self.signing_fixture(temporary)
+            helper = app / "Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate"
+            helper.parent.mkdir(parents=True)
+            helper.write_bytes(bytes.fromhex("cafebabe"))
+            (helper.parent / "Alias").symlink_to(helper.name)
+            (helper.parent / "LICENSE").write_text("Synthetic non-code fixture")
+            checked = []
+
+            def signatures(command, **options):
+                checked.append((Path(command[-1]).relative_to(app).as_posix(),
+                                command[command.index("--arch") + 1]))
+                self.assertTrue(options["capture_output"])
+                return subprocess.CompletedProcess(command, 0, stdout="", stderr=(
+                    "Signature=adhoc\nTeamIdentifier=not set\nIdentifier=org.sparkle-project.fixture\n"))
+
+            with patch("tools.macos_release.subprocess.check_output", return_value="x86_64 arm64\n"), \
+                    patch("tools.macos_release.subprocess.run", side_effect=signatures), \
+                    redirect_stdout(io.StringIO()):
+                self.assertEqual(audit_adhoc_signing(app), 2)
+            self.assertCountEqual(checked, [(path, architecture) for path in (
+                "Contents/MacOS/halo", "Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate"
+            ) for architecture in ("x86_64", "arm64")])
+
+    def test_adhoc_audit_rejects_identity_in_secondary_architecture_without_exposing_it(self):
+        forbidden = ("Authority=Developer ID Application: Private Person (PRIVATE123)",
+                     "TeamIdentifier=PRIVATETEAM", "Signature=certificate")
+        with tempfile.TemporaryDirectory() as temporary:
+            app = self.signing_fixture(temporary)
+            for field in forbidden:
+                with self.subTest(field=field.split("=")[0]):
+                    checked = []
+
+                    def signatures(command, **options):
+                        architecture = command[command.index("--arch") + 1]
+                        checked.append(architecture)
+                        metadata = "Signature=adhoc\nTeamIdentifier=not set\n"
+                        if architecture == "arm64":
+                            key = field.split("=")[0]
+                            metadata = "\n".join(line for line in metadata.splitlines()
+                                                  if not line.startswith(key + "=")) + "\n" + field + "\n"
+                        return subprocess.CompletedProcess(command, 0, stdout="", stderr=metadata)
+
+                    output, errors = io.StringIO(), io.StringIO()
+                    with patch("tools.macos_release.subprocess.check_output", return_value="x86_64 arm64\n"), \
+                            patch("tools.macos_release.subprocess.run", side_effect=signatures), \
+                            redirect_stdout(output), redirect_stderr(errors), \
+                            self.assertRaises(RuntimeError) as failure:
+                        audit_adhoc_signing(app)
+                    self.assertEqual(checked, ["x86_64", "arm64"])
+                    self.assertIn("Contents/MacOS/halo (arm64)", str(failure.exception))
+                    reported = str(failure.exception) + output.getvalue() + errors.getvalue()
+                    for value in ("Private Person", "PRIVATE123", "PRIVATETEAM", field):
+                        self.assertNotIn(value, reported)
+
+    def test_adhoc_audit_rejects_non_generic_bundle_identifier_without_exposing_it(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app = self.signing_fixture(temporary, "private.person.halo")
+            with self.assertRaisesRegex(RuntimeError, "Unexpected app bundle identifier") as failure:
+                audit_adhoc_signing(app)
+            self.assertNotIn("private.person.halo", str(failure.exception))
+
+    def test_adhoc_audit_rejects_bundle_without_macho_code(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app = self.signing_fixture(temporary)
+            (app / "Contents/MacOS/halo").write_bytes(b"\x7fELFsynthetic guest")
+            with patch("tools.macos_release.subprocess.check_output") as lipo, \
+                    patch("tools.macos_release.subprocess.run") as codesign, \
+                    self.assertRaisesRegex(RuntimeError, "No signed Mach-O code"):
+                audit_adhoc_signing(app)
+            lipo.assert_not_called()
+            codesign.assert_not_called()
+
+    def test_adhoc_audit_rejects_empty_architecture_list(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app = self.signing_fixture(temporary)
+            with patch("tools.macos_release.subprocess.check_output", return_value="\n"), \
+                    patch("tools.macos_release.subprocess.run") as codesign, \
+                    self.assertRaises(RuntimeError):
+                audit_adhoc_signing(app)
+            codesign.assert_not_called()
+
     def test_os_requirement_ignores_linker_tool_and_source_versions(self):
         output = "Load command 1\n cmd LC_BUILD_VERSION\n minos 14.0\n tool 3\n version 27037.1\nLoad command 2\n cmd LC_SOURCE_VERSION\n version 1000.0\nLoad command 3\n cmd LC_VERSION_MIN_MACOSX\n version 15.0\n"
         with patch("tools.macos_build.subprocess.check_output", return_value=output):

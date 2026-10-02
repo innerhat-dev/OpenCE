@@ -4,6 +4,10 @@ Start here for both macOS and iPhone. All commands run on an Apple Silicon Mac
 from the repository root unless stated otherwise. The Mac game runs natively;
 the iPhone build also uses native ARM code and ANGLE's Metal renderer.
 
+To run the Mac app without compiling, download the
+[macOS DMG artifact](../port/macos/README.md#download). It bundles the runtime
+dependencies; only your own original Xbox game data is needed separately.
+
 ## 1. Clone and install public dependencies
 
 ```sh
@@ -46,18 +50,19 @@ Setup downloads only public dependencies. ANGLE and Khronos headers have pinned
 URLs and SHA-256 checksums in [dependencies.json](../port/macos/dependencies.json).
 The build also fetches SDL3 3.4.16 and musl 1.2.5. No Android NDK is required.
 
-## 2. Supply the game and SDK locally
+## 2. Supply game data to play
 
-Neither input is included or downloaded by these build scripts:
+Mac and iPhone native builds use the declarations in
+[port/include/xdk](../port/include/xdk/README.md). They do not require the
+private Xbox SDK, `xbox/include`, or `cachebeta.exe`. The Mac app can be compiled
+and packaged without game data using `python3 tools/macos_build.py --no-data-path`;
+first launch then asks for the user's disc image or extracted maps folder.
 
-- **Original Xbox Halo: Combat Evolved maps**, extracted from your retail disc
-  image. Supported Xbox version-5 headers are PAL `01.01.14.2342` and USA
-  `01.10.12.2276`. Use one complete set; do not mix regions or builds. Halo PC,
-  Custom Edition, Anniversary and MCC maps are not substitutes.
-- **August 2001 Xbox XDK (3911) headers**, from the SDK installation's
-  `XDK/xbox/include` folder. A recovery-only ISO does not contain the SDK.
-  Copy the complete include directory, retaining its subdirectories. Mac and
-  iPhone builds do not use the Windows compiler or need `cachebeta.exe`.
+To play, supply **original Xbox Halo: Combat Evolved maps** extracted from your
+retail disc image. These are not included or downloaded by the build scripts.
+Supported Xbox version-5 headers are PAL `01.01.14.2342` and USA
+`01.10.12.2276`. Use one complete set; do not mix regions or builds. Halo PC,
+Custom Edition, Anniversary and MCC maps are not substitutes.
 
 The checkout should look like this:
 
@@ -69,11 +74,6 @@ halo-ce-universal/
       a10.map
       a30.map
       ...                  # all remaining campaign and multiplayer maps
-  xbox/
-    include/
-      XTL.h                # filename case may differ
-      D3D8.h
-      ...                  # the complete SDK header tree
 ```
 
 To extract an existing XISO, one option is the open-source
@@ -88,28 +88,14 @@ build/tools/extract-xiso/build/extract-xiso \
   -x -d build/game-extracted "/path/to/your/Halo.xiso.iso"
 mkdir -p assets
 cp -R build/game-extracted/maps assets/
-
-mkdir -p xbox
-cp -R "/path/to/your/extracted/XDK/xbox/include" xbox/
 ```
 
 Use the actual paths and filename case from your extraction. If you already
 have an extracted `maps/` folder, copy it directly; extraction is unnecessary.
-Archives/installers vary, so extract the SDK separately before the final copy.
-Keep the SDK archives and disc image outside the repository.
-
-Validate the inputs before compiling:
-
-```sh
-python3 tools/macos_preflight.py --output build/macos/preflight.json
-```
-
-This checks map headers and the SDK, not actual gameplay. It reports any missing
-campaign maps separately; supply the full set to play the full campaign. The
-expected `D3D8.h` SHA-256 is
-`7f7f603e1b2fa13ef36a05923eaa36d0d7094302522edbac9855b28f0909f1a1`.
-Do not bypass a mismatched SDK hash: the header overlays depend on this version.
-The generated report includes local paths and stays under ignored `build/`.
+Keep the disc image outside the repository. Supply the full set to play the full
+campaign. The Mac data importer validates supported map headers when selecting
+a disc image or game folder. The older SDK-oriented `macos_preflight.py` check
+is not a prerequisite for these native builds.
 
 ## 3. Build and play
 
@@ -165,12 +151,16 @@ When a contribution is ready, prepare a focused branch against
 fork pushes; automatic releases and Discord build notifications run only in
 the upstream repository.
 
-## Source-only sharing
+## Source and build artifacts
 
 `assets/`, `xbox/`, `original/` and `build/` are ignored, along with disc images,
 map files, SDK archives, Apple signing material and generated Xcode projects.
-SDK-derived overlays and all generated game binaries stay under `build/`.
-Do not force-add those files or upload them as release assets.
+Generated game binaries stay under `build/` and must not be committed. The
+[macOS DMG workflow](https://github.com/pfista/halo-ce-universal/actions/workflows/macos-dmg.yml)
+builds a separate downloadable artifact from the committed source and public
+dependencies, with no game data or private SDK inputs. It audits the bundle
+before packaging and retains the DMG artifact for 14 days. This CI download is
+separate from the Developer ID and Sparkle release process.
 
 Device signing settings belong in your local Xcode account and ignored build
 directory. Pass your team ID and bundle identifier on the command line; do not

@@ -7,6 +7,38 @@ is also available with Command-comma; Control-Command-F toggles fullscreen.
 Release the captured mouse with F12 to reach the menu bar. The existing Dock
 icon is retained; `port/macos/Helmet.svg` generates a vector template PDF.
 
+## GitHub Actions DMG
+
+The [macOS DMG workflow](https://github.com/pfista/halo-ce-universal/actions/workflows/macos-dmg.yml)
+builds an Apple Silicon app on code pushes to `main` and manual runs. Sign in to
+GitHub, choose a successful run, and download **halo-macos-arm64-dmg** under
+**Artifacts**. Artifacts are retained for 14 days and contain:
+
+- `Halo-CE-Universal-macos-arm64.dmg`, with the app and an Applications shortcut.
+- `README.txt`, with the build's minimum macOS version and installation steps.
+- `BuildInfo.txt`, identifying the source revision and compiled guest hash.
+- `SHA256SUMS`, for verifying the DMG after extracting the artifact ZIP.
+
+The current bundled dependencies require macOS 26 or later on Apple Silicon.
+Use the minimum macOS version recorded in the artifact's `README.txt` for that
+build.
+No build tools are needed to run the download. Open the DMG, drag the app into
+Applications, and supply your own original Xbox game data on first launch.
+These are ad hoc signed, unnotarized builds; see
+[Mac installation](../port/macos/README.md#download) for the first-launch steps.
+
+CI uses public dependencies and the checked-in SDK declarations. It audits the
+app to exclude game data, private inputs and local checkout paths, verifies its
+signature, and packages the DMG. The artifact does not configure Sparkle updates
+or use a Developer ID signing identity. The notarized release process below
+remains separate.
+
+CI explicitly uses `--sign-identity -` and imports no developer certificates or
+Keychain credentials. Before upload, every bundled Mach-O architecture must have
+an ad hoc signature with no certificate authority or team identifier. The app
+uses the generic `local.halo.ce-universal` bundle identifier. Third-party helper
+identifiers and capability entitlements remain those of the pinned dependency.
+
 ## Independently supplied data
 
 After the initial game build and public dependency setup, build without a local

@@ -9,6 +9,32 @@ The CPU code runs natively on ARM64. The existing GLES renderer uses ANGLE's
 Metal backend. No Windows runtime, Xbox emulator, Apple Developer account,
 special entitlement, or security-setting change is required for this local build.
 
+## Download
+
+Sign in to GitHub and open the
+[macOS DMG workflow](https://github.com/pfista/halo-ce-universal/actions/workflows/macos-dmg.yml).
+Choose a successful run, then download **halo-macos-arm64-dmg** from its
+**Artifacts** section. Builds run on code pushes to `main` and can also be
+started manually. Artifacts expire after 14 days.
+
+Extract the downloaded ZIP and open `Halo-CE-Universal-macos-arm64.dmg`.
+Drag **Halo CE Universal.app** onto the Applications shortcut, then launch it
+from Applications. `README.txt` records that build's minimum macOS version and
+installation steps. `BuildInfo.txt` records the source revision and guest hash;
+`SHA256SUMS` lets you verify the DMG with `shasum -a 256 -c SHA256SUMS` from the
+extracted folder.
+
+This build requires **Apple Silicon and macOS 26 or later** with the current
+bundled dependencies. No Homebrew, Xbox SDK or build tools are needed. The app
+is ad hoc signed and is not notarized by Apple, so macOS may block its first
+launch; after attempting to open it, use **System Settings → Privacy & Security
+→ Open Anyway** if you choose to run this build. See
+[Apple's opening instructions](https://support.apple.com/en-us/102445).
+
+On first launch, select your own original Xbox Halo disc image or extracted
+game folder. The download contains no maps or disc images. See
+[Mac data import and releases](../../docs/macos-menu-and-releases.md) for details.
+
 ## Launch
 
 Open `build/macos/Halo CE Universal.app` in Finder. There is no automatic timeout.
@@ -127,9 +153,10 @@ the window's close button quits.
 ## Build
 
 First complete [Apple build setup](../../docs/apple-build.md): clone the fork,
-install LLVM 22 and the public dependencies, place your own game maps and XDK
-headers locally, and run preflight. Keep the documented environment exports in
-the shell used below. From the repository root:
+install LLVM 22 and the public dependencies, and place your own game maps
+locally. Native builds use the checked-in SDK declarations and do not need the
+Xbox SDK. Keep the documented environment exports in the shell used below.
+From the repository root:
 
 ```sh
 python3 tools/macos_build.py
@@ -141,6 +168,9 @@ To build and install a single copy in Applications for Spotlight:
 ```sh
 python3 tools/macos_build.py --install
 ```
+
+To build without local game data, use `--no-data-path --install` instead;
+the app will ask for a disc image or game folder on first launch.
 
 Then press Command-Space, type `Halo CE Universal`, and press Return. An
 optional directory, such as `--install ~/Applications`, installs for just your
