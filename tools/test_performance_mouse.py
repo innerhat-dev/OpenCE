@@ -1,6 +1,7 @@
 """Exercise actual PB mouse targeting and dispatch with native widget fixtures."""
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -183,7 +184,7 @@ int main(void) {
 
 class PerformanceMouse(unittest.TestCase):
     def test_production_mouse_arrow_dispatch(self):
-        source = "#define HALO_MACOS 1\n" + fixture_source().split("static void shapes_and_preservation(void)", 1)[0]
+        source = fixture_source().split("static void shapes_and_preservation(void)", 1)[0]
         ui = (ROOT / "source/interface/ui_widget.c").read_text()
         enums = []
         for member in ("_widget_pass_unhandled_events_to_children_bit =", "_list_items_generated_in_code", "_widget_event_b_button ="):
@@ -200,15 +201,99 @@ class PerformanceMouse(unittest.TestCase):
         ))
         mouse = ui[ui.index("#define UI_MOUSE_MAXIMUM_TARGETS"):ui.index("static void widget_instance_render_recursive(\n", ui.index("#define UI_MOUSE_MAXIMUM_TARGETS"))]
         source += STUBS.replace("/* PRODUCTION ENUMS */", "\n".join(enums)).replace("/* PRODUCTION FOCUS */", focus).replace("/* PRODUCTION LIST */", lists).replace("/* PRODUCTION MOUSE */", mouse) + CHECKS
+        self.compile_platforms(source)
+
+    def test_settings_mouse_arrows_and_wheel(self):
+        from tools.test_game_settings import game_settings_fixture_source
+        source = game_settings_fixture_source().split("int main(void)", 1)[0]
+        ui = (ROOT / "source/interface/ui_widget.c").read_text()
+        # Reuse the OS pointer/event boundary. Settings recognition and value
+        # handlers come from the actual native page builder above.
+        stubs = STUBS.split("/* PRODUCTION ENUMS */", 1)[1].split("/* PRODUCTION FOCUS */", 1)[0]
+        stubs = stubs.replace("static struct {struct widget_instance *active_widgets[4]; int initialization_thread;} widget_globals;", "")
+        for name in ("game_settings_is_native_spinner", "game_settings_is_adjustable", "ui_play_audio_feedback_sound"):
+            stubs = stubs.replace(c_block(stubs, ("static void " if name.startswith("ui_play") else "static boolean ") + name + "("), "")
+        source += """
+#define ABS(value) ((value)<0 ? -(value):(value))
+#define MIN(a,b) ((a)<(b) ? (a):(b))
+#define MAX(a,b) ((a)>(b) ? (a):(b))
+#define csmemmove memmove
+typedef struct {short x,y;} point2d;
+enum {_gamepad_analog_button_x=2,_gamepad_analog_button_y,_gamepad_analog_button_black,
+      _gamepad_analog_button_white,_ui_audio_feedback_cursor=1,_error_silent=0};
+""" + stubs
+        source += "\n".join(c_block(ui, signature) for signature in (
+            "struct widget_instance *widget_instance_get_topmost_parent(\n",
+            "static boolean widget_instance_can_receive_events(\n\tstruct widget_instance *widget)\n{",
+            "static void widget_instance_give_focus_directly(\n\tstruct widget_instance *widget,\n\tstruct widget_instance *new_focus)\n{",
+        ))
+        source += "\n" + ui[ui.index("#define UI_MOUSE_MAXIMUM_TARGETS"):ui.index("static void widget_instance_render_recursive(\n", ui.index("#define UI_MOUSE_MAXIMUM_TARGETS"))]
+        source += "\n".join(c_block(CHECKS, signature) for signature in (
+            "static void draw_targets(", "static void render_pb(", "static short click_at("))
+        source += r'''
+static void apply_posted_setting(struct widget_instance *spinner) {
+    struct ui_widget_definition *definition=ui_widget_definition_get(spinner->definition_tag_index);
+    struct ui_widget_event_handler_reference *handlers=definition->event_handlers.address;
+    for(long i=0;i<definition->event_handlers.count;i++) if(handlers[i].event_type==posted_button) {
+        assert(handlers[i].function==_device_settings_previous || handlers[i].function==_device_settings_next);
+        assert(game_settings_event(spinner,handlers[i].function)); return;
+    }
+    assert(0);
+}
+int main(void) {
+    settings_setup(0); assert(device_settings_build() && device_settings.native_pages);
+    for(short page=_ds_audio;page<=_ds_timer;page++) {
+        struct widget_instance *root=open_settings(_ds_main,page,0);
+        root->visible=TRUE; widget_globals.active_widgets[0]=root;
+        ui_mouse_press_count=ui_mouse_target_count=0;
+        ui_mouse_hover_pending=ui_mouse_click_pending=FALSE;
+        for(short row=0;row<device_settings_page_counts[page];row++) {
+            short setting=device_settings_page_rows[page][row]; if(setting==NONE) continue;
+            struct widget_instance *spinner=setting_control(root,setting);
+            struct ui_widget_definition *definition=ui_widget_definition_get(spinner->definition_tag_index);
+            assert(game_settings_is_native_spinner(spinner) && !definition->flags);
+            for(short right=0;right<2;right++) {
+                rectangle2d arrow=right ? definition->list_footer_bounds:definition->list_header_bounds;
+                short local_x=(arrow.x0+arrow.x1)/2;
+                assert(local_x<definition->bounds.x0 || local_x>=definition->bounds.x1);
+                render_pb(root);
+                short x=local_x,y=(arrow.y0+arrow.y1)/2;
+                for(struct widget_instance *ancestor=spinner;ancestor;ancestor=ancestor->parent) {
+                    x+=ancestor->horizontal_offset; y+=ancestor->vertical_offset;
+                }
+                struct ui_mouse_target *target=ui_mouse_target_at(x,y);
+                assert(target && target->widget==spinner && target->kind==_ui_mouse_target_value);
+                assert(click_at(root,x,y)==(right ? _widget_event_dpad_right:_widget_event_dpad_left));
+                assert(ui_mouse_widget_has_focus(spinner) && ui_mouse_wheel_widget(root)==spinner);
+                apply_posted_setting(spinner); assert(!writes);
+                render_pb(root);
+                input=(struct halo_ui_pointer){.wheel_steps=right ? -1:1};
+                unsigned before=posted_count; ui_widgets_process_mouse();
+                assert(posted_count==before+1 && posted_button==(right ? _widget_event_dpad_right:_widget_event_dpad_left));
+                apply_posted_setting(spinner); assert(!writes);
+            }
+        }
+        widget_globals.active_widgets[0]=NULL; dispose(root);
+    }
+    puts("Settings arrows and wheel use actual shared native widgets on every platform");
+}
+'''
+        self.compile_platforms(source)
+
+    def compile_platforms(self, source):
         with tempfile.TemporaryDirectory(prefix="halo-pb-mouse-") as folder:
-            path, binary = Path(folder) / "fixture.c", Path(folder) / "fixture"
+            path = Path(folder) / "fixture.c"
             path.write_text(source)
-            compiled = subprocess.run(["clang", "-std=c99", "-Wall", "-Wextra", "-Werror", "-Wno-multichar",
-                                       "-Wno-format", "-Wno-unused-function", "-Wno-unused-parameter", "-Wno-sign-compare", "-I", str(ROOT / "source"),
-                                       "-iquote", str(ROOT / "port/linux/include"), str(path), "-o", str(binary)], text=True, capture_output=True)
-            self.assertEqual(compiled.returncode, 0, compiled.stderr)
-            result = subprocess.run([str(binary)], text=True, capture_output=True)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for platform in ("HALO_MACOS", "HALO_LINUX", "HALO_WINDOWS"):
+                with self.subTest(platform=platform):
+                    binary = Path(folder) / (platform + (".exe" if sys.platform == "win32" else ""))
+                    compiled = subprocess.run(["clang", "-std=c99", "-Wall", "-Wextra", "-Werror", "-Wno-multichar",
+                                               "-Wno-format", "-Wno-unused-function", "-Wno-unused-parameter", "-Wno-sign-compare",
+                                               "-D_CRT_SECURE_NO_WARNINGS", f"-D{platform}=1", "-I", str(ROOT / "source"), "-I", str(ROOT / "port/linux"),
+                                               "-iquote", str(ROOT / "port/linux/include"), str(path), "-o", str(binary)], text=True, capture_output=True)
+                    self.assertEqual(compiled.returncode, 0, compiled.stderr)
+                    result = subprocess.run([str(binary)], text=True, capture_output=True)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

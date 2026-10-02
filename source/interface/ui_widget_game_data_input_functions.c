@@ -779,7 +779,7 @@ static void settings_menu_update_extended_description(
 			"expected a text box widget for the settings select list extended description text");
 
 		description_picture->animation.current_frame_index = index;
-#if defined(HALO_MACOS) && !defined(HALO_IOS)
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
 		/* The local settings chooser reuses the original profile artwork:
 		 * Spartans for Profile Settings, controller for Game Settings. */
 		if (!strcmp(tag_get_name(list_widget->definition_tag_index), "ui\\native_settings\\menu"))

@@ -78,7 +78,8 @@ Timer Position is Top Center, Bottom Center or Bottom Right
 fractional values remain exact. Both apply to each local viewport using the
 stock HUD font, colors and shadow. They only appear when the host enables Match Timer.
 
-Fullscreen shares the existing native Mac preference in `macos-settings.json`.
+Fullscreen shares the existing native Mac preference in `macos-settings.json`;
+Linux and Windows save it as `display.fullscreen` in `config.toml`.
 VSync and Smooth Motion use `display.vsync` and `display.interpolation` in
 `config.toml`. Settings apply on Accept without restarting. Rendering resolution,
 aspect selection, Direct Camera and high-resolution HUD behavior are unchanged.
@@ -109,9 +110,10 @@ unpaused behavior.
 
 The shared settings boundary validates changed rows, preserves unrelated TOML
 text, and replaces the config atomically. A failed save keeps the menu open.
-Fullscreen and TOML preferences use separate stores; if either backend also
-refuses restoration after an error, the menu reloads current values and reports
-that restoration was incomplete.
+On Mac, fullscreen and TOML preferences use separate stores. On Linux and
+Windows, fullscreen joins the same config transaction as other preferences.
+If storage or the display backend also refuses restoration after an error,
+the menu reloads current values and reports that restoration was incomplete.
 
 Focused tests cover mixed numeric/boolean persistence and injected file errors,
 live sound gains, current timer clips, menu Accept/Back and registration

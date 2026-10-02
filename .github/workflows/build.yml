@@ -70,6 +70,12 @@ jobs:
       - name: Test
         run: python -m pytest -q tools/test_linux_port.py
 
+      - name: Native settings and shared interfaces
+        run: >-
+          python -m unittest tools.test_device_settings tools.test_windows_shared_headers
+          tools.test_game_settings.NativeGameSettingsTests.test_native_menu
+          tools.test_performance_mouse
+
       - name: Compile cache
         run: ccache --show-stats
 
@@ -200,6 +206,12 @@ jobs:
 
       - name: Release
         run: python tools/ci_build.py windows release
+
+      - name: Native settings and shared interfaces
+        run: >-
+          python -m unittest tools.test_device_settings tools.test_windows_shared_headers
+          tools.test_game_settings.NativeGameSettingsTests.test_native_menu
+          tools.test_performance_mouse
 
       - name: Compile cache
         run: ccache --show-stats

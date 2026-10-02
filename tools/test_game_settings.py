@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -52,7 +53,6 @@ int main(int argc,char **argv) {
 '''
 
 UI_STUBS = r'''
-#define HALO_MACOS 1
 #define csmemcpy memcpy
 #define FLAG(n) (1L << (n))
 #define MAXIMUM_NUMBER_OF_LOCAL_PLAYERS 4
@@ -64,7 +64,8 @@ enum { _gamepad_analog_button_a=0, _gamepad_analog_button_b=1,
  _gamepad_binary_button_start, _gamepad_binary_button_back, NUMBER_OF_GAMEPAD_BUTTONS=16 };
 /* NATIVE ENUMS */
 #define TEST_FLAG(flags,bit) (((flags) & FLAG(bit)) != 0)
-static struct { short pause_game_time_count; boolean sound_paused; } widget_globals;
+static struct { short pause_game_time_count; boolean sound_paused;
+    struct widget_instance *active_widgets[4]; int initialization_thread; } widget_globals;
 static boolean settings_game_paused, settings_sound_paused, we_are_at_the_main_menu;
 static boolean game_time_get_paused(void) { return settings_game_paused; }
 static void game_time_set_paused(boolean paused) { settings_game_paused=paused; }
@@ -87,7 +88,7 @@ static double settings_values[NUMBER_OF_DEVICE_SETTINGS];
 static unsigned writes,errors;
 static unsigned long applied_mask;
 static boolean save_succeeds, rollback_incomplete;
-static void ui_play_audio_feedback_sound(short sound) { assert(sound==7); errors++; }
+static void ui_play_audio_feedback_sound(short sound) { assert(sound==7 || sound==1); if(sound==7) errors++; }
 double device_settings_get(short setting) { assert(setting>=0 && setting<NUMBER_OF_DEVICE_SETTINGS); return settings_values[setting]; }
 int device_settings_apply(unsigned long mask,const double values[NUMBER_OF_DEVICE_SETTINGS]) {
     if(!mask) return TRUE;
@@ -624,7 +625,7 @@ static void settings_native_options(void) {
             struct widget_instance *row=list->child;
             for(short j=0;j<i;j++) row=row->next;
             list->focused_child=row; list->parameters.list.selected_index=i;
-            (void)game_settings_input(list,31981);
+            settings_render_inputs(list);
             short help_index=setting==NONE ? _ds_timer_link_help:_ds_help_start+setting;
             assert(help->parameters.text_box.string_list_index==help_index);
             assert(wcslen(device_settings.text[help_index])>10);
@@ -688,7 +689,7 @@ static void settings_game_chooser(void) {
         short selected=turn==1 ? 1:0;
         list->focused_child=selected ? list->child->next:list->child;
         list->parameters.list.selected_index=(short)selected;
-        (void)game_settings_input(list,31980);
+        settings_render_inputs(list);
         assert(extended->child->visible==!selected && extended->child->next->visible==selected);
         assert(extended->child->animation.current_frame_index==2);
         assert(extended->child->next->animation.current_frame_index==0);
@@ -712,7 +713,7 @@ static void settings_staging(void) {
     assert(writes==1 && errors==1 && settings_values[_device_setting_music_volume]==0.5);
     assert(widget_instance_find_by_tag_index_recursive(root,device_settings.footer_tags[_ds_audio])->parameters.text_box.string_list_index==_ds_failure_help);
     root->child->focused_child=root->child->child->next->next;
-    (void)game_settings_input(root->child,31981);
+    settings_render_inputs(root->child);
     assert(widget_instance_find_by_tag_index_recursive(root,device_settings.footer_tags[_ds_audio])->parameters.text_box.string_list_index==_ds_failure_help);
     save_succeeds=TRUE; assert(game_settings_event(root,_device_settings_accept));
     assert(writes==2 && applied_mask==(1UL<<_device_setting_music_volume));
@@ -736,7 +737,7 @@ static void settings_staging(void) {
     assert(!device_settings_drafts[0].values[_device_setting_fullscreen]);
     assert(device_settings_drafts[0].values[_device_setting_vsync]==1);
     assert(widget_instance_find_by_tag_index_recursive(root,device_settings.footer_tags[_ds_video])->parameters.text_box.string_list_index==_ds_partial_failure_help);
-    (void)game_settings_input(root->child,31981);
+    settings_render_inputs(root->child);
     assert(widget_instance_find_by_tag_index_recursive(root,device_settings.footer_tags[_ds_video])->parameters.text_box.string_list_index==_ds_partial_failure_help);
     rollback_incomplete=FALSE;
     assert(!game_settings_event(root,17)); dispose(root);
@@ -910,11 +911,11 @@ static void settings_pause_and_campaign(void) {
     struct widget_instance *column=one->child->next,*help=widget_instance_find_by_tag_index_recursive(one,device_settings.footer_tags[_ds_audio]);
     assert(column->type==_ui_widget_type_column_list && help);
     column->focused_child=column->child->next;
-    game_settings_input(column,_device_settings_option_help);
+    settings_render_inputs(column);
     assert(help->parameters.text_box.string_list_index==_ds_help_start+_device_setting_music_volume);
     column->focused_child=column->child;
     for(unsigned i=0;i<6;i++) column->focused_child=column->focused_child->next;
-    game_settings_input(column,_device_settings_option_help);
+    settings_render_inputs(column);
     assert(help->parameters.text_box.string_list_index==_ds_audio_help);
     save_succeeds=FALSE;
     assert(!game_settings_event(two,_device_settings_accept));
@@ -1006,6 +1007,42 @@ int main(void) {
 }
 '''
 
+def game_settings_fixture_source():
+    """Shared native widgets, including the renderer's actual input dispatch."""
+    from tools.test_runtime_ui_tags import c_block
+    source = fixture_source().split("static void shapes_and_preservation(void)", 1)[0]
+    ui = (ROOT / "source/interface/ui_widget.c").read_text()
+    initialize_pause = c_block(ui[ui.index("widget->pause_game_time = TEST_FLAG"):],
+                              "if (widget->pause_game_time == TRUE)")
+    delete_pause = c_block(ui, "if (widget->pause_game_time == TRUE)")
+    pause_lifecycle = """static void settings_widget_pause_initialize(struct widget_instance *widget, struct ui_widget_definition *definition) {
+    widget->pause_game_time = TEST_FLAG(definition->flags, _widget_pause_game_time_bit);
+""" + initialize_pause + "\n}\nstatic void settings_widget_pause_delete(struct widget_instance *widget) {\n" + delete_pause + "\n}\n"
+    source = source.replace("static struct widget_instance *instantiate(",
+        "static void settings_widget_pause_initialize(struct widget_instance *,struct ui_widget_definition *);\n"
+        "static void settings_widget_pause_delete(struct widget_instance *);\n"
+        "static struct widget_instance *instantiate(", 1)
+    source = source.replace("    return w;\n}", "    settings_widget_pause_initialize(w,d);\n    return w;\n}", 1)
+    source = source.replace("static void dispose(struct widget_instance *w) {",
+                            "static void dispose(struct widget_instance *w) {\n    settings_widget_pause_delete(w);", 1)
+    enums = []
+    for member in ("_widget_controller0", "_widget_pass_unhandled_events_to_children_bit =", "_event_handler_close_current_widget_bit", "_list_items_generated_in_code", "_text_justification_left", "_widget_event_b_button ="):
+        start = ui.rfind("enum\n{", 0, ui.index(member))
+        enums.append(c_block(ui[start:], "enum\n{") + ";")
+    data = (ROOT / "source/interface/ui_widget_game_data_input_functions.c").read_text()
+    preview = c_block(data, "static void settings_menu_update_extended_description(\n\tstruct widget_instance *list_widget)\n{")
+    preview = preview.replace("description_definition->child_count", "description_definition->child_widgets.count")
+    source += UI_STUBS.replace("/* NATIVE ENUMS */", "\n".join(enums)).replace("/* NATIVE PREVIEW CALLBACK */", preview).replace(
+        "/* PRODUCTION WIDGET PAUSE LIFECYCLE */", pause_lifecycle)
+    renderer = ui[ui.index("static void widget_instance_render_recursive(\n", ui.index("#define UI_MOUSE_MAXIMUM_TARGETS")):]
+    dispatch = c_block(renderer, "for (input_index = 0;")
+    source += """static void settings_render_inputs(struct widget_instance *widget) {
+    struct ui_widget_definition *definition=ui_widget_definition_get(widget->definition_tag_index);
+    long input_index;
+""" + dispatch + "\n}\n"
+    return source + UI_HARNESS
+
+
 class NativeGameSettingsTests(unittest.TestCase):
     def test_resident_help_widths(self):
         """Use the shipped font advances to catch clipping that C layout mocks cannot."""
@@ -1042,40 +1079,19 @@ class NativeGameSettingsTests(unittest.TestCase):
                         self.assertLessEqual(max(cursor, ink_right), 276)
 
     def test_native_menu(self):
-        source = fixture_source().split("static void shapes_and_preservation(void)", 1)[0]
-        from tools.test_runtime_ui_tags import c_block
-        ui = (ROOT / "source/interface/ui_widget.c").read_text()
-        initialize_pause = c_block(ui[ui.index("widget->pause_game_time = TEST_FLAG"):],
-                                   "if (widget->pause_game_time == TRUE)")
-        delete_pause = c_block(ui, "if (widget->pause_game_time == TRUE)")
-        pause_lifecycle = """static void settings_widget_pause_initialize(struct widget_instance *widget, struct ui_widget_definition *definition) {
-    widget->pause_game_time = TEST_FLAG(definition->flags, _widget_pause_game_time_bit);
-""" + initialize_pause + "\n}\nstatic void settings_widget_pause_delete(struct widget_instance *widget) {\n" + delete_pause + "\n}\n"
-        source = source.replace("static struct widget_instance *instantiate(",
-            "static void settings_widget_pause_initialize(struct widget_instance *,struct ui_widget_definition *);\n"
-            "static void settings_widget_pause_delete(struct widget_instance *);\n"
-            "static struct widget_instance *instantiate(", 1)
-        source = source.replace("    return w;\n}", "    settings_widget_pause_initialize(w,d);\n    return w;\n}", 1)
-        source = source.replace("static void dispose(struct widget_instance *w) {",
-                                "static void dispose(struct widget_instance *w) {\n    settings_widget_pause_delete(w);", 1)
-        enums = []
-        for member in ("_widget_controller0", "_widget_pass_unhandled_events_to_children_bit =", "_event_handler_close_current_widget_bit", "_list_items_generated_in_code", "_text_justification_left", "_widget_event_b_button ="):
-            start = ui.rfind("enum\n{", 0, ui.index(member))
-            enums.append(c_block(ui[start:], "enum\n{") + ";")
-        data = (ROOT / "source/interface/ui_widget_game_data_input_functions.c").read_text()
-        preview = c_block(data, "static void settings_menu_update_extended_description(\n\tstruct widget_instance *list_widget)\n{")
-        preview = preview.replace("description_definition->child_count", "description_definition->child_widgets.count")
-        source += UI_STUBS.replace("/* NATIVE ENUMS */", "\n".join(enums)).replace("/* NATIVE PREVIEW CALLBACK */", preview).replace(
-            "/* PRODUCTION WIDGET PAUSE LIFECYCLE */", pause_lifecycle) + UI_HARNESS
+        source = game_settings_fixture_source()
         with tempfile.TemporaryDirectory(prefix="halo-native-settings-") as folder:
             directory = Path(folder)
             (directory / "fixture.c").write_text(source)
-            subprocess.run(["clang", "-std=c99", "-Wall", "-Wextra", "-Werror", "-Wno-multichar", "-Wno-format",
-                            "-Wno-unused-function", "-I", str(ROOT / "source"), "-I", str(ROOT / "port/linux"), str(directory / "fixture.c"),
-                            "-o", str(directory / "fixture")], check=True)
-            result = subprocess.run([str(directory / "fixture")], text=True, capture_output=True)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertEqual(result.stdout.strip(), "native game settings tests passed")
+            for platform in ("HALO_MACOS", "HALO_LINUX", "HALO_WINDOWS"):
+                with self.subTest(platform=platform):
+                    binary = directory / (platform + (".exe" if sys.platform == "win32" else ""))
+                    subprocess.run(["clang", "-std=c99", "-Wall", "-Wextra", "-Werror", "-Wno-multichar", "-Wno-format",
+                                    "-Wno-unused-function", "-D_CRT_SECURE_NO_WARNINGS", f"-D{platform}=1", "-I", str(ROOT / "source"), "-I", str(ROOT / "port/linux"), str(directory / "fixture.c"),
+                                    "-o", str(binary)], check=True)
+                    result = subprocess.run([str(binary)], text=True, capture_output=True)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(result.stdout.strip(), "native game settings tests passed")
 
 
 @unittest.skipUnless(shutil.which("clang") and (SDL / "include/SDL3/SDL.h").exists(), "clang and SDL3 headers required")

@@ -5550,7 +5550,7 @@ static void ui_mouse_note_target(
 		if (!parent || ui_mouse_list_shows_several(widget) || !widget_instance_can_receive_events(widget))
 			return;
 		kind = _ui_mouse_target_value;
-#if defined(HALO_MACOS) && !defined(HALO_IOS)
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
 		if (game_settings_is_native_spinner(widget) || performance_editor_is_spinner(widget))
 		{
 			/* Native option arrows sit just outside the text rectangle. A
@@ -5638,7 +5638,7 @@ static void ui_mouse_list_directions(
 	struct ui_widget_definition *definition = ui_widget_definition_get(widget->definition_tag_index);
 
 	if (TEST_FLAG(definition->flags, _widget_dpad_leftright_tabs_thru_list_items_bit) ||
-#if defined(HALO_MACOS) && !defined(HALO_IOS)
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
 		game_settings_is_native_spinner(widget) ||
 #endif
 		TEST_FLAG(definition->flags, _widget_dpad_leftright_tabs_thru_children_bit))
@@ -5690,7 +5690,7 @@ static struct widget_instance *ui_mouse_wheel_widget(
 		struct ui_widget_definition *definition = ui_widget_definition_get(widget->definition_tag_index);
 
 		if (
-#if defined(HALO_MACOS) && !defined(HALO_IOS)
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
 			game_settings_is_native_spinner(widget) ||
 #endif
 			(definition->flags & (FLAG(_widget_dpad_updown_tabs_thru_children_bit) |
@@ -5898,7 +5898,7 @@ static void widget_instance_render_recursive(
 			performance_editor_input(widget, input->function);
 		else
 #endif
-#if defined(HALO_MACOS) && !defined(HALO_IOS)
+#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
 		if (input->function == _device_settings_chooser_preview || input->function == _device_settings_option_help)
 			game_settings_input(widget, input->function);
 		else

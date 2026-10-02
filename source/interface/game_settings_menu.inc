@@ -635,9 +635,7 @@ static boolean device_settings_build(void)
     device_settings.entry = *ui_widget_definition_get(tag);
     if (device_settings.entry.event_handlers.count != 2) return FALSE;
     if (!device_settings_build_chooser(strings, profile_tag)) return FALSE;
-#if defined(HALO_MACOS) && !defined(HALO_IOS)
     if (!device_settings_build_native_pages(strings, heading_tags, column_tags[_ds_main])) return FALSE;
-#endif
     csmemcpy(device_settings.entry_events, device_settings.entry.event_handlers.address, sizeof(device_settings.entry_events));
     for (i = 0; i < 2; i++) device_settings.entry_events[i].widget_tag = device_settings_reference(UI_WIDGET_DEFINITION_TAG, device_settings.settings_tag);
     device_settings.entry.event_handlers.address = device_settings.entry_events;

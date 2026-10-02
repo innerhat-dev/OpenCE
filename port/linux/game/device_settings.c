@@ -3,7 +3,7 @@
 #include "port_config.h"
 #include "native_video.h"
 #include "native_audio.h"
-#include <math.h>
+#include <float.h>
 #include <stddef.h>
 
 /* Main menu music is controlled on the game thread, never the mixer thread. */
@@ -13,10 +13,23 @@ static const char *const setting_names[NUMBER_OF_DEVICE_SETTINGS] =
 {
     "audio.volume", "audio.music_volume", "audio.effects_volume",
     "audio.dialogue_volume", "audio.timer_volume", "audio.menu_music",
-    NULL, "display.vsync", "display.interpolation",
+#if defined(HALO_MACOS) || defined(HALO_ANDROID) || defined(HALO_IOS)
+    /* Mac owns this in native preferences; mobile has no windowed mode. */
+    NULL,
+#else
+    "display.fullscreen",
+#endif
+    "display.vsync", "display.interpolation",
     "audio.timer_countdown", "audio.timer_beeps", "audio.timer_minutes", "audio.timer_items",
     "display.timer_position", "display.timer_scale"
 };
+
+static int device_setting_is_finite(double value)
+{
+    /* Game units use C89 headers, which need not expose C99's isfinite.
+     * Ordered comparisons reject NaN as well as either infinity. */
+    return value >= -DBL_MAX && value <= DBL_MAX;
+}
 
 double device_settings_get(short setting)
 {
@@ -31,7 +44,7 @@ double device_settings_get(short setting)
     if (setting == _device_setting_timer_scale)
     {
         value = config_real(setting_names[setting]);
-        return !isfinite(value) ? 1.0 : value < 0.5 ? 0.5 : value > 1.0 ? 1.0 : value;
+        return !device_setting_is_finite(value) ? 1.0 : value < 0.5 ? 0.5 : value > 1.0 ? 1.0 : value;
     }
     if (setting >= _device_setting_menu_music) return config_boolean(setting_names[setting]) != 0;
     value = config_real(setting_names[setting]);
@@ -56,7 +69,7 @@ int device_settings_apply(unsigned long changed_mask,
     {
         double old;
         if (!(changed_mask & (1UL << setting))) continue;
-        if (!isfinite(values[setting])) return 0;
+        if (!device_setting_is_finite(values[setting])) return 0;
         if (setting == _device_setting_timer_position)
         {
             if (values[setting] < 0.0 || values[setting] > 2.0 || values[setting] != (int)values[setting]) return 0;
@@ -70,18 +83,23 @@ int device_settings_apply(unsigned long changed_mask,
         old = device_settings_get((short)setting);
         if (old == values[setting]) continue;
         effective |= 1UL << setting;
-        if (setting == _device_setting_fullscreen) old_fullscreen = old;
-        else
+        if (setting == _device_setting_fullscreen)
         {
-            names[count] = setting_names[setting];
-            updates[count] = values[setting];
-            previous[count++] = old;
+            old_fullscreen = old;
+            if (!setting_names[setting]) continue;
+            /* F11 or a launch override can make the window differ from its
+             * saved preference. Roll each back to its own previous value. */
+            old = config_boolean(setting_names[setting]) != 0;
         }
+        names[count] = setting_names[setting];
+        updates[count] = values[setting];
+        previous[count++] = old;
     }
     if (!effective) return 1;
 
-    /* Fullscreen belongs to native Mac preferences. Apply it first so a
-     * rejected mode switch cannot leave the TOML draft partly accepted. */
+    /* Apply fullscreen first so a refused window transition cannot leave
+     * any preferences accepted. Mac's setter persists its native preference;
+     * other desktops save fullscreen in the same TOML batch as the draft. */
     if (effective & (1UL << _device_setting_fullscreen))
     {
         if (!halo_video_fullscreen_set(values[_device_setting_fullscreen] != 0.0)) return 0;
