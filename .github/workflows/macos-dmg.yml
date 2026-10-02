@@ -48,7 +48,7 @@ jobs:
           trap 'hdiutil detach "$dmg_mount"' EXIT
           bundle="$dmg_mount/Halo CE Universal.app"
           codesign --verify --deep --strict "$bundle"
-          lipo -verify_arch arm64 "$bundle/Contents/MacOS/halo"
+          lipo "$bundle/Contents/MacOS/halo" -verify_arch arm64
           python3 - "$bundle" <<'PY'
           import os
           from pathlib import Path
