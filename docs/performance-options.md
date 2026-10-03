@@ -181,20 +181,27 @@ unknown flag bits or a damaged check byte decode as all options off. The check
 byte detects malformed extension data; the existing save signature mechanism
 still handles the saved variant. `game_variant.flags` is not repurposed.
 
-## Host authority and v10 compatibility
+## Host authority and v11 compatibility
 
 The client's reliable connection announces supported subsets before its normal
 join request: the original timer/marker mask, the timer-audio generation, then
 the complete capability set. Earlier PB hosts retain the newest subset they
-understand. An unextended v10 host ignores those unknown data messages.
+understand. An unextended v11 host ignores those unknown data messages.
 The updated host keeps capabilities per connection slot and clears them when
 the slot is removed or reused.
 
-All options off preserves stock v10 session admission in either direction.
-When any option is enabled, the host advertises extension version `0x800A`
-alongside its support flag. A stock v10 client displays its existing
+All options off preserves stock v11 session admission in either direction for
+original-rule games. When any option is enabled, the host advertises extension
+version `0x800B` alongside capability flag `0x04`. A stock v11 client displays its existing
 update-required explanation. The host also checks capability at admission, so
 a stale advertisement or direct join cannot bypass the requirement.
+
+The v11 settings record adds 28 bytes; v10 and PB-v10 (`0x800A`) must update.
+Capability flag `0x02` is now upstream's in-progress flag, so PB uses `0x04`.
+The reliable option messages and saved variants are unchanged. Unsupported active
+PC options and mixed five-plus-player infinite-grenade rules are refused; see the
+[current protocol review](upstream-review-2026-10-03.md). The v10 runtime evidence
+below remains historical evidence, not a v11 cross-platform test.
 
 Enabling an option, selecting an enabled saved variant, and starting the match
 check the connected peers. An unsupported existing peer causes the host's

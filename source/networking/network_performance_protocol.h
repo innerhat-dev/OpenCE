@@ -1,5 +1,5 @@
-/* Optional practice controls beside v10 distributed messages. All controls
- * use the reliable connection; unextended v10 ignores subtype 0xE0. */
+/* Optional practice controls beside v11 distributed messages. All controls
+ * use the reliable connection; unextended v11 ignores subtype 0xE0. */
 #ifndef __NETWORK_PERFORMANCE_PROTOCOL_H
 #define __NETWORK_PERFORMANCE_PROTOCOL_H
 
@@ -9,10 +9,10 @@
 #define NETWORK_PERFORMANCE_CAPABILITY 1
 #define NETWORK_PERFORMANCE_SETTINGS 2
 #define NETWORK_PERFORMANCE_SUPPORTED_FLAGS 31
-#define NETWORK_PERFORMANCE_ADVERTISED_FLAG 2
+#define NETWORK_PERFORMANCE_ADVERTISED_FLAG 4
 /* Outside upstream's sequential versions: stock clients show their existing
  * update-required dialog only while practice options are on. */
-#define NETWORK_PERFORMANCE_ADVERTISED_VERSION 0x800A
+#define NETWORK_PERFORMANCE_ADVERTISED_VERSION 0x800B
 
 static inline int network_performance_can_join(unsigned required, unsigned supported)
 {

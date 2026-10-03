@@ -42,6 +42,8 @@ word network_game_server_get_state(
 	short *substate);
 boolean network_game_server_game_is_open(
 	struct network_game_server *server);
+boolean network_game_server_game_is_loading(
+	struct network_game_server *server);
 /* joining a distributed game in progress (network_server_manager.c) */
 boolean network_game_server_accepts_late_joins(
 	struct network_game_server *server);

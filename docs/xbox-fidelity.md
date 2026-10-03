@@ -12,15 +12,20 @@ The last full upstream integration is `c55e4e2b` (build 64), merged into the
 Apple fork as `aabe44417431c36e46aaa385a69a89a3c9d685c0`. On October 2, the network
 protocol portion of `d1c7243cb20eab4488efa1266e259b1f4d5240f6` was selectively
 adopted for version 10 compatibility, retaining the original scoreboard and
-presentation. See the [per-commit review and validation record](upstream-review-2026-10-02.md).
+presentation. On October 3, the version-11 wire record and required received-input
+handling from `c9ee319ab5f2964a32372fffdc7756111e39727d` were selectively ported,
+preserving the fork's native menus, PB Options and existing gameplay rules.
+Unsupported upstream PC gametype settings are refused before precache/play.
+See the [v10 review](upstream-review-2026-10-02.md) and
+[current per-commit review and validation record](upstream-review-2026-10-03.md).
 This does not integrate intervening upstream changes. During upstream-update work, review all
 changes since the last recorded review so useful core improvements are not missed.
 Fetching upstream does not authorize merging it. Do not merge upstream `main`
 wholesale; select focused changes and split mixed commits when necessary.
 
 The last review covered new commits through upstream revision
-`d1c7243cb20eab4488efa1266e259b1f4d5240f6` on October 2, 2026. The linked review
-records each of the seven new commits since the October 1 review. The following
+`23b542601f2ca505c7a0143703e92fbda6075e18` on October 3, 2026. The current review
+records all seven new commits since the October 2 review. The following
 earlier exclusions also remain in force; neither is integrated:
 
 | Upstream change | Category and effect | Decision and reason | Validation / integration status |
@@ -74,7 +79,7 @@ they do not authorize other Performance Build mechanics, weapon behavior changes
 or a different simulation rate. The original 30 Hz simulation remains in place.
 
 See [PB Options](performance-options.md) for the native editor and pause-menu
-flows, saved variant format, host authority and v10 compatibility, restrictions
+flows, saved variant format, host authority and v11 compatibility, restrictions
 on inert marker tags, stock-map marker rendering and the single-Mac
 Prisoner/Downrush validation evidence.
 The current marker audits cover 24 placements in converted NHE Prisoner and 19

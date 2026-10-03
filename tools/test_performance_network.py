@@ -15,7 +15,7 @@ FIXTURE = r'''
 #include <wchar.h>
 #include "networking/network_performance_protocol.h"
 #include "performance_audio.h"
-typedef int boolean;
+typedef unsigned char boolean;
 typedef unsigned char byte;
 typedef unsigned short word;
 #define HALO_PORT_MAXIMUM_NETWORK_PLAYERS 16
@@ -29,18 +29,23 @@ typedef unsigned short word;
 #define VALID_INDEX(i,n) ((i)>=0 && (i)<(n))
 #define match_assert(file,line,condition) assert(condition)
 #define csmemcpy memcpy
+#define csmemset memset
+#define TEST_FLAG(value,bit) ((value)&(1U<<(bit)))
+enum { _game_variant_draw_object_in_motion_sensor_bit=0, _game_variant_infinite_grenades_bit=2 };
 #define network_event(...) ((void)0)
 #define error(...) ((void)0)
 #define ustrncpy wcsncpy
 enum { _performance_option_timer_audio=4, PERFORMANCE_OPTIONS_MASK=31,
-       _network_game_server_state_pregame=1, _message_server_begin_game=2 };
-struct game_variant { unsigned flags; struct {int teams;} universal_variant; };
+       _network_game_server_state_pregame=1, _network_game_server_state_ingame=2, _message_server_begin_game=2 };
+struct game_variant { unsigned flags; struct {int teams, flags, vehicle_set, weapon_set;} universal_variant; };
 struct network_game_server_client_machine {int machine_index,joined,local;};
+#include "game/game_variant_options.h"
 struct game_data {
     struct game_variant variant;
+    struct game_variant_options variant_options;
     struct {char name[32]; int version;} map;
     wchar_t name[16]; int minimum_players,maximum_players,maximum_teams;
-    int players[16];
+    int players[16],player_count;
 };
 struct network_game_server {
     struct network_game_server_client_machine client_machines[MAXIMUM_NETWORK_MACHINE_COUNT];
@@ -52,6 +57,7 @@ static struct network_game_server server,*active=&server;
 static struct game_variant runtime_variant,playlist_variant;
 static byte network_game_server_performance_capabilities[MAXIMUM_NETWORK_MACHINE_COUNT];
 static int network_game_server_start_players[16];
+static boolean network_game_server_started_with_five_players;
 static int recordings=1,apply_calls,override_calls,pregame_sends,setting_sends,start_sends,opened;
 static unsigned runtime_flags,capabilities[4],capability_count;
 static char shown[512];
@@ -153,6 +159,34 @@ int main(void) {
     assert(capability_count==3 && capabilities[0]==3 && capabilities[1]==3 && capabilities[2]==27);
     recordings=1;capability_count=0;assert(announce(&client));
     assert(capability_count==3 && capabilities[0]==3 && capabilities[1]==7 && capabilities[2]==31);
+    /* Keep the Xbox grenade cutoff without admitting a mixed-rules match.
+     * Four players still interoperate; a fork-only five-player game is safe. */
+    server.game.variant.flags=0; server.game.variant.universal_variant.flags=4;
+    server.game.player_count=5; server.sent_start_game_message=FALSE;
+    network_game_server_performance_capabilities[1]=0;
+    assert(!network_game_server_start_network_game(&server));
+    assert(strstr(shown,"grenade cutoff") && !server.sent_start_game_message);
+    server.game.player_count=4;
+    assert(network_game_server_original_grenade_peers_support(&server,&server.game.variant,4));
+    assert(!network_game_server_original_grenade_peers_support(&server,&server.game.variant,5));
+    network_game_server_performance_capabilities[1]=31;
+    assert(network_game_server_original_grenade_peers_support(&server,&server.game.variant,5));
+    assert(network_game_server_start_network_game(&server));
+    /* A match's Xbox threshold is fixed at start. A newly loading machine
+     * must not derive a different threshold from a changed player count. */
+    server.state=_network_game_server_state_ingame;
+    network_game_server_started_with_five_players=FALSE;
+    assert(network_game_server_original_grenade_peers_support(&server,&server.game.variant,4));
+    assert(!network_game_server_original_grenade_peers_support(&server,&server.game.variant,5));
+    assert(strstr(shown,"newly loading machine"));
+    network_game_server_started_with_five_players=TRUE;
+    assert(!network_game_server_original_grenade_peers_support(&server,&server.game.variant,4));
+    assert(network_game_server_original_grenade_peers_support(&server,&server.game.variant,5));
+    network_game_server_performance_capabilities[1]=0;
+    assert(!network_game_server_original_grenade_peers_support(&server,&server.game.variant,5));
+    server.game.variant.universal_variant.flags=0;
+    assert(network_game_server_original_grenade_peers_support(&server,&server.game.variant,4));
+    assert(network_game_server_original_grenade_peers_support(&server,&server.game.variant,5));
     puts("performance host authority, assets, saved variants and capabilities: PASS");
     return 0;
 }
@@ -166,6 +200,7 @@ class PerformanceNetworkTests(unittest.TestCase):
             "void network_game_server_performance_capability(\n",
             "boolean network_game_server_performance_supported(\n",
             "static boolean network_game_server_performance_peers_support(\n",
+            "static boolean network_game_server_original_grenade_peers_support(\n",
             "boolean performance_options_set_host_flags(\n",
             "void network_game_server_change_game_variant(\n",
             "boolean network_game_server_start_network_game(\n",

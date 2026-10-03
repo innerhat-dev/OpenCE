@@ -1254,6 +1254,10 @@ boolean network_game_client_idle(
 	return success;
 }
 
+void platform_show_message(char const *title, char const *message);
+/* One active client: retain the selected host's original-rule capability. */
+static boolean network_game_client_original_rules_host;
+
 boolean network_game_client_game_settings_updated(
 	struct network_game_client *client,
 	struct network_game *message_packet)
@@ -1271,6 +1275,26 @@ boolean network_game_client_game_settings_updated(
 		VALID_INDEX(message_packet->difficulty, NUMBER_OF_GAME_DIFFICULTY_LEVELS))
 	{
 		struct network_game previous_game;
+		char const *unsupported = game_variant_options_unsupported(&message_packet->variant,
+			&message_packet->variant_options);
+
+		if (!unsupported && !network_game_client_original_rules_host && !global_network_game_server_get() &&
+			message_packet->player_count >= 5 &&
+			TEST_FLAG(message_packet->variant.universal_variant.flags, _game_variant_infinite_grenades_bit))
+			unsupported = "infinite grenades with five or more players";
+
+		if (unsupported)
+		{
+			char explanation[512];
+
+			csprintf(explanation,
+				"This host uses a gametype option this build does not support: %s.\n\n"
+				"Ask the host to choose original Xbox gametype options to play together.", unsupported);
+			platform_show_message("Halo: unsupported game settings", explanation);
+			network_event("rejecting unsupported v11 gametype option: %s", unsupported);
+			display_error_when_main_menu_loaded(_error_network_failed_to_join_game);
+			return FALSE;
+		}
 
 		if (csstrcmp(message_packet->map.name, client->game.map.name))
 		{
@@ -2008,6 +2032,12 @@ boolean network_game_client_initiate_join_game(
 		0x157,
 		client && (client->state == _network_game_client_state_searching) && game && join_parameters && client->connection && !network_connection_connected(client->connection) && (game->platform == network_game_get_local_platform()));
 
+	{
+		long index = game - client->available_games;
+
+		network_game_client_original_rules_host = VALID_INDEX(index, MAXIMUM_NETWORK_ADVERTISED_GAMES) &&
+			(network_game_client_advertised_versions[index].flags & NETWORK_PERFORMANCE_ADVERTISED_FLAG) != 0;
+	}
 	client->join_in_progress = TRUE;
 	client->connect_process = 0;
 	client->connection_attempt_time = system_milliseconds();
@@ -3079,6 +3109,16 @@ boolean network_game_client_advertised_game_compatible(
 		platform_show_message("Halo: cannot join this game", message);
 	}
 	return FALSE;
+}
+
+boolean network_game_client_advertised_game_in_progress(
+	struct network_game_client *client,
+	struct network_advertised_game const *game)
+{
+	long game_index = client ? game - client->available_games : NONE;
+
+	return game_index >= 0 && game_index < MAXIMUM_NETWORK_ADVERTISED_GAMES &&
+		(network_game_client_advertised_versions[game_index].flags & HALO_PORT_ADVERTISED_IN_PROGRESS_FLAG) != 0;
 }
 
 boolean network_game_client_join_first_available_game(

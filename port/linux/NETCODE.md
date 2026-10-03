@@ -93,7 +93,18 @@ is dead; version 8 is the first whose clients play by the host's rules
 (below), so a build without them joins no host of it; version 9 tells
 every machine of a player the host dropped for cheating, each client
 tells the host its Discord user, and a machine's join request carries its
-hardware id; version 10 sends every player's ping for the scoreboard.
+hardware id; version 10 sends every player's ping for the scoreboard; version 11
+adds the 28-byte PC gametype-options record to reliable game settings and marks
+loading/playing/postgame advertisements as in progress. The distributed movement,
+hit, object and ping message formats are unchanged from version 10.
+
+This fork hosts the original-rule defaults for that new record and refuses active
+PC settings it does not implement before applying settings or precaching a map.
+It also recognizes upstream's action-only input bit while preserving its local
+controls. PB capability uses advertisement flag `0x04`, distinct from the new
+in-progress flag `0x02`; an enabled PB session advertises version `0x800B`.
+See [the v11 selective review](../../docs/upstream-review-2026-10-03.md) for exact
+settings, rule and mixed-build compatibility limits.
 
 A client plays by its host's rules: in another's game (searching for it,
 in its lobby, or playing it) the developer console, the telnet console

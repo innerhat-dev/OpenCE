@@ -147,6 +147,8 @@ struct game_variant
 
 typedef char verify_game_variant_size[sizeof(struct game_variant) == 0x68 ? 1 : -1];
 
+#include "game/game_variant_options.h"
+
 struct game_engine
 {
 	char const *name;

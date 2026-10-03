@@ -41,6 +41,9 @@ boolean network_game_client_set_team(
 	char team_index);
 /* whether the advertised game's host has this machine's network version
 (else the player is told, and it is not to be joined) */
+boolean network_game_client_advertised_game_in_progress(
+	struct network_game_client *client,
+	struct network_advertised_game const *game);
 boolean network_game_client_advertised_game_compatible(
 	struct network_game_client *client,
 	struct network_advertised_game const *game,

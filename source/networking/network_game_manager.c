@@ -139,6 +139,10 @@ struct game_options
 
 typedef char network_game_players_offset_assert[
 	offsetof(struct network_game, players) == HALO_PORT_NETWORK_GAME_PLAYERS_OFFSET ? 1 : -1];
+typedef char network_game_variant_options_offset_assert[
+	offsetof(struct network_game, variant_options) == HALO_PORT_NETWORK_GAME_VARIANT_OPTIONS_OFFSET ? 1 : -1];
+typedef char network_game_local_data_offset_assert[
+	offsetof(struct network_game, local_data) == HALO_PORT_NETWORK_GAME_LOCAL_DATA_OFFSET ? 1 : -1];
 typedef char network_game_size_assert[
 	sizeof(struct network_game) == HALO_PORT_NETWORK_GAME_SIZE ? 1 : -1];
 

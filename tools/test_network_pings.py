@@ -1,4 +1,4 @@
-"""Compile the v10 ping code against a deterministic, source-only game fixture.
+"""Compile the ping code retained by v11 against a deterministic, source-only game fixture.
 
 The getter, sender, stale filter, receive validation/batch/role preamble and ping
 receive case come from production source. Other message handlers are omitted;
@@ -108,7 +108,7 @@ static void reset(void) {
 static void wire_layout(void) {
     struct distributed_player_ping ping = {7, 0, 0x1234};
     const byte expected[] = {7, 0, 0x34, 0x12};
-    assert(HALO_PORT_NETWORK_VERSION == 10);
+    assert(HALO_PORT_NETWORK_VERSION == 11);
     assert(_distributed_message_client_identity == 18 && _distributed_message_pings == 19);
     assert(NUMBER_OF_DISTRIBUTED_MESSAGES == 20);
     assert(sizeof(struct distributed_message_header) == 8);
