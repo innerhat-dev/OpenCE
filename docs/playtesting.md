@@ -8,7 +8,7 @@ You do not need to compile the game.
 
 Bring your own original Xbox Halo: Combat Evolved disc image (`.iso` / `.xiso`)
 or extracted game data. Use one complete set. **USA NTSC is recommended**;
-the Downrush download requires NTSC cache build `01.10.12.2276`. PC, Custom
+the community downloads require NTSC cache build `01.10.12.2276`. PC, Custom
 Edition, Anniversary, and MCC data are not substitutes.
 
 ## Mac
@@ -110,14 +110,17 @@ additionally require a separately supplied local audio pack.
 
 ## Community maps
 
-First verify a stock-map match. The approved public download pilot currently
-contains **Downrush** for original Xbox v5 NTSC data.
+First verify a stock-map match. The public collection contains **40 approved
+community maps** for original Xbox v5 NTSC data, about **863 MiB** in total.
+This includes PB community variants with their normal embedded Halo dependencies;
+original disc images, stock map files, campaign files, and `ui.map` are excluded.
 
 On **Mac**, open **Halo OG → Settings…**, enable **Download approved community
 maps in the background**, and accept the prompt. **Check Maps / Retry** refreshes
-the catalog. The current pilot downloads on launch; joining a host whose
-approved map is missing also requests it. Watch the Settings progress/error
-text. Installed, verified maps work with downloads disabled and offline.
+the catalog. Missing maps from the collection are queued on launch while the
+app runs; joining a host whose approved map is missing also requests it. Watch
+the Settings progress/error text. Installed, verified maps work with downloads
+disabled and offline.
 Reopen map selection after completion; restart if the current session still
 holds an older selection. Downloads never replace your original maps.
 
@@ -131,6 +134,32 @@ Mac can also use this file manually in its selected `maps` folder. Restart
 after adding it. Preserve any existing same-name map first; all participants
 must use the same bytes. The approved file is 26,480,640 bytes, SHA-256
 `3282e580e782f939ae00c63f01971238eb0f85db19a2467efe42b5cb5600d126`.
+
+For another map, open the [public catalog](https://dl.oghalo.com/catalogs/testing/current.json),
+find its `id`, and append its `object_key` to `https://dl.oghalo.com/` to download
+the approved file. Keep `<id>.map` as its filename and use the catalog's
+`file_bytes` and `sha256` to check it. All players need the same map bytes.
+Downrush has completed two consecutive multiplayer matches on one Mac; the
+other maps have short local load/render checks, with multiplayer/mode testing
+still needed. All 40 public downloads have been checked against their hashes.
+
+<details>
+<summary>Manual downloads for all 40 community maps</summary>
+
+| Map | Map | Map | Map |
+| --- | --- | --- | --- |
+| [atlas.map](https://dl.oghalo.com/maps/sha256/7f2bbfc141152896f49b2be03d6412227ce39b63600950766caff5478e6d3513/atlas.map) | [badcreek.map](https://dl.oghalo.com/maps/sha256/42db0b80a833e0d9455a507080bf53024c17c975021824471b14d4d425508826/badcreek.map) | [birdhouse.map](https://dl.oghalo.com/maps/sha256/4804b99739fc9765dfbbb6c9f7fe42c8d74605fb7a72e47e862e3d70cf9520f7/birdhouse.map) | [calam.map](https://dl.oghalo.com/maps/sha256/84aacd00adb92b82ebef92210334ee1b05d55289697c1d1e01b265747f4d8944/calam.map) |
+| [chilledout.map](https://dl.oghalo.com/maps/sha256/73d835d11efe24a210699fffc984a195851b79f62feca09c4b3786d0731cd6d6/chilledout.map) | [dammy.map](https://dl.oghalo.com/maps/sha256/df9ac6c0482b8a764f0e257ea94618d7000a85076f0450c7acd51db4db1604ab/dammy.map) | [decidia.map](https://dl.oghalo.com/maps/sha256/57bc9d59dcf3d62321a9cebfb3c9006909cdc059bfd681bf6d19efea38b5f76f/decidia.map) | [dere.map](https://dl.oghalo.com/maps/sha256/cf01b23457c1bc1635b94e8eb480f7a8e006ece7e8c81f0c9d07d65d9bbd4c8e/dere.map) |
+| [descent.map](https://dl.oghalo.com/maps/sha256/153dc7596166ca70f02529849c28fbdd1e9efb8af57921d0474a03405e2eafd7/descent.map) | [doubletake.map](https://dl.oghalo.com/maps/sha256/b05085aa00501e7ee8c3cb6db123b8b7cbeef47026daff6e14a2bd0543b15dff/doubletake.map) | [downfall.map](https://dl.oghalo.com/maps/sha256/68e22e10b894d6da8b33a6d13923e04015b02dbf742426d0de654a3b906f9cdf/downfall.map) | [downog.map](https://dl.oghalo.com/maps/sha256/a1763a44b4ef016433bb57fb70a3954ab2828f8a6a7ea37e3401bd850eb78b6f/downog.map) |
+| [downrush.map](https://dl.oghalo.com/maps/sha256/3282e580e782f939ae00c63f01971238eb0f85db19a2467efe42b5cb5600d126/downrush.map) | [dread.map](https://dl.oghalo.com/maps/sha256/b2a37d9bee0d757d0f86b1c0835ab75c29d0ede13cbcda1bec9d825e90744777/dread.map) | [dread_new.map](https://dl.oghalo.com/maps/sha256/9e2057f74ff04beed79c3dedcf953e45a8bfa0a73436616e2a69fddc3e502d5e/dread_new.map) | [exhibit.map](https://dl.oghalo.com/maps/sha256/ac49d1c142285622274294cd26fa83386abf6b6087052ccf1f9e95cb3c73496f/exhibit.map) |
+| [fallout.map](https://dl.oghalo.com/maps/sha256/f05a258a0e518196c7aa3ade27ffe59d127da0888078c81cd902e71bc394c3b0/fallout.map) | [h1pb_chillout.map](https://dl.oghalo.com/maps/sha256/70a1d647ae4f09904db33103a7383e60e54bd0b23d8fd320008525af24478717/h1pb_chillout.map) | [h1pb_hangemhigh.map](https://dl.oghalo.com/maps/sha256/5699b09143811309de3451f610a1fcefb58860620168186b5789205a2c758fca/h1pb_hangemhigh.map) | [h1pb_prisoner.map](https://dl.oghalo.com/maps/sha256/ed009445753401aefe00a56b963a4911dfb5be4d98f6cdf45bd29296e936965a/h1pb_prisoner.map) |
+| [h1pb_wizard.map](https://dl.oghalo.com/maps/sha256/2dfb97492d18278d387008991559c409ce46b48fd08e5bbd4040c1ba0b6debba/h1pb_wizard.map) | [hangman.map](https://dl.oghalo.com/maps/sha256/d41970a9d06e60c8c2678c090deea2d2adcb48166519e1b1c1f460e278ff8674/hangman.map) | [hotbox.map](https://dl.oghalo.com/maps/sha256/e1295796bbc4cd684bc70e75111d53340d77e0f6a3cfe62a07e5911f389be47d/hotbox.map) | [imminent.map](https://dl.oghalo.com/maps/sha256/5855435bbdb4b90dc4c0b894a680a7314561ae18b3c89afbca610b9b7551d8a4/imminent.map) |
+| [jaywalk.map](https://dl.oghalo.com/maps/sha256/9703fb1f7d1c2b380399fcc5e0ec4f0a94fc9a43b42014113836d336e43902c5/jaywalk.map) | [longshot.map](https://dl.oghalo.com/maps/sha256/c070c2ee037f89021f9f33ac7badd37fbe15e2b273353f19e699f7145c771aa4/longshot.map) | [octagon.map](https://dl.oghalo.com/maps/sha256/30166bb0bec257fe660af042b2804ae97f7aab8b903dcb005c3f90f661fda9c2/octagon.map) | [octagon_b.map](https://dl.oghalo.com/maps/sha256/56a21aa0737c2eb465efe51b74afeb35116676824db419c66297bc54de9e9ac9/octagon_b.map) |
+| [outbound.map](https://dl.oghalo.com/maps/sha256/e37a0d68b9d9be998321740c9ff3a3826d0697b0ace3f5160562ddcd994f904b/outbound.map) | [overflow.map](https://dl.oghalo.com/maps/sha256/c2d44c77cfb680bd14bc2e49000fb938a142ad89ed533524f8665cbef4ea79c0/overflow.map) | [patrace.map](https://dl.oghalo.com/maps/sha256/fc68763f456b41ea8445b6e2a7db2922f4160cd587565b07dd47c3854474c77e/patrace.map) | [redshift.map](https://dl.oghalo.com/maps/sha256/31b3f16fea0cdfab090d13cf8cd2310a9e4021fdf84f4e26f4473c3f7aa76dc2/redshift.map) |
+| [salvation.map](https://dl.oghalo.com/maps/sha256/e90eb1e593ba615906485031269db4c9da1aafe59e86c9e4e8a813d244ae0021/salvation.map) | [slammer.map](https://dl.oghalo.com/maps/sha256/d25ad27e7c29a09584cd0be4d29b92054fbb7c83bf77b68c7f5b8f13a73e2caa/slammer.map) | [temple.map](https://dl.oghalo.com/maps/sha256/998a6011946dd3db9ff3fef215bedb331362eb859a190d7057d5b9a1ad1221a3/temple.map) | [tinker.map](https://dl.oghalo.com/maps/sha256/d5d605ad7308b5b82be4d0c3b0dbb4b8a0928a9d8a62bfbf51fe5fec9c991875/tinker.map) |
+| [tinkered.map](https://dl.oghalo.com/maps/sha256/6e6ea4b56386d7b0ed805acb74c5eea0e98fc9c6c6070d225c24f10a4b2cd222/tinkered.map) | [weld.map](https://dl.oghalo.com/maps/sha256/25a89672437f81746913cd5848f01b3d7383bc4c0e2945e51a8e05f96d378ca6/weld.map) | [whiskey.map](https://dl.oghalo.com/maps/sha256/19d06ab5f4a2d3dcaaf29f6d0f89ca74eef431c849d7982e6918944a2f368d8d/whiskey.map) | [worthy.map](https://dl.oghalo.com/maps/sha256/df913543827171da86d545aca7c5b6c5d8875a4fa938805b051ea54396cf2316/worthy.map) |
+
+</details>
 
 Original stock maps and `ui.map` remain user-imported. A PC/Custom Edition map
 cannot be made compatible by renaming it or changing its version field.

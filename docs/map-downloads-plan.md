@@ -1,16 +1,19 @@
 # Managed game data and community-map downloads
 
 Updated October 3, 2026. The source investigation started from `main` at
-`6c1f1ae8`. The Downrush R2 pilot and native download/offline reuse were verified
-on October 3; cross-platform device acceptance remains a separate check.
+`6c1f1ae8`. The 40-map R2 collection's public bytes were verified on October 3;
+all 40 also passed native automatic downloads and offline reuse. The Downrush
+pilot passed same-Mac multiplayer checks. Cross-platform device acceptance
+remains a separate check.
 
 ## Implemented in this change
 
 The Mac app can manage a copy of selected extracted maps and download approved
 community maps while it runs. The checked-in download configuration points at
 `https://dl.oghalo.com/catalogs/testing/current.json`; downloads remain off until
-the player opts in. Original game data stays local. Endpoint configuration and
-local tests alone do not establish live catalog/map publication or download success.
+the player opts in. Selected original disc/map files stay local. Endpoint
+configuration and local tests alone do not establish live catalog/map publication
+or download success.
 
 | Flow | Behavior |
 | --- | --- |
@@ -92,15 +95,18 @@ by name, and keeps the existing 128-entry limit.
 The native downloader uses `NSURLSession`; SHA-256 uses macOS CommonCrypto.
 Downloads/copying continue off the game thread, preserving the 30 Hz simulation.
 The other native platforms do not acquire new Mac host symbols. Their existing
-save defaults remain `%APPDATA%/halo` on Windows and `$XDG_DATA_HOME/halo-linux`
-or `~/.local/share/halo-linux` on Linux. Native Windows/Linux HTTP downloaders
+save defaults are `%APPDATA%/Halo OG` on Windows and `$XDG_DATA_HOME/halo-og`
+or `~/.local/share/halo-og` on Linux, with non-destructive legacy copying.
+Native Windows/Linux HTTP downloaders
 are later work; they need the same content policy and final map bytes.
 
 ## Configure the publisher endpoint
 
 `port/macos/map-downloads.json` is packaged as a non-secret app resource. Set
 `catalog_url`, `objects_base_url` and exact HTTPS `allowed_origins`; keep the
-profile/build and bounds checked in. Neither R2 upload credentials nor catalog
+profile/build and bounds checked in. The current collection contains 40 approved
+caches totaling 904,589,312 bytes (862.68 MiB), all with `prefetch: true`.
+Neither R2 upload credentials nor catalog
 signing secrets belong in the client. An illustrative catalog entry is:
 
 ```json
@@ -148,8 +154,8 @@ redistribute it. The client never downloads a map from a host-supplied URL.
 Build final Xbox v5 maps in the controlled publisher workflow using
 `tools/community_maps.py` and the pinned source/toolchain provenance. Do not
 rename PC v7 maps or edit their version field as conversion. Generated maps
-are local output rather than bundled DMG data. Start with the reviewed
-Downrush/Octagon/Atlas pilot and retain its exact output hashes. Full-collection
+are local output rather than bundled DMG data. The approved 40-map collection
+retains its exact validated output hashes, including repaired Weld. Full-collection
 load/render smoke tests do not establish every map/mode/network combination's
 acceptance. See [community maps](community-maps.md).
 
@@ -165,10 +171,10 @@ python3 tools/map_catalog.py \
 
 It writes `catalog.json` and `maps/sha256/<hash>/<map-id>.map`, rejects stock,
 unsafe/duplicate/wrong-format/over-limit maps, and refuses an existing output
-directory. The actual prepared Downrush pilot is in the ignored local
-`build/community-maps/r2-candidate-2026-10-03/` tree. Preparing it is not proof
-of hosting or permission to publish; the upload allowlist remains a separate
-reviewable decision.
+directory. The actual prepared collection is in the ignored local
+`build/community-maps/r2-full-collection-candidate-2026-10-03/` tree. Preparing
+maps alone is not proof of hosting or permission to publish; the upload
+allowlist remains a separate reviewable decision.
 
 ## R2 delivery
 
@@ -191,8 +197,10 @@ size/hash, then publish the catalog. Use long cache lifetimes for hash-addressed
 objects and a short cache/revalidation policy for the mutable catalog. Release
 catalogs should carry a reviewable exact object/hash allowlist and author/license
 provenance. Only separately approved community content is eligible for upload;
-conversion does not confer redistribution rights. Original `ui.map`/retail
-assets are excluded. Native settings ship with the app; an additional approved
+conversion does not confer redistribution rights. The user approved working
+community maps, including their normal embedded Halo dependencies and PB variants.
+Original disc images, stock/campaign cache files and `ui.map` are excluded.
+Native settings ship with the app; an additional approved
 UI/settings pack would need separate opt-in/content compatibility work.
 
 For private testers, a Worker bound to a private bucket or a trusted service
@@ -211,9 +219,12 @@ not full-file SHA-256 hashes.
 [R2 uploads](https://developers.cloudflare.com/r2/objects/upload-objects/)
 describes their format.
 
-The selected public pilot uses bucket `halo`, domain `dl.oghalo.com`, and the
+The public collection uses bucket `halo`, domain `dl.oghalo.com`, and the
 concealed publisher credential in the `oghalo.com` 1Password environment.
-The approved object and public catalog were verified before native acceptance.
+All 40 approved objects and the public catalog were verified against their
+prepared hashes. The final bucket inventory has exactly 40 community objects
+plus the catalog, with no standalone original disc, stock/campaign map or UI
+files. Downrush additionally passed native/game acceptance.
 See [the publisher workflow and evidence](map-publishing.md). R2 Object Read &
 Write can be limited to chosen buckets; bucket/domain administration needs
 separate permissions. Obtain developer credentials through the established
@@ -232,6 +243,14 @@ capacity limits, collisions, offline cached reuse with downloads disabled,
 revalidation after deletion/catalog removal, retry, cancellation, HTTP catalog
 failure, PAL gating and uppercase folder/UI names. It uses no game assets,
 credentials or external network.
+
+The unchanged release Mac downloader also prefetched all 40 live R2 maps into
+a fresh isolated library in an observed 68.70 seconds. All passed exact
+size/SHA-256, native validation and guest READY checks; a downloads-disabled
+second manager reused every file unchanged with zero network attempts. User
+settings were untouched. This probe used an authored NTSC profile header and
+verified transport/cache behavior, not original data or gameplay. See the
+[full-collection native evidence](map-publishing.md).
 
 For an explicit live acceptance check after publication, run
 `python3 tools/macos_map_download_smoke.py --data-root /path/to/NTSC/data --timeout 120`.
@@ -254,11 +273,10 @@ throughput or cross-platform map play.
 
 Next steps are:
 
-1. Configure the chosen HTTPS endpoint, generate the exact approved pilot
-   catalog and publish only authorized community objects. Verify real R2
-   download, offline reuse, retry and native missing-map joins on a fresh tester
-   profile. No user should need development tools or a source checkout.
-2. Test stock and pilot host/client pairs across the target native platforms
+1. Check full-collection background downloads and offline reuse on fresh tester
+   profiles; verify retry and native missing-map joins beyond the Downrush pilot.
+   No player should need development tools or a source checkout.
+2. Test stock and community host/client pairs across the target native platforms
    using matching protocol/content profiles. HTTP download support for other
    platforms remains a separate implementation; they can use matching manually
    installed map files meanwhile.
@@ -269,7 +287,7 @@ Next steps are:
    of netcode 11 compatibility. Do not claim unmodified v11 peers understand
    an added hash field.
 4. Add publisher catalog signatures, validated resume, storage cleanup, and
-   more detailed download/library controls after the first real pilot succeeds.
+   more detailed download/library controls after broader playtesting.
 5. Evaluate peer-to-peer delivery using the same approved content identity and
    final verification. Treat peers as transport only; require separate upload
    consent, serve only authorized community objects, cap transfer bandwidth and

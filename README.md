@@ -58,11 +58,11 @@ and existing files. External map folders can remain selected.
 
 ## Community maps and competitive options
 
-Mac Settings can **download approved community maps in the background** after
-you opt in. The Cloudflare R2 pilot currently serves **Downrush**, built for
-Xbox v5 NTSC data. Verified downloads remain usable offline. Windows, Linux,
-and Android currently install that same map manually;
-[community-map setup](docs/playtesting.md#community-maps) includes its download.
+Mac Settings can **download 40 approved community maps in the background** after
+you opt in. The Cloudflare R2 collection is about **863 MiB**, built for Xbox v5
+NTSC data. Verified downloads remain usable offline. Windows, Linux, and Android
+currently install matching maps manually;
+[community-map setup](docs/playtesting.md#community-maps) includes the downloads.
 
 **PB Options** offers a match timer, spawn markers, timer announcements, and
 optional silent movement/weapon-ready sounds. All modifications default **off**;
@@ -78,9 +78,11 @@ tests, use matching Halo OG packages with PB Options off.
 
 Native Mac campaign/input/audio smoke checks and protocol-11 stock multiplayer
 have been exercised. A client starting without Downrush downloaded the verified
-pilot and completed two consecutive Slayer matches with a host on the **same
-physical Mac**; offline reuse also passed. Physical cross-platform devices,
-Internet/NAT play, long sessions, full campaign coverage, and reference-Xbox
+map and completed two consecutive Slayer matches with a host on the **same
+physical Mac**; offline reuse also passed. All 40 community caches passed short
+local load/render and public hash checks; the native Mac download service also
+passed automatic download and offline reuse for all 40. Physical cross-platform
+play, Internet/NAT, long sessions, full campaign coverage, and reference-Xbox
 fidelity remain acceptance work. See the [fidelity policy](docs/xbox-fidelity.md),
 [protocol review](docs/upstream-review-2026-10-03.md), and
 [map-delivery evidence](docs/map-publishing.md).
