@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="440" viewBox="0 0 680 440">
+  <title>Halo OG installer</title>
+  <desc>Drag Halo OG to Applications. Finder supplies the application and Applications folder icons.</desc>
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#08121f"/>
+      <stop offset="1" stop-color="#14243d"/>
+    </linearGradient>
+    <radialGradient id="light" cx="0.5" cy="0" r="0.9">
+      <stop offset="0" stop-color="#346598" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#346598" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e8f0fc"/>
+      <stop offset="1" stop-color="#cedcef"/>
+    </linearGradient>
+  </defs>
+  <rect width="680" height="440" fill="url(#base)"/>
+  <rect width="680" height="440" fill="url(#light)"/>
+
+  <!-- Pale panels keep Finder's native black icon labels legible. -->
+  <g fill="url(#panel)" stroke="#edf4ff" stroke-opacity="0.6" stroke-width="1">
+    <rect x="64" y="153" width="192" height="163" rx="16"/>
+    <rect x="424" y="153" width="192" height="163" rx="16"/>
+  </g>
+
+  <g text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+    <text x="340" y="80" fill="#f2f6fc" font-size="34" font-weight="500" letter-spacing="0.4">Halo OG</text>
+    <text x="340" y="113" fill="#b6c7df" font-size="16">Drag Halo OG to Applications</text>
+    <text x="340" y="348" fill="#90a5c3" font-size="13">Then open Halo OG from Applications.</text>
+  </g>
+
+  <path d="M 274 220 H 406 M 396 210 L 406 220 L 396 230"
+        fill="none" stroke="#839fca" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

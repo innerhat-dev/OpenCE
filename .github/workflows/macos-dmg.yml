@@ -32,12 +32,14 @@ jobs:
           printf '%s\n' /opt/homebrew/opt/lld@22/bin >> "$GITHUB_PATH"
       - name: Prepare dependencies
         run: python3 tools/macos_setup.py
+      - name: Prepare installer tools
+        run: python3 -m pip install -r tools/macos-dmg-requirements.txt
       - name: Build app without bundled game data
         # The default build is optimized and ad-hoc signed. --release is the
         # separate Developer ID / Sparkle path and requires signing credentials.
         run: python3 tools/macos_build.py --no-data-path --sign-identity - --build-number "$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT"
       - name: Check packaging rules
-        run: python3 -m unittest tools.test_macos_menu.ReleaseBoundary
+        run: python3 -m unittest tools.test_macos_menu.ReleaseBoundary tools.test_macos_dmg
       - name: Create DMG
         run: python3 tools/macos_release.py local-dmg --output dist/macos/Halo-OG-macos-arm64.dmg
       - name: Verify packaged app and record download details
@@ -55,8 +57,10 @@ jobs:
           import plistlib
           import sys
           from tools.macos_release import audit_bundle, audit_adhoc_signing
+          from tools.macos_dmg import audit_dmg_layout
 
           app = Path(sys.argv[1])
+          audit_dmg_layout(app.parent)
           audit_bundle(app)
           audit_adhoc_signing(app)
           contents = app / "Contents"

@@ -13,7 +13,6 @@ import plistlib
 import re
 import subprocess
 import sys
-import tempfile
 from urllib.parse import urlparse
 import urllib.error
 import urllib.request
@@ -23,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tools.macos_build import APP_NAME, APP_VERSION, update_configuration
 from tools.macos_sparkle import setup_sparkle, DIRECTORY as SPARKLE
+from tools.macos_dmg import create_dmg
 
 CONFIG = ROOT / "port/macos/release-config.json"
 APP = ROOT / "build/macos" / (APP_NAME + ".app")
@@ -128,25 +128,14 @@ def notarize(path, profile):
     return result["id"]
 
 
-def create_dmg(app, destination):
-    if destination.exists():
-        raise RuntimeError("Disk image output already exists; choose a new filename")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="halo-dmg-") as temporary:
-        layout = Path(temporary)
-        run("ditto", app, layout / app.name)
-        (layout / "Applications").symlink_to("/Applications")
-        run("hdiutil", "create", "-volname", APP_NAME, "-srcfolder", layout,
-            "-format", "UDZO", destination)
-
-
 def local_dmg(args):
-    audit_bundle(APP)
-    run("codesign", "--verify", "--deep", "--strict", APP)
-    with (APP / "Contents/Info.plist").open("rb") as stream:
+    app = args.app.resolve()
+    audit_bundle(app)
+    run("codesign", "--verify", "--deep", "--strict", app)
+    with (app / "Contents/Info.plist").open("rb") as stream:
         info = plistlib.load(stream)
     destination = args.output or ROOT / "build/macos" / ("Halo-OG-" + info["CFBundleShortVersionString"] + "-local.dmg")
-    create_dmg(APP, destination.resolve())
+    create_dmg(app, destination.resolve())
     print("Local test DMG (not notarized or approved for public distribution): " + str(destination))
 
 
@@ -265,6 +254,7 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("setup-updates", help="Create Halo's separate Sparkle key in the login Keychain")
     local = commands.add_parser("local-dmg", help="Package a verified asset-free local app without hosting or Developer ID")
+    local.add_argument("--app", type=Path, default=APP, help="Existing signed Halo OG.app to package")
     local.add_argument("--output", type=Path)
     build = commands.add_parser("build")
     build.add_argument("--version", default=APP_VERSION)

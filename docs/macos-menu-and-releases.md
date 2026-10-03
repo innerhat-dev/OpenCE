@@ -125,12 +125,29 @@ checkout path:
 
 ```sh
 python3 tools/macos_build.py --host-only --no-data-path
-python3 tools/macos_release.py local-dmg
+python3 -m venv build/macos/dmg-packaging-venv
+build/macos/dmg-packaging-venv/bin/python -m pip install -r tools/macos-dmg-requirements.txt
+build/macos/dmg-packaging-venv/bin/python tools/macos_release.py local-dmg
 ```
 
 The resulting `build/macos/Halo-OG-0.3.0-local.dmg` is a local test artifact. It has
 no notarization ticket and is not a verified public release. It includes an
 Applications shortcut and the app, without maps, ISOs or a local checkout path.
+The Finder window has a Retina background, positioned app/folder icons and a
+drag arrow. Rendering uses macOS's native SVG support; the Python dependencies
+write Finder metadata without scripting Finder and are only used at build time.
+
+To repackage an existing signed app, pass `--app "/path/to/Halo OG.app"` and a
+fresh `--output` filename to `local-dmg`. Packaging checks every bundle file,
+directory permission and symlink target against the source and verifies the
+copied signature. It preserves the app's build information and does not rebuild
+the game or change user data. Existing output files are never replaced.
+
+`test-v0.3.0-net11-dmg2` is an installer revision of `test-v0.3.0-net11`.
+Its Mac app and other platform ZIPs are identical to that release's
+`41c4aa82` game build; these releases can play together. `provenance.json`
+records the installer tooling commit separately from the binary source and
+original CI artifacts. The original release and its checksums remain available.
 
 The end user needs no Homebrew, XDK or build tools. SDL3, ANGLE, Sparkle and the
 compiled engine are bundled. First launch accepts the user's locally obtained
