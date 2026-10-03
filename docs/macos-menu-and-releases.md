@@ -223,9 +223,11 @@ profiles; storage uses an existing AWS profile. No keys or cloud resources have
 been created for this task.
 
 From a clean, committed tree, prepare a release with an explicit identity:
+Use the packaging virtual environment prepared above so the Finder metadata
+dependencies are available.
 
 ```sh
-python3 tools/macos_release.py build --version 0.3.0 --build-number 8 \
+build/macos/dmg-packaging-venv/bin/python tools/macos_release.py build --version 0.3.0 --build-number 8 \
   --sign-identity 'Developer ID Application: YOUR NAME (TEAMID)' \
   --notary-profile YOUR_EXISTING_KEYCHAIN_PROFILE
 ```
