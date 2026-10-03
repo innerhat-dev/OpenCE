@@ -15,19 +15,22 @@ the goal; complete retail parity is still being tested.
 
 ## Download
 
-Use the **[test-v0.3.0-net11 testing release](https://github.com/pfista/halo-og/releases/tag/test-v0.3.0-net11)**.
+Use the **[test-v0.3.0-net11-dmg2 testing release](https://github.com/pfista/halo-og/releases/tag/test-v0.3.0-net11-dmg2)**.
 Choose your platform:
 
 | Platform | Testing package | Requirements |
 | --- | --- | --- |
-| Mac | [Halo-OG-macos-arm64.dmg](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11/Halo-OG-macos-arm64.dmg) | Apple Silicon, macOS 26+ |
-| Windows | [halo-windows-release.zip](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11/halo-windows-release.zip) | x86/x86-64 PC, OpenGL 4.5 |
-| Linux | [halo-linux-release.zip](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11/halo-linux-release.zip) | x86, OpenGL 4.5, [32-bit runtime libraries](port/linux/README.md#requirements) |
-| Android | [halo-android-release.zip](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11/halo-android-release.zip) | ARM64, Android 9+, OpenGL ES 3; controller or keyboard |
+| Mac | [Halo-OG-macos-arm64.dmg](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11-dmg2/Halo-OG-macos-arm64.dmg) | Apple Silicon, macOS 26+ |
+| Windows | [halo-windows-release.zip](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11-dmg2/halo-windows-release.zip) | x86/x86-64 PC, OpenGL 4.5 |
+| Linux | [halo-linux-release.zip](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11-dmg2/halo-linux-release.zip) | x86, OpenGL 4.5, [32-bit runtime libraries](port/linux/README.md#requirements) |
+| Android | [halo-android-release.zip](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11-dmg2/halo-android-release.zip) | ARM64, Android 9+, OpenGL ES 3; controller or keyboard |
 
 All packages in the release come from the **same source commit**. Use the same
 tag when playing together. The release includes `SHA256SUMS`, `provenance.json`,
 and Mac installation notes. These are experimental builds.
+The `dmg2` revision adds a Mac drag-to-Applications install screen; the game app
+and other platform ZIPs are unchanged from `test-v0.3.0-net11` and compatible
+with it. The original release remains available.
 
 If the release is not available, sign in to GitHub and use successful runs of
 this repository's [macOS DMG workflow](https://github.com/pfista/halo-og/actions/workflows/macos-dmg.yml)

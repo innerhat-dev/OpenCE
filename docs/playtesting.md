@@ -1,10 +1,12 @@
 # Playtesting Halo OG
 
 Use the same Halo OG testing package as the other players:
-**[test-v0.3.0-net11](https://github.com/pfista/halo-og/releases/tag/test-v0.3.0-net11)**.
+**[test-v0.3.0-net11-dmg2](https://github.com/pfista/halo-og/releases/tag/test-v0.3.0-net11-dmg2)**.
 If the release is unavailable, the [download table](../README.md#download)
 explains matching-commit CI artifacts.
 You do not need to compile the game.
+This revision adds the Mac installer screen. Its game app and other platform
+ZIPs match `test-v0.3.0-net11`, so players using either release can play together.
 
 Bring your own original Xbox Halo: Combat Evolved disc image (`.iso` / `.xiso`)
 or extracted game data. Use one complete set. **USA NTSC is recommended**;

@@ -13,7 +13,9 @@ special entitlement, or security-setting change is required for this local build
 
 For shared testing, use a published tag in the
 [testing releases](https://github.com/pfista/halo-og/releases) and
-download `Halo-OG-macos-arm64.dmg` directly from its assets. Testing
+download `Halo-OG-macos-arm64.dmg` directly from its assets. The
+[`test-v0.3.0-net11-dmg2` installer](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11-dmg2/Halo-OG-macos-arm64.dmg)
+opens a window with Halo OG, a drag arrow and the Applications folder. Testing
 prereleases have permanent URLs containing the tag and require no GitHub sign-in.
 See [manual testing publication](../../docs/macos-menu-and-releases.md#manual-testing-prerelease)
 for the publishing workflow. No testing prerelease is created automatically.
