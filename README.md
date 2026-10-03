@@ -94,6 +94,7 @@ fidelity remain acceptance work. See the [fidelity policy](docs/xbox-fidelity.md
 
 [Build from source](docs/building.md) · [Apple setup](docs/apple-build.md) ·
 [Community-map conversion](docs/community-maps.md) ·
+[Community package prototype](docs/community-map-packages.md) ·
 [Report a playtest problem](docs/playtesting.md#report-a-problem)
 
 The experimental [iPhone port](port/ios/README.md) is a developer build with no

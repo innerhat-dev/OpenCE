@@ -147,6 +147,7 @@ BOOL HaloVerifyDownloadedMap(NSURL *file, NSDictionary *entry, NSDictionary *con
     dispatch_queue_t _work;
     NSMutableDictionary<NSNumber *, HaloMapTransfer *> *_transfers;
     NSDictionary<NSString *, NSDictionary *> *_entries;
+    NSDictionary<NSString *, NSDictionary *> *_localEntries;
     NSMutableDictionary<NSString *, NSNumber *> *_states;
     NSMutableDictionary<NSString *, NSString *> *_failures;
     NSMutableOrderedSet<NSString *> *_requests;
@@ -169,6 +170,7 @@ BOOL HaloVerifyDownloadedMap(NSURL *file, NSDictionary *entry, NSDictionary *con
         _transfers = [NSMutableDictionary dictionary];
         _requests = [NSMutableOrderedSet orderedSet];
         _entries = @{};
+        _localEntries = @{};
         NSOperationQueue *delegates = [[NSOperationQueue alloc] init];
         delegates.maxConcurrentOperationCount = 1;
         NSURLSessionConfiguration *session = sessionConfiguration ?: NSURLSessionConfiguration.ephemeralSessionConfiguration;
@@ -226,14 +228,15 @@ BOOL HaloVerifyDownloadedMap(NSURL *file, NSDictionary *entry, NSDictionary *con
     return YES;
 }
 - (void)startEnabled:(BOOL)enabled {
-    @synchronized(self) { _enabled = enabled; _initializing = _configured; }
+    @synchronized(self) { _enabled = enabled; _initializing = self.compatibleData; }
     dispatch_async(_work, ^{
-        if (!self->_configured || !self.compatibleData) { @synchronized(self) { self->_initializing = NO; } return; }
+        if (!HaloDownloadConfigurationIsValid(self->_configuration) || !self.compatibleData) { @synchronized(self) { self->_initializing = NO; } return; }
         NSError *error = nil;
         if (![self prepareDirectories:&error]) {
             @synchronized(self) { self->_initializing = NO; self->_catalogFailed = YES; }
             [self status:error.localizedDescription]; return;
         }
+        [self loadLocalMaps];
         NSURL *cached = [self->_library URLByAppendingPathComponent:@"catalog.json"];
         NSData *bytes = [NSData dataWithContentsOfURL:cached options:NSDataReadingMappedIfSafe error:nil];
         if (bytes) {
@@ -244,7 +247,7 @@ BOOL HaloVerifyDownloadedMap(NSURL *file, NSDictionary *entry, NSDictionary *con
                 if (entries) [self acceptCatalog:entries];
             }
         }
-        if (self.enabled) [self fetchCatalog];
+        if (self.enabled && self->_configured) [self fetchCatalog];
         @synchronized(self) { self->_initializing = NO; }
     });
 }
@@ -295,6 +298,9 @@ BOOL HaloVerifyDownloadedMap(NSURL *file, NSDictionary *entry, NSDictionary *con
     @synchronized(self) {
         NSNumber *state = _states[key];
         if (state.intValue == HALO_MAP_DOWNLOAD_READY) return HALO_MAP_DOWNLOAD_READY;
+        if (_initializing) return HALO_MAP_DOWNLOAD_PENDING;
+        if (_cancelled) return HALO_MAP_DOWNLOAD_UNAVAILABLE;
+        if (_localEntries[key]) return state ? state.intValue : HALO_MAP_DOWNLOAD_FAILED;
         if (!_enabled || !_configured || _cancelled) return HALO_MAP_DOWNLOAD_UNAVAILABLE;
         if (state) return state.intValue;
         if (!_entries[key]) return _catalogPending || _initializing ? HALO_MAP_DOWNLOAD_PENDING :
@@ -305,6 +311,9 @@ BOOL HaloVerifyDownloadedMap(NSURL *file, NSDictionary *entry, NSDictionary *con
     return HALO_MAP_DOWNLOAD_PENDING;
 }
 - (void)acceptCatalog:(NSDictionary *)entries {
+    NSMutableDictionary *combined = [entries mutableCopy];
+    [combined addEntriesFromDictionary:_localEntries];
+    entries = combined;
     @synchronized(self) {
         _entries = entries;
         for (NSString *name in _states.allKeys) {
@@ -326,9 +335,93 @@ BOOL HaloVerifyDownloadedMap(NSURL *file, NSDictionary *entry, NSDictionary *con
                 if (valid) [_failures removeObjectForKey:name]; else _failures[name] = message;
             }
             if (!valid) [self status:message];
+        } else if ([entry[@"local"] boolValue]) {
+            NSString *message = [NSString stringWithFormat:@"%@ is missing. Re-import its community package, or cancel downloads to stop waiting.", name];
+            @synchronized(self) { _states[name] = @(HALO_MAP_DOWNLOAD_FAILED); _failures[name] = message; }
+            [self status:message];
         }
         if (self.enabled && [entry[@"prefetch"] boolValue]) [self requestMap:name];
     }
+}
+- (NSDictionary *)localEntry:(NSDictionary *)manifest {
+    if (![manifest isKindOfClass:NSDictionary.class]) return nil;
+    NSString *name = manifest[@"id"];
+    NSDictionary *output = manifest[@"output"];
+    if (!mapNameIsValid(name) || ![name isEqual:name.lowercaseString] ||
+        ![manifest[@"profile"] isEqual:_configuration[@"profile"]] ||
+        ![manifest[@"cache_build"] isEqual:_configuration[@"cache_build"]] ||
+        ![output isKindOfClass:NSDictionary.class] || !hashIsValid(output[@"sha256"]) ||
+        !numberInRange(output[@"size"], [_configuration[@"max_map_bytes"] unsignedLongLongValue])) return nil;
+    return @{@"id":name, @"sha256":output[@"sha256"], @"file_bytes":output[@"size"], @"local":@YES,
+             @"cache_build":manifest[@"cache_build"]};
+}
+- (void)loadLocalMaps {
+    NSURL *receipt = [_library URLByAppendingPathComponent:@"local-maps.json"];
+    int descriptor = open(receipt.fileSystemRepresentation, O_RDONLY | O_NOFOLLOW);
+    struct stat info;
+    if (descriptor < 0) return;
+    BOOL bounded = !fstat(descriptor, &info) && S_ISREG(info.st_mode) && info.st_size > 0 && info.st_size <= 1048576;
+    NSFileHandle *file = [[NSFileHandle alloc] initWithFileDescriptor:descriptor closeOnDealloc:YES];
+    NSData *bytes = bounded ? [file readDataUpToLength:1048577 error:nil] : nil;
+    [file closeFile];
+    if (!bounded || bytes.length != (NSUInteger)info.st_size) return;
+    id record = bytes ? [NSJSONSerialization JSONObjectWithData:bytes options:0 error:nil] : nil;
+    if (![record isKindOfClass:NSDictionary.class] || ![record[@"version"] isEqual:@1] ||
+        ![record[@"maps"] isKindOfClass:NSArray.class] || [record[@"maps"] count] > 512) return;
+    NSMutableDictionary *valid = [NSMutableDictionary dictionary];
+    for (id manifest in record[@"maps"]) {
+        NSDictionary *entry = [self localEntry:manifest];
+        if (!entry || valid[entry[@"id"]]) continue;
+        NSURL *map = [_mapsDirectory URLByAppendingPathComponent:[entry[@"id"] stringByAppendingPathExtension:@"map"]];
+        if (HaloVerifyDownloadedMap(map, entry, _configuration, nil)) valid[entry[@"id"]] = entry;
+    }
+    @synchronized(self) { _localEntries = valid; }
+    [self acceptCatalog:@{}];
+    if (valid.count) [self status:[NSString stringWithFormat:@"%lu locally rebuilt maps are available offline.", (unsigned long)valid.count]];
+}
+- (void)registerAssembledMap:(NSURL *)file manifest:(NSDictionary *)manifest
+                 completion:(void (^)(NSError *))completion {
+    dispatch_async(_work, ^{
+        NSError *error = nil;
+        NSDictionary *entry = [self localEntry:manifest];
+        NSURL *expected = entry ? [self->_mapsDirectory URLByAppendingPathComponent:[entry[@"id"] stringByAppendingPathExtension:@"map"]] : nil;
+        if (!self.compatibleData || !entry || ![file.URLByStandardizingPath.path isEqual:expected.path] ||
+            ![self prepareDirectories:&error] || !HaloVerifyDownloadedMap(file, entry, self->_configuration, &error))
+            error = error ?: downloadError(@"The reconstructed map could not be registered with this game-data profile.");
+        if (!error) {
+            NSMutableDictionary *local = [self->_localEntries mutableCopy];
+            local[entry[@"id"]] = entry;
+            if (local.count > 512) error = downloadError(@"The local map library has reached its limit.");
+            NSMutableArray *maps = [NSMutableArray array];
+            for (NSString *name in [local.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
+                NSDictionary *item = local[name];
+                [maps addObject:@{@"id":name, @"profile":self->_configuration[@"profile"], @"cache_build":item[@"cache_build"],
+                    @"output":@{@"size":item[@"file_bytes"], @"sha256":item[@"sha256"]}}];
+            }
+            NSURL *receipt = [self->_library URLByAppendingPathComponent:@"local-maps.json"];
+            struct stat info;
+            if (!error && !lstat(receipt.fileSystemRepresentation, &info) && !S_ISREG(info.st_mode))
+                error = downloadError(@"The local map receipt is a link or directory. Existing files were preserved.");
+            NSData *bytes = !error ? [NSJSONSerialization dataWithJSONObject:@{@"version":@1, @"maps":maps} options:0 error:&error] : nil;
+            if (bytes && ![bytes writeToURL:receipt options:NSDataWritingAtomic error:&error]) bytes = nil;
+            if (!error) {
+                @synchronized(self) {
+                    self->_localEntries = local;
+                    NSMutableDictionary *all = [self->_entries mutableCopy];
+                    all[entry[@"id"]] = entry; self->_entries = all;
+                    self->_states[entry[@"id"]] = @(HALO_MAP_DOWNLOAD_READY);
+                    [self->_failures removeObjectForKey:entry[@"id"]];
+                }
+                [self->_requests removeObject:entry[@"id"]];
+                for (HaloMapTransfer *transfer in self->_transfers.allValues)
+                    if (!transfer.catalog && [transfer.entry[@"id"] isEqual:entry[@"id"]]) {
+                        transfer.cancelled = YES; [transfer.task cancel];
+                    }
+                [self status:[NSString stringWithFormat:@"%@ is ready to play and available offline.", entry[@"id"]]];
+            }
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{ if (completion) completion(error); });
+    });
 }
 - (void)fetchCatalog {
     if (_catalogPending || _cancelled || !self.enabled) return;
@@ -354,6 +447,7 @@ BOOL HaloVerifyDownloadedMap(NSURL *file, NSDictionary *entry, NSDictionary *con
     if (!name) return;
     [_requests removeObject:name];
     NSDictionary *entry = _entries[name];
+    if ([entry[@"local"] boolValue]) { [self nextMap]; return; }
     if (!entry) {
         @synchronized(self) { [_states removeObjectForKey:name]; }
         [self nextMap]; return;
@@ -392,7 +486,10 @@ BOOL HaloVerifyDownloadedMap(NSURL *file, NSDictionary *entry, NSDictionary *con
 }
 - (void)failMap:(NSString *)name message:(NSString *)message {
     NSString *failure = [NSString stringWithFormat:@"%@: %@ Use Check Maps to retry.", name, message];
-    @synchronized(self) { _states[name] = @(HALO_MAP_DOWNLOAD_FAILED); _failures[name] = failure; }
+    @synchronized(self) {
+        if (_localEntries[name] && _states[name].intValue == HALO_MAP_DOWNLOAD_READY) { [self nextMap]; return; }
+        _states[name] = @(HALO_MAP_DOWNLOAD_FAILED); _failures[name] = failure;
+    }
     [self status:failure];
     [self nextMap];
 }

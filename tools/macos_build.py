@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT))
 from tools.linux_build import MINIUPNPC_DEFINES, MINIUPNPC_DIR, miniupnpc_sources
 from tools.macos_menu_icon import render as render_menu_icon
 from tools.macos_sparkle import setup_sparkle, DIRECTORY as SPARKLE_DIRECTORY
+from tools.macos_content_tools import stage_content_tools
 BUILD = ROOT / "build/macos"
 LLVM = Path(os.environ.get("HALO_MACOS_LLVM_BIN", "/opt/homebrew/opt/llvm/bin"))
 SDL = Path(os.environ.get("HALO_MACOS_SDL_PREFIX", "/opt/homebrew/opt/sdl3"))
@@ -63,10 +64,11 @@ def build_host():
         require(directory / f"{name}.framework" / name)
     # EGL's loader also uses this name beside the EGL binary.
     companion = frameworks[0] / "libEGL.framework/libGLESv2.dylib"
-    if companion.is_symlink():
+    companion_target = frameworks[1] / "libGLESv2.framework/libGLESv2"
+    if companion.is_symlink() and companion.resolve() != companion_target.resolve():
         companion.unlink()
     if not companion.exists():
-        companion.symlink_to(frameworks[1] / "libGLESv2.framework/libGLESv2")
+        companion.symlink_to(companion_target)
     flags = ["-arch", "arm64", "-mmacosx-version-min=14.0", "-O2", "-g", "-DHALO_MACOS=1", "-D_DARWIN_C_SOURCE",
              "-Wall", "-Wextra", "-Wno-unused-function", "-Wno-unused-parameter",
              "-I.", "-Iport/macos/host", "-Iport/macos/native", "-Iport/android/include", "-Iport/linux/src",
@@ -142,7 +144,7 @@ def update_configuration(config):
             "SUScheduledCheckInterval": 86400}
 
 
-def package(data_root, *, sign_identity="-", release=False, version=APP_VERSION, build=APP_BUILD):
+def package(data_root, *, sign_identity="-", release=False, version=APP_VERSION, build=APP_BUILD, content_tools=None):
     configuration = json.loads((ROOT / "port/macos/release-config.json").read_text())
     if release:
         if not update_configuration(configuration):
@@ -152,7 +154,7 @@ def package(data_root, *, sign_identity="-", release=False, version=APP_VERSION,
     destination = BUILD / (APP_NAME + ".app")
     with tempfile.TemporaryDirectory(prefix=".halo-package-", dir=BUILD) as temporary:
         staged = Path(temporary) / destination.name
-        package_into(staged, data_root, sign_identity=sign_identity, release=release, version=version, build=build)
+        package_into(staged, data_root, sign_identity=sign_identity, release=release, version=version, build=build, content_tools=content_tools)
         # A fresh bundle prevents old development resources entering a release.
         # Preserve the previous build, including a running executable's inode.
         backup = None
@@ -169,7 +171,7 @@ def package(data_root, *, sign_identity="-", release=False, version=APP_VERSION,
     print(f"Built {destination}")
 
 
-def package_into(app, data_root, *, sign_identity, release, version, build):
+def package_into(app, data_root, *, sign_identity, release, version, build, content_tools=None):
     contents = app / "Contents"
     macos = contents / "MacOS"
     frameworks = contents / "Frameworks"
@@ -224,13 +226,14 @@ def package_into(app, data_root, *, sign_identity, release, version, build):
         legacy_path.unlink()
     render_menu_icon(ROOT / "port/macos/Helmet.svg", resources / "Helmet.pdf")
     package_icon(resources)
+    content_binaries = stage_content_tools(app, content_tools, sign_identity=sign_identity, release=release) if content_tools else []
     info = {
         "CFBundleExecutable": "halo", "CFBundleIdentifier": "local.halo.ce-universal",
         "CFBundleName": APP_NAME, "CFBundleDisplayName": APP_NAME,
         "CFBundleIconFile": APP_ICON,
         "CFBundlePackageType": "APPL", "CFBundleShortVersionString": version,
         "CFBundleVersion": build, "LSMinimumSystemVersion": minimum_macos_version([
-            executable, sdl, frameworks / "libEGL.dylib", frameworks / "libGLESv2.dylib", sparkle / "Sparkle"]),
+            executable, sdl, frameworks / "libEGL.dylib", frameworks / "libGLESv2.dylib", sparkle / "Sparkle", *content_binaries]),
         "CFBundleURLTypes": [{"CFBundleURLName": "Halo multiplayer invite",
                               # Match the shared discord.application_id default.
                               "CFBundleURLSchemes": ["halo", "discord-1553978809840050229"],
@@ -418,6 +421,8 @@ def main():
     parser.add_argument("--sign-identity", default="-")
     parser.add_argument("--version", default=APP_VERSION)
     parser.add_argument("--build-number", default=APP_BUILD)
+    parser.add_argument("--content-tools", type=Path, metavar="TOOLCHAIN_DIRECTORY",
+                        help="Opt in to reviewed Invader helpers for local community package import")
     parser.add_argument("--install", nargs="?", const=Path("/Applications"), type=Path,
                         metavar="DIRECTORY", help="Install in /Applications, or the given directory, for Spotlight")
     parser.add_argument("--jobs", type=int, default=min(os.cpu_count() or 4, 6))
@@ -442,7 +447,7 @@ def main():
         run(ninja, "-j", args.jobs, "macos_guest")
     build_host()
     package(None if args.no_data_path or args.release else args.data_root,
-            sign_identity=args.sign_identity, release=args.release, version=args.version, build=args.build_number)
+            sign_identity=args.sign_identity, release=args.release, version=args.version, build=args.build_number, content_tools=args.content_tools)
     if args.install:
         install_app(BUILD / (APP_NAME + ".app"), args.install)
 

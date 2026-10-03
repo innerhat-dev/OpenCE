@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT))
 from tools.macos_build import APP_NAME, APP_VERSION, update_configuration
 from tools.macos_sparkle import setup_sparkle, DIRECTORY as SPARKLE
 from tools.macos_dmg import create_dmg
+from tools.macos_content_tools import audit_content_tools
 
 CONFIG = ROOT / "port/macos/release-config.json"
 APP = ROOT / "build/macos" / (APP_NAME + ".app")
@@ -49,13 +50,23 @@ def https_url(value):
 
 def audit_bundle(app):
     """An explicit package boundary, not a license clearance for compiled code."""
-    allowed = {"Info.plist", "MacOS", "Frameworks", "Resources", "_CodeSignature"}
+    allowed = {"Info.plist", "MacOS", "Frameworks", "Resources", "_CodeSignature", "Helpers"}
     contents = app / "Contents"
     if {path.name for path in contents.iterdir()} - allowed:
         raise RuntimeError("Unexpected top-level content in the app")
     resources = contents / "Resources"
-    if {path.name for path in resources.iterdir()} - {"AppIcon.icns", "Helmet.pdf", "halo_guest.elf", "BuildInfo.txt", "Licenses", "map-downloads.json"}:
+    if {path.name for path in resources.iterdir()} - {"AppIcon.icns", "Helmet.pdf", "halo_guest.elf", "BuildInfo.txt", "Licenses", "map-downloads.json", "ContentTools.json"}:
         raise RuntimeError("Release resources must contain only the compiled engine, icons, build record and licenses")
+    helpers = contents / "Helpers"
+    provenance = resources / "ContentTools.json"
+    if helpers.exists() != provenance.exists():
+        raise RuntimeError("Community package helpers require their bundled provenance record")
+    if helpers.exists() and (helpers.is_symlink() or not helpers.is_dir() or
+                            {path.name for path in helpers.iterdir()} != {"invader-extract", "invader-build"} or
+                            any(path.is_symlink() or not path.is_file() for path in helpers.iterdir())):
+        raise RuntimeError("Unexpected community package helper")
+    if helpers.exists():
+        audit_content_tools(app)
     if {path.name for path in (contents / "MacOS").iterdir()} != {"halo"}:
         raise RuntimeError("Release executables must contain only the native host")
     if {path.name for path in (contents / "Frameworks").iterdir()} != {"Sparkle.framework", "libSDL3.0.dylib", "libEGL.dylib", "libGLESv2.dylib"}:

@@ -30,6 +30,9 @@ int halo_map_download_request(const char *map_name);
 - (void)cancelDownloads;
 - (int)requestMap:(NSString *)name;
 - (void)activateForHost;
+/* Local reconstruction is usable offline, independently of HTTP consent. */
+- (void)registerAssembledMap:(NSURL *)file manifest:(NSDictionary *)manifest
+                 completion:(void (^)(NSError *error))completion;
 @end
 BOOL HaloDownloadConfigurationIsValid(NSDictionary *configuration);
 NSDictionary *HaloValidateMapCatalog(NSData *data, NSDictionary *configuration, NSError **error);

@@ -39,7 +39,7 @@ jobs:
         # separate Developer ID / Sparkle path and requires signing credentials.
         run: python3 tools/macos_build.py --no-data-path --sign-identity - --build-number "$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT"
       - name: Check packaging rules
-        run: python3 -m unittest tools.test_macos_menu.ReleaseBoundary tools.test_macos_dmg
+        run: python3 -m unittest tools.test_macos_menu.ReleaseBoundary tools.test_macos_dmg tools.test_community_packages tools.test_macos_content_tools
       - name: Create DMG
         run: python3 tools/macos_release.py local-dmg --output dist/macos/Halo-OG-macos-arm64.dmg
       - name: Verify packaged app and record download details

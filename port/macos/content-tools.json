@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "architecture": "arm64",
+  "invader_repository": "https://github.com/SnowyMouse/invader",
+  "invader_commit": "7d25a855f5ef9e4ab8407abf490b21f8780abf27",
+  "riat_repository": "https://github.com/SnowyMouse/riat",
+  "riat_commit": "c1380cbfc708d89a3713af57b48d3f4368c34f8a",
+  "rust_version": "1.95.0",
+  "binaries": {
+    "extract": "4dc6a8c5583f055b715cf48ae011929be63749a56a68540c31e73238d46e1e3f",
+    "build": "4586b82e0db2a57e390e6d61ccf3a4cf2fde26288652cd0d3708be0e87111f65"
+  },
+  "notices": {
+    "Invader.txt": "invader/LICENSE.md",
+    "GPL-3.0.txt": "invader/gplv3.txt",
+    "RIAT.txt": "invader/ext/riat/LICENSE.txt",
+    "ADPCM-BSD.txt": "invader/src/sound/adpcm_xq/license.txt",
+    "ADPCM-MIT.txt": "invader/src/sound/reclaimer-license.txt",
+    "libogg.txt": "libogg-1.3.6/COPYING",
+    "libvorbis.txt": "libvorbis-1.3.7/COPYING",
+    "libsamplerate.txt": "libsamplerate-0.2.2/COPYING",
+    "libsquish.txt": "libsquish-1.15/LICENSE.txt",
+    "FLAC.txt": "flac-1.5.0/COPYING.Xiph"
+  },
+  "header_notices": {
+    "bcdec.txt": ["invader/src/bitmap/bcdec/bcdec.h", "/* LICENSE:"],
+    "stb-image.txt": ["invader/src/bitmap/stb/stb_image.h", "/*\n------------------------------------------------------------------------------\nThis software is available under 2 licenses"]
+  },
+  "rust_notices": [
+    "Apache-2.0.txt", "BSD-2-Clause.txt", "CC-BY-SA-4.0.txt",
+    "GCC-exception-3.1.txt", "GPL-2.0-only.txt", "GPL-3.0-or-later.txt",
+    "ISC.txt", "LLVM-exception.txt", "MIT.txt", "NCSA.txt",
+    "OFL-1.1.txt", "Unicode-3.0.txt"
+  ],
+  "cargo_crates": [
+    "itoa-1.0.18", "memchr-2.8.3", "proc-macro2-1.0.107", "quote-1.0.47",
+    "serde-1.0.229", "serde_core-1.0.229", "serde_derive-1.0.229",
+    "serde_json-1.0.151", "syn-3.0.6", "unicode-ident-1.0.26", "zmij-1.0.23"
+  ],
+  "cargo_registry": "cargo-home/registry/src/index.crates.io-1949cf8c6b5b557f",
+  "source_patch": "invader/dependencies.cmake",
+  "fresh_ci_ready": false
+}
