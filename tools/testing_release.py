@@ -20,8 +20,8 @@ from urllib.parse import quote, urlencode
 import zipfile
 
 
-REPOSITORY = "pfista/halo-ce-universal"
-DMG = "Halo-CE-Universal-macos-arm64.dmg"
+REPOSITORY = "pfista/halo-og"
+DMG = "Halo-OG-macos-arm64.dmg"
 WORKFLOWS = {
     "macos-dmg.yml": {"halo-macos-arm64-dmg": DMG},
     "build.yml": {f"halo-{platform}-release": f"halo-{platform}-release.zip"
@@ -30,6 +30,8 @@ WORKFLOWS = {
 MAC_FILES = {DMG, "README.txt", "BuildInfo.txt", "SHA256SUMS"}
 ASSETS = {DMG, "macos-README.txt", "macos-BuildInfo.txt", "SHA256SUMS",
           "provenance.json", *(f"halo-{p}-release.zip" for p in ("windows", "linux", "android"))}
+DOWNRUSH_SHA256 = "3282e580e782f939ae00c63f01971238eb0f85db19a2467efe42b5cb5600d126"
+DOWNRUSH_URL = f"https://dl.oghalo.com/maps/sha256/{DOWNRUSH_SHA256}/downrush.map"
 
 
 class GitHub:
@@ -176,15 +178,27 @@ def check_platform_archive(path, name):
 
 def release_notes(record):
     url = "https://github.com/" + record["repository"]
-    return (f"Testing build `{record['tag']}` from [{record['sha']}]({url}/commit/{record['sha']}).\n\n"
+    source = f"{url}/blob/{record['sha']}"
+    return (f"Halo OG testing build `{record['tag']}` from [{record['sha']}]({url}/commit/{record['sha']}).\n\n"
             f"Network protocol: **{record['network_protocol']}**.\n\n"
+            f"Start with the [playtesting setup guide]({source}/docs/playtesting.md) "
+            f"or [project README]({source}/README.md). Download your platform's asset below; "
+            "all players should use this same testing release.\n\n"
             "Mac, Windows, Linux and Android assets use the same source revision. "
             "Supply your own original Xbox Halo game data. No maps or disc images are included.\n\n"
             "The Apple Silicon DMG is ad-hoc signed and unnotarized; automatic updates are disabled. "
             "See macos-README.txt for the required macOS version and first-launch instructions. "
-            "Linux requires the 32-bit runtime dependencies documented in port/linux/README.md.\n\n"
+            f"Linux requires the [32-bit runtime dependencies]({source}/port/linux/README.md#requirements).\n\n"
+            "On Mac, choosing a maps folder offers **Copy and Manage**. Managed maps, saves "
+            "and preferences persist in `~/Library/Application Support/Halo OG/` across app updates. "
+            "With original Xbox NTSC 2276 data selected, opt into **Download approved community maps "
+            "in the background** in Settings to get the hosted Downrush map. Downloads default off.\n\n"
+            f"For manual setup on any platform, download [downrush.map]({DOWNRUSH_URL}) "
+            "and follow the playtesting guide to add it to your maps folder. Its SHA-256 is "
+            f"`{DOWNRUSH_SHA256}`. Use the same map bytes on every player.\n\n"
             "Check SHA256SUMS before installing. provenance.json records workflow runs, artifact IDs "
-            "and hashes. These are test builds; cross-platform play has not been established by CI.\n")
+            "and hashes. These are test builds; physical cross-platform and Internet/NAT play "
+            "still need testing. CI does not establish multiplayer interoperability.\n")
 
 
 def prepare(api, repository, sha, tag, directory):
@@ -278,7 +292,7 @@ def main():
                 stdout=subprocess.DEVNULL)
             subprocess.run(["gh", "release", "create", args.tag, "--repo", args.repository,
                 "--verify-tag", "--prerelease", "--latest=false",
-                "--title", "Testing " + args.tag, "--notes-file", str(args.directory / "release-notes.md"),
+                "--title", "Halo OG testing " + args.tag, "--notes-file", str(args.directory / "release-notes.md"),
                 *(str(args.directory / name) for name in sorted(ASSETS))], check=True)
             print(f"DMG: https://github.com/{args.repository}/releases/download/{args.tag}/{DMG}")
         else:

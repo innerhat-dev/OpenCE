@@ -68,6 +68,13 @@ int posix_disk_space(const char *path,
 int posix_set_read_only(const char *path, int read_only);
 int posix_make_directory(const char *path);
 
+#if !defined(HALO_ANDROID) && !defined(HALO_MACOS)
+/* Copy a desktop's legacy save tree without replacing existing destination
+files or following links. 0 migrated, 1 legacy absent, -1 incomplete/unsafe.
+On failure the caller must keep using the legacy root and report errno. */
+int posix_migrate_save_directory(const char *legacy, const char *destination);
+#endif
+
 /* directory enumeration; the handle is opaque */
 void *posix_directory_open(const char *path);
 /* copies the next entry name (excluding . and ..); returns 0 at the end */

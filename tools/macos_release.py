@@ -21,11 +21,11 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from tools.macos_build import APP_VERSION, update_configuration
+from tools.macos_build import APP_NAME, APP_VERSION, update_configuration
 from tools.macos_sparkle import setup_sparkle, DIRECTORY as SPARKLE
 
 CONFIG = ROOT / "port/macos/release-config.json"
-APP = ROOT / "build/macos/Halo CE Universal.app"
+APP = ROOT / "build/macos" / (APP_NAME + ".app")
 ACCOUNT = "local.halo.ce-universal"
 NAMESPACE = "http://www.andymatuschak.org/xml-namespaces/sparkle"
 ET.register_namespace("sparkle", NAMESPACE)
@@ -109,7 +109,7 @@ def audit_adhoc_signing(app):
 def appcast(record):
     rss = ET.Element("rss", {"version": "2.0"})
     channel = ET.SubElement(rss, "channel")
-    ET.SubElement(channel, "title").text = "Halo CE Universal Updates"
+    ET.SubElement(channel, "title").text = APP_NAME + " Updates"
     entry = ET.SubElement(channel, "item")
     ET.SubElement(entry, "title").text = "Halo " + record["version"]
     ET.SubElement(entry, "{" + NAMESPACE + "}minimumSystemVersion").text = record["minimum_macos"]
@@ -136,7 +136,7 @@ def create_dmg(app, destination):
         layout = Path(temporary)
         run("ditto", app, layout / app.name)
         (layout / "Applications").symlink_to("/Applications")
-        run("hdiutil", "create", "-volname", "Halo CE Universal", "-srcfolder", layout,
+        run("hdiutil", "create", "-volname", APP_NAME, "-srcfolder", layout,
             "-format", "UDZO", destination)
 
 
@@ -145,7 +145,7 @@ def local_dmg(args):
     run("codesign", "--verify", "--deep", "--strict", APP)
     with (APP / "Contents/Info.plist").open("rb") as stream:
         info = plistlib.load(stream)
-    destination = args.output or ROOT / "build/macos" / ("Halo-" + info["CFBundleShortVersionString"] + "-local.dmg")
+    destination = args.output or ROOT / "build/macos" / ("Halo-OG-" + info["CFBundleShortVersionString"] + "-local.dmg")
     create_dmg(APP, destination.resolve())
     print("Local test DMG (not notarized or approved for public distribution): " + str(destination))
 
@@ -180,7 +180,7 @@ def build_release(args):
     app_notary = notarize(app_zip, args.notary_profile)
     run("xcrun", "stapler", "staple", APP)
     run("spctl", "--assess", "--type", "execute", APP)
-    dmg = destination / ("Halo-" + args.version + ".dmg")
+    dmg = destination / ("Halo-OG-" + args.version + ".dmg")
     create_dmg(APP, dmg)
     run("codesign", "--sign", args.sign_identity, "--timestamp", dmg)
     dmg_notary = notarize(dmg, args.notary_profile)

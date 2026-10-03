@@ -8,8 +8,11 @@ directory holding the game's maps/ folder: paths.data (port_config.c), else the 
 directory when it has maps/, else assets/ in the current directory or two
 levels above the executable (the repository root for build/linux/halo).
 Every other drive letter X:\ is the subdirectory X/ of the save root (z:\ holds the persistent cache and saves,
-u:\ user data, t:\ title data): paths.saves, else
-$XDG_DATA_HOME/halo-linux or ~/.local/share/halo-linux. Path components are
+u:\ user data, t:\ title data): paths.saves, else %APPDATA%/Halo OG on
+Windows, $XDG_DATA_HOME/halo-og or ~/.local/share/halo-og on Linux. The
+legacy halo/halo-linux tree is copied without replacing existing files;
+an incomplete or unsafe copy keeps the legacy root and logs the failure.
+Path components are
 matched case-insensitively, like the Xbox's FATX volumes.
 */
 
@@ -151,12 +154,23 @@ static void make_directories(const char *path)
 const char *platform_save_root(void)
 {
 	static char root[MAX_PATH];
+#if !defined(HALO_ANDROID) && !defined(HALO_MACOS)
+	static pthread_mutex_t root_lock = PTHREAD_MUTEX_INITIALIZER;
+
+	/* Do not expose a new root to another startup thread until the copy has
+	finished or selected its legacy fallback. */
+	pthread_mutex_lock(&root_lock);
+#endif
 
 	if (!root[0])
 	{
 		const char *environment = config_string("paths.saves");
 		const char *data_home = getenv("XDG_DATA_HOME");
 		const char *home = getenv("HOME");
+#if !defined(HALO_ANDROID) && !defined(HALO_MACOS)
+		char legacy[MAX_PATH] = "";
+		int root_length = 0, legacy_length = 0;
+#endif
 
 		if (*environment)
 			snprintf(root, sizeof(root), "%s", environment);
@@ -164,18 +178,59 @@ const char *platform_save_root(void)
 		/* the Windows build (port/windows) keeps saves in the roaming
 		application data folder */
 		else if (getenv("APPDATA") && *getenv("APPDATA"))
-			snprintf(root, sizeof(root), "%s/halo", getenv("APPDATA"));
+		{
+			root_length = snprintf(root, sizeof(root), "%s/Halo OG", getenv("APPDATA"));
+			legacy_length = snprintf(legacy, sizeof(legacy), "%s/halo", getenv("APPDATA"));
+		}
 #endif
 		else if (data_home && *data_home)
+		{
+#if !defined(HALO_ANDROID) && !defined(HALO_MACOS)
+			root_length = snprintf(root, sizeof(root), "%s/halo-og", data_home);
+			legacy_length = snprintf(legacy, sizeof(legacy), "%s/halo-linux", data_home);
+#else
 			snprintf(root, sizeof(root), "%s/halo-linux", data_home);
+#endif
+		}
 		else if (home && *home)
+		{
+#if !defined(HALO_ANDROID) && !defined(HALO_MACOS)
+			root_length = snprintf(root, sizeof(root), "%s/.local/share/halo-og", home);
+			legacy_length = snprintf(legacy, sizeof(legacy), "%s/.local/share/halo-linux", home);
+#else
 			snprintf(root, sizeof(root), "%s/.local/share/halo-linux", home);
+#endif
+		}
 		else
 			snprintf(root, sizeof(root), "%s", platform_data_root());
 		trim_separators(root);
+#if !defined(HALO_ANDROID) && !defined(HALO_MACOS)
+		if (legacy[0])
+		{
+			int migrated;
+
+			trim_separators(legacy);
+			if (root_length < 0 || (size_t)root_length >= sizeof(root) ||
+				legacy_length < 0 || (size_t)legacy_length >= sizeof(legacy))
+			{
+				platform_log("save migration: default path exceeds the port's path limit; keeping legacy %s", legacy);
+				snprintf(root, sizeof(root), "%s", legacy);
+			}
+			else if ((migrated = posix_migrate_save_directory(legacy, root)) < 0)
+			{
+				platform_log("save migration: could not copy %s to %s (%s); keeping legacy saves", legacy, root, strerror(errno));
+				snprintf(root, sizeof(root), "%s", legacy);
+			}
+			else if (migrated == 0)
+				platform_log("save migration: copied %s to %s; original and existing destination files preserved", legacy, root);
+		}
+#endif
 		make_directories(root);
 		platform_log("save root: %s", root);
 	}
+#if !defined(HALO_ANDROID) && !defined(HALO_MACOS)
+	pthread_mutex_unlock(&root_lock);
+#endif
 	return root;
 }
 
@@ -208,7 +263,18 @@ void platform_translate_path(const char *xbox_path, char *host_path, unsigned lo
 		{
 			struct posix_file_information information;
 
+#if !defined(HALO_ANDROID) && !defined(HALO_MACOS)
+			char drive_name[2] = { drive, 0 }, on_disk[256];
+			const char *saves = platform_save_root();
+
+			/* A migrated existing U/ or Z/ directory is the same Xbox drive.
+			Keep its spelling, just as the following path components do. */
+			if (!posix_find_entry_case_insensitive(saves, drive_name, on_disk, sizeof(on_disk)))
+				snprintf(on_disk, sizeof(on_disk), "%s", drive_name);
+			snprintf(resolved, sizeof(resolved), "%s/%s", saves, on_disk);
+#else
 			snprintf(resolved, sizeof(resolved), "%s/%c", platform_save_root(), drive);
+#endif
 			/* every Xbox drive always exists; create its directory on first use */
 			if (posix_stat(resolved, &information) != 0)
 				posix_make_directory(resolved);

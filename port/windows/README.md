@@ -34,7 +34,7 @@ The build uses all the instructions of the processor of the computer that
 builds it (`-march=native`). Such a build does not always start on a
 different computer. To make a build for other computers, enter
 `python configure.py --portable`. Refer to the build options in the main
-[README](../../README.md#build-options).
+[building documentation](../../docs/building.md#build-options).
 
 For a new optimization profile (`--pgo=train`), the build compiles the
 profile runtime of LLVM for 32-bit x86 (`pgo/halo_profile_runtime.c`).
@@ -50,8 +50,16 @@ The game finds the game data as on Linux. Refer to "Start the game" in
 | Item | Location |
 | --- | --- |
 | Settings | `config.toml` next to `halo.exe` |
-| Saved games | `%APPDATA%\halo`, or `paths.saves` in `config.toml` |
+| Saved games | `%APPDATA%\Halo OG`, or `paths.saves` in `config.toml` |
 | Log | `debug.txt` in the data root (the folder that contains `maps\`) |
+
+The first launch copies regular files and folders from `%APPDATA%\halo` into
+`%APPDATA%\Halo OG`, preserving the original files and any files already in
+the new folder. A failed copy or reparse point is reported in the log and keeps
+the old save root for that run; retry after correcting the issue. Explicit
+`paths.saves` or `HALO_SAVE_ROOT` values keep their exact folder without
+migration. Settings stay beside the executable. The existing invitation
+encryption key location stays unchanged so previously issued links still work.
 
 ## How the port operates
 

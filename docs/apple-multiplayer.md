@@ -13,7 +13,7 @@ or more players. PB Options require compatible fork builds when enabled. See the
 
 ## Play on Mac using an invite
 
-Open `build/macos/Halo CE Universal.app`. Allow local network access if macOS
+Open `build/macos/Halo OG.app`. Allow local network access if macOS
 asks. Internet play and clipboard invites are enabled in the default settings.
 
 1. On the host, choose **Multiplayer → System Link**, select a player profile,
@@ -30,7 +30,7 @@ running app; the host queues it in that instance's save directory. A development
 launch can also take the link as an argument:
 
 ```sh
-"build/macos/Halo CE Universal.app/Contents/MacOS/halo" 'halo://join/YOUR_64_HEX_DIGITS'
+"build/macos/Halo OG.app/Contents/MacOS/halo" 'halo://join/YOUR_64_HEX_DIGITS'
 ```
 
 Invites last for the hosting game process. Treat the link as access to the room.
@@ -119,7 +119,7 @@ PHONE_IP=YOUR_IPHONE_WIFI_IP
 open -n \
   --env "HALO_NET_ADDRESS=$MAC_IP" \
   --env "HALO_NET_BROADCAST=$PHONE_IP" \
-  "build/macos/Halo CE Universal.app"
+  "build/macos/Halo OG.app"
 ```
 
 For the iPhone, set these environment variables in Xcode → Product → Scheme →

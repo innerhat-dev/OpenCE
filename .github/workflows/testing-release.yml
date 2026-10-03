@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   prepare:
-    if: ${{ github.repository == 'pfista/halo-ce-universal' && github.ref == 'refs/heads/main' }}
+    if: ${{ github.repository == 'pfista/halo-og' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

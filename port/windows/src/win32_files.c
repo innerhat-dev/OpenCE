@@ -204,6 +204,298 @@ int posix_make_directory(const char *path)
 	return CreateDirectoryA(path, NULL) ? 0 : fail();
 }
 
+/* ---------- non-destructive default save-folder migration */
+
+static int migration_handle_is_regular(HANDLE handle, int directory)
+{
+	BY_HANDLE_FILE_INFORMATION information;
+
+	if (GetFileType(handle) != FILE_TYPE_DISK)
+	{
+		SetLastError(ERROR_ACCESS_DENIED);
+		return -1;
+	}
+	if (!GetFileInformationByHandle(handle, &information))
+		return -1;
+	if ((information.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DEVICE)) ||
+		!!(information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != !!directory)
+	{
+		SetLastError(ERROR_ACCESS_DENIED);
+		return -1;
+	}
+	return 0;
+}
+
+static int migration_directory(const char *path, int create)
+{
+	HANDLE handle;
+	DWORD error;
+	int result;
+
+	handle = CreateFileA(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
+		NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+	if (handle == INVALID_HANDLE_VALUE && create)
+	{
+		error = GetLastError();
+		if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND)
+			return fail();
+		if (!CreateDirectoryA(path, NULL) && GetLastError() != ERROR_ALREADY_EXISTS)
+			return fail();
+		handle = CreateFileA(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
+			NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+	}
+	if (handle == INVALID_HANDLE_VALUE)
+		return fail();
+	result = migration_handle_is_regular(handle, 1);
+	error = GetLastError();
+	CloseHandle(handle);
+	SetLastError(error);
+	return result ? fail() : 0;
+}
+
+static int migration_directory_chain(const char *path, int create)
+{
+	char component[MAX_PATH];
+	size_t start, index;
+
+	strcpy(component, path);
+	if (component[0] == '\\' && component[1] == '\\')
+	{
+		/* The first usable UNC directory is \\server\share. */
+		char *server_end = strchr(component + 2, '\\');
+		char *share_end = server_end ? strchr(server_end + 1, '\\') : NULL;
+		if (!server_end || !server_end[1])
+		{
+			errno = EINVAL;
+			return -1;
+		}
+		start = share_end ? (size_t)(share_end - component) : strlen(component);
+	}
+	else if (component[0] && component[1] == ':' && component[2] == '\\')
+		start = 3;
+	else
+	{
+		errno = EINVAL;
+		return -1;
+	}
+	for (index = start; ; index++)
+	{
+		char separator = component[index];
+		if (separator != '\\' && separator != '\0')
+			continue;
+		component[index] = '\0';
+		if (migration_directory(component, create))
+			return -1;
+		component[index] = separator;
+		if (!separator)
+			return 0;
+	}
+}
+
+static int migration_existing_file(const char *path)
+{
+	HANDLE handle = CreateFileA(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
+		NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+	DWORD error;
+	int result;
+
+	if (handle == INVALID_HANDLE_VALUE)
+		return fail();
+	result = migration_handle_is_regular(handle, 0);
+	error = GetLastError();
+	CloseHandle(handle);
+	SetLastError(error);
+	return result ? fail() : 0;
+}
+
+static int migration_copy_file(const char *source, const char *destination)
+{
+	static LONG serial;
+	HANDLE input = INVALID_HANDLE_VALUE, output = INVALID_HANDLE_VALUE;
+	BY_HANDLE_FILE_INFORMATION information;
+	LARGE_INTEGER output_size;
+	unsigned char buffer[65536];
+	char temporary[MAX_PATH] = "";
+	unsigned long long copied = 0, expected;
+	DWORD error = ERROR_INVALID_DATA;
+	int result = -1, attempt;
+	BOOL owns_temporary = FALSE;
+
+	input = CreateFileA(source, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+		FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+	if (input == INVALID_HANDLE_VALUE || migration_handle_is_regular(input, 0) ||
+		!GetFileInformationByHandle(input, &information))
+		goto done;
+	expected = ((unsigned long long)information.nFileSizeHigh << 32) | information.nFileSizeLow;
+	if (GetFileAttributesA(destination) != INVALID_FILE_ATTRIBUTES)
+	{
+		result = migration_existing_file(destination);
+		goto done;
+	}
+	if (GetLastError() != ERROR_FILE_NOT_FOUND && GetLastError() != ERROR_PATH_NOT_FOUND)
+		goto done;
+	for (attempt = 0; attempt < 64; attempt++)
+	{
+		int size = snprintf(temporary, sizeof(temporary), "%s.halo-migration-%lu-%ld.partial",
+			destination, (unsigned long)GetCurrentProcessId(), (long)InterlockedIncrement(&serial));
+		if (size < 0 || (size_t)size >= sizeof(temporary))
+		{
+			SetLastError(ERROR_INVALID_NAME);
+			goto done;
+		}
+		output = CreateFileA(temporary, GENERIC_WRITE, 0, NULL, CREATE_NEW,
+			FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+		if (output != INVALID_HANDLE_VALUE)
+		{
+			owns_temporary = TRUE;
+			break;
+		}
+		if (GetLastError() != ERROR_FILE_EXISTS && GetLastError() != ERROR_ALREADY_EXISTS)
+			goto done;
+	}
+	if (output == INVALID_HANDLE_VALUE)
+		goto done;
+	for (;;)
+	{
+		DWORD read_bytes, written = 0;
+		if (!ReadFile(input, buffer, sizeof(buffer), &read_bytes, NULL))
+			goto done;
+		if (!read_bytes)
+			break;
+		while (written < read_bytes)
+		{
+			DWORD count;
+			if (!WriteFile(output, buffer + written, read_bytes - written, &count, NULL) || !count)
+				goto done;
+			written += count;
+		}
+		copied += read_bytes;
+	}
+	if (copied != expected || !GetFileSizeEx(output, &output_size) ||
+		(unsigned long long)output_size.QuadPart != expected || !FlushFileBuffers(output))
+		goto done;
+	if (!CloseHandle(output))
+	{
+		output = INVALID_HANDLE_VALUE;
+		goto done;
+	}
+	output = INVALID_HANDLE_VALUE;
+	/* Without REPLACE_EXISTING a racing destination is preserved. */
+	if (MoveFileExA(temporary, destination, MOVEFILE_WRITE_THROUGH))
+	{
+		temporary[0] = '\0';
+		result = 0;
+	}
+	else if (GetLastError() == ERROR_FILE_EXISTS || GetLastError() == ERROR_ALREADY_EXISTS)
+		result = migration_existing_file(destination);
+done:
+	error = GetLastError();
+	if (output != INVALID_HANDLE_VALUE) CloseHandle(output);
+	if (input != INVALID_HANDLE_VALUE) CloseHandle(input);
+	if (owns_temporary && temporary[0]) DeleteFileA(temporary);
+	SetLastError(error);
+	return result ? fail() : 0;
+}
+
+static int migration_copy_tree(const char *source, const char *destination)
+{
+	WIN32_FIND_DATAA entry;
+	char pattern[MAX_PATH + 3], source_child[MAX_PATH], destination_child[MAX_PATH];
+	HANDLE find, source_handle, destination_handle;
+	DWORD error;
+	int result = 0;
+
+	if (migration_directory(source, 0) || migration_directory(destination, 1))
+		return -1;
+	/* Keep both directory identities locked against replacement while their
+	children are enumerated and copied. Reparse points are opened as links. */
+	source_handle = CreateFileA(source, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
+		NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+	if (source_handle == INVALID_HANDLE_VALUE) return fail();
+	destination_handle = CreateFileA(destination, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
+		NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+	if (destination_handle == INVALID_HANDLE_VALUE || migration_handle_is_regular(source_handle, 1) ||
+		migration_handle_is_regular(destination_handle, 1))
+	{
+		error = GetLastError();
+		CloseHandle(source_handle);
+		if (destination_handle != INVALID_HANDLE_VALUE) CloseHandle(destination_handle);
+		SetLastError(error);
+		return fail();
+	}
+	snprintf(pattern, sizeof(pattern), "%s\\*", source);
+	find = FindFirstFileA(pattern, &entry);
+	if (find == INVALID_HANDLE_VALUE)
+	{
+		error = GetLastError();
+		CloseHandle(source_handle);
+		CloseHandle(destination_handle);
+		SetLastError(error);
+		return error == ERROR_FILE_NOT_FOUND ? 0 : fail();
+	}
+	do
+	{
+		if (!strcmp(entry.cFileName, ".") || !strcmp(entry.cFileName, ".."))
+			continue;
+		if ((entry.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DEVICE)) ||
+			strlen(source) + strlen(entry.cFileName) + 2 > sizeof(source_child) ||
+			strlen(destination) + strlen(entry.cFileName) + 2 > sizeof(destination_child))
+		{
+			SetLastError(ERROR_ACCESS_DENIED);
+			result = fail();
+			break;
+		}
+		snprintf(source_child, sizeof(source_child), "%s\\%s", source, entry.cFileName);
+		snprintf(destination_child, sizeof(destination_child), "%s\\%s", destination, entry.cFileName);
+		result = entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY
+			? migration_copy_tree(source_child, destination_child)
+			: migration_copy_file(source_child, destination_child);
+		if (result) break;
+	} while (FindNextFileA(find, &entry));
+	if (!result && GetLastError() != ERROR_NO_MORE_FILES)
+		result = fail();
+	error = GetLastError();
+	FindClose(find);
+	CloseHandle(source_handle);
+	CloseHandle(destination_handle);
+	SetLastError(error);
+	return result;
+}
+
+int posix_migrate_save_directory(const char *legacy, const char *destination)
+{
+	char source[MAX_PATH], target[MAX_PATH];
+	DWORD length, attributes;
+	char *cursor;
+	int absent = 0;
+
+	length = GetFullPathNameA(legacy, sizeof(source), source, NULL);
+	if (!length || length >= sizeof(source)) return fail();
+	length = GetFullPathNameA(destination, sizeof(target), target, NULL);
+	if (!length || length >= sizeof(target)) return fail();
+	for (cursor = source; *cursor; cursor++) if (*cursor == '/') *cursor = '\\';
+	for (cursor = target; *cursor; cursor++) if (*cursor == '/') *cursor = '\\';
+	while (strlen(source) > 3 && source[strlen(source) - 1] == '\\') source[strlen(source) - 1] = '\0';
+	while (strlen(target) > 3 && target[strlen(target) - 1] == '\\') target[strlen(target) - 1] = '\0';
+	if (!_stricmp(source, target) ||
+		(!_strnicmp(source, target, strlen(source)) && target[strlen(source)] == '\\') ||
+		(!_strnicmp(source, target, strlen(target)) && source[strlen(target)] == '\\'))
+	{
+		errno = EINVAL;
+		return -1;
+	}
+	attributes = GetFileAttributesA(source);
+	if (attributes == INVALID_FILE_ATTRIBUTES)
+	{
+		DWORD error = GetLastError();
+		if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND) return fail();
+		absent = 1;
+	}
+	if ((!absent && migration_directory_chain(source, 0)) || migration_directory_chain(target, 1))
+		return -1;
+	return absent ? 1 : migration_copy_tree(source, target);
+}
+
 /* ---------- directories */
 
 struct directory

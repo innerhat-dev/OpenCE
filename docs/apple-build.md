@@ -4,7 +4,7 @@ Start here for both macOS and iPhone. All commands run on an Apple Silicon Mac
 from the repository root unless stated otherwise. The Mac game runs natively;
 the iPhone build also uses native ARM code and ANGLE's Metal renderer.
 
-To run the Mac app without compiling, download the
+To run Halo OG on Mac without compiling, download the
 [macOS DMG](../port/macos/README.md#download). Published testing prereleases have
 direct asset links; unpublished CI artifacts require GitHub sign-in and expire.
 The DMG bundles the runtime
@@ -13,8 +13,8 @@ dependencies; only your own original Xbox game data is needed separately.
 ## 1. Clone and install public dependencies
 
 ```sh
-git clone https://github.com/pfista/halo-ce-universal.git
-cd halo-ce-universal
+git clone https://github.com/pfista/halo-og.git
+cd halo-og
 ```
 
 Install Xcode Command Line Tools for a Mac-only build, or full Xcode 26 or later
@@ -69,7 +69,7 @@ Custom Edition, Anniversary and MCC maps are not substitutes.
 The checkout should look like this:
 
 ```text
-halo-ce-universal/
+halo-og/
   assets/
     maps/
       ui.map
@@ -120,7 +120,7 @@ Other OS/device combinations have not been exhaustively tested.
 [Apple regression checks](apple-regression-checks.md) covers source-only CI,
 native menu responsiveness and local gameplay/renderer validation.
 
-Use `main` in [pfista/halo-ce-universal](https://github.com/pfista/halo-ce-universal)
+Use `main` in [pfista/halo-og](https://github.com/pfista/halo-og)
 as the working branch. `origin` points to that fork; `upstream` points to
 [cybersecurity/halo-ce-universal](https://github.com/cybersecurity/halo-ce-universal).
 For a fresh clone, add the upstream remote:
@@ -162,13 +162,18 @@ source uses protocol 11. Fork CI disables the existing upstream self-updater.
 `assets/`, `xbox/`, `original/` and `build/` are ignored, along with disc images,
 map files, SDK archives, Apple signing material and generated Xcode projects.
 Generated game binaries stay under `build/` and must not be committed. The
-[macOS DMG workflow](https://github.com/pfista/halo-ce-universal/actions/workflows/macos-dmg.yml)
+[macOS DMG workflow](https://github.com/pfista/halo-og/actions/workflows/macos-dmg.yml)
 builds a separate downloadable artifact from the committed source and public
 dependencies, with no game data or private SDK inputs. It audits the bundle
 before packaging and retains the DMG artifact for 14 days. This CI download is
 separate from the Developer ID and Sparkle release process. Manual testing
 publication can promote those audited CI outputs to a GitHub prerelease with
 tagged direct download links, without personal signing credentials or game data.
+The Mac download is `Halo-OG-macos-arm64.dmg` containing `Halo OG.app`.
+The bundle identifier remains stable. The app copies prior data from
+`~/Library/Application Support/Halo CE Universal/` into the canonical
+`~/Library/Application Support/Halo OG/` directory, preserving original files
+and any files already present in the new directory.
 
 Device signing settings belong in your local Xcode account and ignored build
 directory. Pass your team ID and bundle identifier on the command line; do not

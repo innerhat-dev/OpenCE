@@ -39,14 +39,14 @@ jobs:
       - name: Check packaging rules
         run: python3 -m unittest tools.test_macos_menu.ReleaseBoundary
       - name: Create DMG
-        run: python3 tools/macos_release.py local-dmg --output dist/macos/Halo-CE-Universal-macos-arm64.dmg
+        run: python3 tools/macos_release.py local-dmg --output dist/macos/Halo-OG-macos-arm64.dmg
       - name: Verify packaged app and record download details
         run: |
-          hdiutil verify dist/macos/Halo-CE-Universal-macos-arm64.dmg
+          hdiutil verify dist/macos/Halo-OG-macos-arm64.dmg
           dmg_mount="$(mktemp -d "$RUNNER_TEMP/halo-dmg.XXXXXX")"
-          hdiutil attach dist/macos/Halo-CE-Universal-macos-arm64.dmg -mountpoint "$dmg_mount" -nobrowse -readonly
+          hdiutil attach dist/macos/Halo-OG-macos-arm64.dmg -mountpoint "$dmg_mount" -nobrowse -readonly
           trap 'hdiutil detach "$dmg_mount"' EXIT
-          bundle="$dmg_mount/Halo CE Universal.app"
+          bundle="$dmg_mount/Halo OG.app"
           codesign --verify --deep --strict "$bundle"
           lipo "$bundle/Contents/MacOS/halo" -verify_arch arm64
           python3 - "$bundle" <<'PY'
@@ -61,14 +61,15 @@ jobs:
           audit_adhoc_signing(app)
           contents = app / "Contents"
           info = plistlib.loads((contents / "Info.plist").read_bytes())
+          assert info["CFBundleName"] == info["CFBundleDisplayName"] == "Halo OG", info
           build_info = (contents / "Resources/BuildInfo.txt").read_text()
           assert f"Source: {os.environ['GITHUB_SHA']}\n" in build_info, build_info
           output = Path("dist/macos")
           (output / "BuildInfo.txt").write_text(build_info)
           notes = (
-              "Halo CE Universal - macOS CI build\n\n"
+              "Halo OG - macOS CI build\n\n"
               f"Requires Apple Silicon and macOS {info['LSMinimumSystemVersion']} or later.\n"
-              "Open the DMG and drag Halo CE Universal to Applications.\n"
+              "Open the DMG and drag Halo OG to Applications.\n"
               "Supply your own original Xbox Halo game data on first launch.\n"
               "No game maps, disc images, or local data paths are included.\n"
               "This build is ad-hoc signed and not notarized; macOS may block first launch.\n"
@@ -82,7 +83,7 @@ jobs:
               summary.write("## macOS download\n\nDownload **halo-macos-arm64-dmg** from this run's Artifacts.\n\n")
               summary.write("```text\n" + notes + "```\n")
           PY
-          (cd dist/macos && shasum -a 256 Halo-CE-Universal-macos-arm64.dmg > SHA256SUMS)
+          (cd dist/macos && shasum -a 256 Halo-OG-macos-arm64.dmg > SHA256SUMS)
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
         with:

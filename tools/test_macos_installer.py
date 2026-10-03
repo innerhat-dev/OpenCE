@@ -3,6 +3,7 @@ from contextlib import redirect_stdout
 import io
 from pathlib import Path
 import plistlib
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -111,6 +112,33 @@ class MacOSInstallerTests(unittest.TestCase):
         for untouched in (missing, malformed, incomplete_xml, wrong_type):
             self.assertTrue(untouched.is_dir())
         self.assertEqual(len(self.unregister.call_args_list), 1)
+
+    def test_rename_archives_legacy_app_and_preserves_independent_data(self):
+        source = make_app(self.macos / "Halo OG.app", marker=b"renamed")
+        old = make_app(self.applications / "Halo CE Universal.app", marker=b"previous")
+        data = self.root / "Library/Application Support/Halo OG"
+        data.mkdir(parents=True)
+        (data / "config.toml").write_bytes(b"custom settings")
+        installed = self.install(source)
+        self.assertEqual((installed / "Contents/payload").read_bytes(), b"renamed")
+        self.assertFalse(old.exists())
+        previous = list(self.applications.glob(".halo-previous-*/Halo CE Universal.app.backup"))
+        self.assertEqual(len(previous), 1)
+        self.assertEqual((previous[0] / "Contents/payload").read_bytes(), b"previous")
+        self.assertEqual((data / "config.toml").read_bytes(), b"custom settings")
+
+    def test_rename_preserves_unrelated_and_malformed_legacy_apps(self):
+        for identity in ("local.unrelated.game", "malformed", "array"):
+            with self.subTest(identity=identity):
+                source = make_app(self.macos / "Halo OG.app")
+                old = make_app(self.applications / "Halo CE Universal.app", identifier=identity)
+                if identity == "malformed":
+                    (old / "Contents/Info.plist").write_bytes(b"broken plist")
+                elif identity == "array":
+                    (old / "Contents/Info.plist").write_bytes(plistlib.dumps([BUNDLE_ID]))
+                self.install(source)
+                self.assertTrue(old.is_dir())
+                shutil.rmtree(old)
 
 
 if __name__ == "__main__":

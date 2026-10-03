@@ -1,4 +1,4 @@
-# Native Apple Silicon build
+# Halo OG native Apple Silicon build
 
 The experimental native Mac build is playable. On 2026-09-27, the main menu,
 campaign loading and gameplay, mouse capture, and audible output were confirmed
@@ -12,8 +12,8 @@ special entitlement, or security-setting change is required for this local build
 ## Download
 
 For shared testing, use a published tag in the
-[testing releases](https://github.com/pfista/halo-ce-universal/releases) and
-download `Halo-CE-Universal-macos-arm64.dmg` directly from its assets. Testing
+[testing releases](https://github.com/pfista/halo-og/releases) and
+download `Halo-OG-macos-arm64.dmg` directly from its assets. Testing
 prereleases have permanent URLs containing the tag and require no GitHub sign-in.
 See [manual testing publication](../../docs/macos-menu-and-releases.md#manual-testing-prerelease)
 for the publishing workflow. No testing prerelease is created automatically.
@@ -21,13 +21,13 @@ for the publishing workflow. No testing prerelease is created automatically.
 For an unpublished CI build:
 
 Sign in to GitHub and open the
-[macOS DMG workflow](https://github.com/pfista/halo-ce-universal/actions/workflows/macos-dmg.yml).
+[macOS DMG workflow](https://github.com/pfista/halo-og/actions/workflows/macos-dmg.yml).
 Choose a successful run, then download **halo-macos-arm64-dmg** from its
 **Artifacts** section. Builds run on code pushes to `main` and can also be
 started manually. Artifacts expire after 14 days.
 
-Extract the downloaded ZIP and open `Halo-CE-Universal-macos-arm64.dmg`.
-Drag **Halo CE Universal.app** onto the Applications shortcut, then launch it
+Extract the downloaded ZIP and open `Halo-OG-macos-arm64.dmg`.
+Drag **Halo OG.app** onto the Applications shortcut, then launch it
 from Applications. `README.txt` records that build's minimum macOS version and
 installation steps. `BuildInfo.txt` records the source revision and guest hash;
 `SHA256SUMS` lets you verify the DMG with `shasum -a 256 -c SHA256SUMS` from the
@@ -52,7 +52,7 @@ and build checks; play between platforms still needs testing.
 
 ## Launch
 
-Open `build/macos/Halo CE Universal.app` in Finder. There is no automatic timeout.
+Open `build/macos/Halo OG.app` in Finder. There is no automatic timeout.
 The app includes SDL3, ANGLE, Sparkle, and the compiled game image. It remembers
 your chosen local data location. Development builds can fall back to this
 checkout's `assets/` directory. The helmet menu icon opens Settings, changes
@@ -80,8 +80,13 @@ menu dimming and flat backgrounds cover the whole display.
 Saves, cache files, `config.toml`, and `halo.log` are under:
 
 ```text
-~/Library/Application Support/Halo CE Universal/
+~/Library/Application Support/Halo OG/
 ```
+
+On first launch, prior settings, saves and managed game data are copied from
+`~/Library/Application Support/Halo CE Universal/`. The original files remain
+in place, and existing files under Halo OG are preserved. The bundle identifier
+remains stable.
 
 Keyboard/mouse controls:
 
@@ -111,7 +116,7 @@ See [native settings](../../docs/native-settings.md) for live Audio/Video option
 in the main and pause menus.
 
 All keyboard/controller actions and mouse buttons can be changed in the
-`[bindings]` section of `~/Library/Application Support/Halo CE Universal/config.toml`.
+`[bindings]` section of `~/Library/Application Support/Halo OG/config.toml`.
 The first launch adds any missing bindings with their defaults, preserving
 existing settings, bindings and comments. Quit Halo, edit the file, and restart
 to apply changes. These bindings emit Xbox controller buttons, so an in-game
@@ -169,7 +174,7 @@ and accepts Discord game invitations. Hosting a System Link game publishes
 to make it visible. The installed app handles both `halo://` links and the
 upstream Discord application's launch scheme, so an invite can start Halo
 when it is closed. Ordinary campaign/client gameplay does not publish activity.
-This branch uses multiplayer protocol 9 and 64-digit invite codes; all players
+This branch uses multiplayer protocol 11 and 64-digit invite codes; all players
 need matching builds. Command-W is ignored while playing, and Command-Q or
 the window's close button quits.
 
@@ -183,7 +188,7 @@ From the repository root:
 
 ```sh
 python3 tools/macos_build.py
-open "build/macos/Halo CE Universal.app"
+open "build/macos/Halo OG.app"
 ```
 
 To build and install a single copy in Applications for Spotlight:
@@ -195,7 +200,7 @@ python3 tools/macos_build.py --install
 To build without local game data, use `--no-data-path --install` instead;
 the app will ask for a disc image or game folder on first launch.
 
-Then press Command-Space, type `Halo CE Universal`, and press Return. An
+Then press Command-Space, type `Halo OG`, and press Return. An
 optional directory, such as `--install ~/Applications`, installs for just your
 account. Installation verifies the signed bundle before replacing a previous
 copy, preserves the previous app in a hidden backup directory, and registers

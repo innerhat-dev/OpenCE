@@ -6,7 +6,9 @@ the host ABI and _FILE_OFFSET_BITS=64.
 */
 
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
@@ -127,6 +129,266 @@ int posix_make_directory(const char *path)
 	return mkdir(path, 0755);
 #endif
 }
+
+#if !defined(__ANDROID__) && !defined(HALO_MACOS)
+/* ---------- desktop save migration (host ABI only) */
+
+/* Open each component itself; a linked folder cannot redirect a migration.
+The user-selected HOME/XDG path may be relative, as the old defaults allowed. */
+static int save_open_directory(const char *path, int create)
+{
+	const char *cursor = path;
+	int directory = open(*path == '/' ? "/" : ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+
+	if (directory < 0)
+		return -1;
+	while (*cursor)
+	{
+		char component[256];
+		size_t length;
+		int next;
+
+		while (*cursor == '/') cursor++;
+		length = strcspn(cursor, "/");
+		if (!length) break;
+		if (length >= sizeof(component))
+		{
+			close(directory);
+			errno = ENAMETOOLONG;
+			return -1;
+		}
+		memcpy(component, cursor, length);
+		component[length] = 0;
+		cursor += length;
+		next = openat(directory, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+		if (next < 0 && errno == ENOENT && create)
+		{
+			if (mkdirat(directory, component, 0700) != 0 && errno != EEXIST)
+			{
+				int error = errno;
+				close(directory);
+				errno = error;
+				return -1;
+			}
+			next = openat(directory, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+		}
+		if (next < 0)
+		{
+			int error = errno;
+			close(directory);
+			errno = error;
+			return -1;
+		}
+		close(directory);
+		directory = next;
+	}
+	return directory;
+}
+
+static int save_source_unchanged(const struct stat *before, const struct stat *after)
+{
+	if (before->st_dev != after->st_dev || before->st_ino != after->st_ino ||
+		before->st_size != after->st_size || before->st_mtime != after->st_mtime || before->st_ctime != after->st_ctime)
+		return 0;
+#ifdef __APPLE__
+	return before->st_mtimespec.tv_nsec == after->st_mtimespec.tv_nsec &&
+		before->st_ctimespec.tv_nsec == after->st_ctimespec.tv_nsec;
+#else
+	return before->st_mtim.tv_nsec == after->st_mtim.tv_nsec &&
+		before->st_ctim.tv_nsec == after->st_ctim.tv_nsec;
+#endif
+}
+
+static int save_destination_regular(int directory, const char *name)
+{
+	struct stat information;
+
+	if (fstatat(directory, name, &information, AT_SYMLINK_NOFOLLOW) != 0)
+		return -1;
+	if (!S_ISREG(information.st_mode))
+	{
+		errno = EINVAL;
+		return -1;
+	}
+	return 0;
+}
+
+/* Xbox path lookup ignores case. Prefer an existing exact spelling, then
+its existing case-insensitive match, so a copied older profile cannot win by
+creating a second spelling beside a newer profile. */
+static int save_destination_name(int directory, const char *name, char *result, size_t size)
+{
+	struct stat information;
+	DIR *stream;
+	struct dirent *entry;
+	int descriptor, error;
+
+	if (strlen(name) + 1 > size) { errno = ENAMETOOLONG; return -1; }
+	strcpy(result, name);
+	if (fstatat(directory, name, &information, AT_SYMLINK_NOFOLLOW) == 0) return 0;
+	if (errno != ENOENT) return -1;
+	/* A fresh directory description starts at the beginning on every lookup. */
+	descriptor = openat(directory, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	if (descriptor < 0) return -1;
+	stream = fdopendir(descriptor);
+	if (!stream) { error = errno; close(descriptor); errno = error; return -1; }
+	for (;;)
+	{
+		errno = 0;
+		entry = readdir(stream);
+		if (!entry) break;
+		if (!strcasecmp(entry->d_name, name))
+		{
+			if (strlen(entry->d_name) + 1 > size) { errno = ENAMETOOLONG; break; }
+			strcpy(result, entry->d_name);
+			break;
+		}
+	}
+	const int saved_error = errno;
+	closedir(stream);
+	errno = saved_error;
+	return saved_error ? -1 : 0;
+}
+
+static int save_copy_file(int source_directory, int destination_directory, const char *name, const char *destination_name)
+{
+	static unsigned counter;
+	char temporary[96], buffer[65536];
+	struct stat before, after;
+	int source = -1, destination = -1, result = -1, temporary_created = 0, attempt, error;
+	ssize_t amount;
+	off_t copied = 0;
+
+	/* Even a source changed into a FIFO cannot block this startup copy. */
+	source = openat(source_directory, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+	if (source < 0) goto done;
+	if (fstat(source, &before) != 0) goto done;
+	if (!S_ISREG(before.st_mode)) { errno = EINVAL; goto done; }
+	if (save_destination_regular(destination_directory, destination_name) == 0) { result = 0; goto done; }
+	if (errno != ENOENT) goto done;
+	for (attempt = 0; attempt < 32; attempt++)
+	{
+		snprintf(temporary, sizeof(temporary), ".halo-og-migration-%ld-%u.partial", (long)getpid(), ++counter);
+		destination = openat(destination_directory, temporary,
+			O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+		if (destination >= 0) break;
+		if (errno != EEXIST) goto done;
+	}
+	if (destination < 0) goto done;
+	temporary_created = 1;
+	for (;;)
+	{
+		amount = read(source, buffer, sizeof(buffer));
+		if (amount < 0 && errno == EINTR) continue;
+		if (amount < 0) goto done;
+		if (!amount) break;
+		copied += amount;
+		for (ssize_t written = 0; written < amount;)
+		{
+			ssize_t part = write(destination, buffer + written, (size_t)(amount - written));
+			if (part < 0 && errno == EINTR) continue;
+			if (part <= 0) { if (!part) errno = EIO; goto done; }
+			written += part;
+		}
+	}
+	if (fstat(source, &after) != 0) goto done;
+	if (copied != before.st_size || !save_source_unchanged(&before, &after)) { errno = EAGAIN; goto done; }
+	if (fsync(destination) != 0) goto done;
+	if (close(destination) != 0) { destination = -1; goto done; }
+	destination = -1;
+	/* linkat is atomic and exclusive: even a racing game/publisher's file wins
+	unchanged. Unsupported file systems cause visible legacy fallback. */
+	if (linkat(destination_directory, temporary, destination_directory, destination_name, 0) != 0)
+	{
+		if (errno != EEXIST || save_destination_regular(destination_directory, destination_name) != 0) goto done;
+	}
+	result = 0;
+done:
+	error = errno;
+	if (destination >= 0) close(destination);
+	if (source >= 0) close(source);
+	if (temporary_created) unlinkat(destination_directory, temporary, 0);
+	errno = error;
+	return result;
+}
+
+static int save_copy_tree(int source, int destination, unsigned depth)
+{
+	DIR *stream;
+	struct dirent *entry;
+	int duplicate, result = -1, error;
+
+	if (depth >= 64) { errno = ELOOP; return -1; }
+	duplicate = dup(source);
+	if (duplicate < 0) return -1;
+	stream = fdopendir(duplicate);
+	if (!stream) { error = errno; close(duplicate); errno = error; return -1; }
+	for (;;)
+	{
+		struct stat information;
+		char destination_name[256];
+
+		errno = 0;
+		entry = readdir(stream);
+		if (!entry) { if (!errno) result = 0; break; }
+		if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) continue;
+		if (fstatat(source, entry->d_name, &information, AT_SYMLINK_NOFOLLOW) != 0) break;
+		if (save_destination_name(destination, entry->d_name, destination_name, sizeof(destination_name)) != 0) break;
+		if (S_ISDIR(information.st_mode))
+		{
+			int child_source = openat(source, entry->d_name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+			int child_destination = -1;
+			int copied;
+
+			if (child_source < 0) break;
+			if (mkdirat(destination, destination_name, 0700) == 0 || errno == EEXIST)
+				child_destination = openat(destination, destination_name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+			if (child_destination < 0) { error = errno; close(child_source); errno = error; break; }
+			copied = save_copy_tree(child_source, child_destination, depth + 1);
+			error = errno;
+			close(child_source);
+			close(child_destination);
+			errno = error;
+			if (copied != 0) break;
+		}
+		else if (!S_ISREG(information.st_mode)) { errno = EINVAL; break; }
+		else if (save_copy_file(source, destination, entry->d_name, destination_name) != 0) break;
+	}
+	error = errno;
+	closedir(stream);
+	errno = error;
+	return result;
+}
+
+int posix_migrate_save_directory(const char *legacy, const char *destination)
+{
+	int source, absent;
+	int target, result, error;
+	size_t legacy_length = strlen(legacy), destination_length = strlen(destination);
+
+	/* The caller uses sibling defaults. Also refuse accidental direct calls
+	with overlapping trees before creating anything inside a legacy root. */
+	if (!strcmp(legacy, destination) ||
+		(legacy_length < destination_length && !strncmp(legacy, destination, legacy_length) && destination[legacy_length] == '/') ||
+		(destination_length < legacy_length && !strncmp(legacy, destination, destination_length) && legacy[destination_length] == '/'))
+	{
+		errno = EINVAL;
+		return -1;
+	}
+	source = save_open_directory(legacy, 0);
+	absent = source < 0 && errno == ENOENT;
+
+	if (source < 0 && !absent) return -1;
+	target = save_open_directory(destination, 1);
+	if (target < 0) { error = errno; if (source >= 0) close(source); errno = error; return -1; }
+	result = absent ? 1 : save_copy_tree(source, target, 0);
+	error = errno;
+	if (source >= 0) close(source);
+	close(target);
+	errno = error;
+	return result;
+}
+#endif
 
 #ifdef __LP64__
 /* The Android port calls this file from 32-bit guest code, which cannot

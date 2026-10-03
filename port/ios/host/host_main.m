@@ -19,7 +19,7 @@ void host_fatal(const char *format, ...) {
     char message[2048];
     va_list a; va_start(a, format); vsnprintf(message, sizeof(message), format, a); va_end(a);
     host_logf(HOST_LOG_ERROR, "%s", message);
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Halo could not start", message, NULL);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Halo OG could not start", message, NULL);
     exit(1);
 }
 void host_abort(const char *reason) { host_fatal("Game stopped: %s", reason); }
@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
         if (profile && !strcmp(profile, "1"))
             setenv("HALO_PERF_LOG", [[saves stringByAppendingPathComponent:@"frames.csv"] fileSystemRepresentation], 1);
         if (![files fileExistsAtPath:[data stringByAppendingPathComponent:@"maps/ui.map"]])
-            host_fatal("Copy your Xbox Halo maps folder into Halo's GameData folder using Files or Finder, then reopen the app.");
+            host_fatal("Copy your Xbox Halo maps folder into Halo OG's GameData folder using Files or Finder, then reopen the app.");
     }
     host_install_signal_handlers();
     setenv("HALO_DATA_ROOT", data_root, 1); setenv("HALO_SAVE_ROOT", save_root, 1);

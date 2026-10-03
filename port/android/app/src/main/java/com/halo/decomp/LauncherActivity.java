@@ -133,7 +133,7 @@ public class LauncherActivity extends Activity {
         layout.setBackgroundColor(Color.rgb(12, 16, 20));
 
         TextView title = new TextView(this);
-        title.setText("Halo needs its game data");
+        title.setText("Halo OG needs its game data");
         title.setTextColor(Color.WHITE);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
         title.setGravity(Gravity.CENTER);

@@ -15,6 +15,12 @@ import re
 import sys
 
 
+# This generator serves Android, macOS and iOS. It scans declarations rather
+# than preprocessing C, so desktop-only helpers must never enter their guest
+# ABI or native import table, even when posix.h guards those declarations.
+DESKTOP_ONLY_HELPERS = frozenset({"posix_migrate_save_directory"})
+
+
 def main():
     header, output, imports = sys.argv[1:4]
     text = open(header, encoding="utf-8").read()
@@ -30,6 +36,8 @@ def main():
     ]
     names = []
     for ret, name, params in prototypes:
+        if name in DESKTOP_ONLY_HELPERS:
+            continue
         ret = " ".join(ret.split())
         params = " ".join(params.split())
         args = []

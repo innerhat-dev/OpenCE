@@ -30,7 +30,9 @@ ANGLE = Path(os.environ.get("HALO_MACOS_ANGLE_DIR", str(BUILD / "angle/dist")))
 GL = BUILD / "toolchain/gl"
 APP_ICON = "AppIcon.icns"
 APP_VERSION = "0.3.0"
-APP_BUILD = "8"
+APP_BUILD = "11"
+APP_NAME = "Halo OG"
+LEGACY_APP_NAMES = ("Halo CE Universal.app",)
 
 
 def run(*args):
@@ -147,7 +149,7 @@ def package(data_root, *, sign_identity="-", release=False, version=APP_VERSION,
             raise RuntimeError("Set Halo's update feed and public key before creating a release")
         if not sign_identity.startswith("Developer ID Application:"):
             raise RuntimeError("A release needs an explicit Developer ID Application signing identity")
-    destination = BUILD / "Halo CE Universal.app"
+    destination = BUILD / (APP_NAME + ".app")
     with tempfile.TemporaryDirectory(prefix=".halo-package-", dir=BUILD) as temporary:
         staged = Path(temporary) / destination.name
         package_into(staged, data_root, sign_identity=sign_identity, release=release, version=version, build=build)
@@ -224,7 +226,7 @@ def package_into(app, data_root, *, sign_identity, release, version, build):
     package_icon(resources)
     info = {
         "CFBundleExecutable": "halo", "CFBundleIdentifier": "local.halo.ce-universal",
-        "CFBundleName": "Halo CE Universal", "CFBundleDisplayName": "Halo CE Universal",
+        "CFBundleName": APP_NAME, "CFBundleDisplayName": APP_NAME,
         "CFBundleIconFile": APP_ICON,
         "CFBundlePackageType": "APPL", "CFBundleShortVersionString": version,
         "CFBundleVersion": build, "LSMinimumSystemVersion": minimum_macos_version([
@@ -256,7 +258,7 @@ def package_into(app, data_root, *, sign_identity, release, version, build):
         revision = "unknown"
     guest_hash = hashlib.sha256((resources / "halo_guest.elf").read_bytes()).hexdigest()
     (resources / "BuildInfo.txt").write_text(
-        f"Halo CE Universal {version} (build {build})\n"
+        f"{APP_NAME} {version} (build {build})\n"
         f"Source: {revision}\nGuest SHA-256: {guest_hash}\n")
     licenses = resources / "Licenses"
     licenses.mkdir(exist_ok=True)
@@ -344,12 +346,33 @@ def install_app(app, applications):
                 previous.rmdir()
                 run(register, "-f", destination)
             raise
+    # Archive this fork's previous display name after the new app is verified
+    # and installed. Preserve the old bundle and all independent user data.
+    if app.name == APP_NAME + ".app":
+        for legacy_name in LEGACY_APP_NAMES:
+            legacy = applications / legacy_name
+            info_path = legacy / "Contents/Info.plist"
+            if not info_path.is_file():
+                continue
+            try:
+                with info_path.open("rb") as stream:
+                    info = plistlib.load(stream)
+            except (OSError, plistlib.InvalidFileException, ValueError, ExpatError):
+                continue
+            if isinstance(info, dict) and info.get("CFBundleIdentifier") == "local.halo.ce-universal":
+                archive = Path(tempfile.mkdtemp(prefix=".halo-previous-", dir=applications))
+                unregister(legacy)
+                legacy.rename(archive / (legacy.name + ".backup"))
     # Older installers kept launchable apps in these folders. macOS follows
     # their file identities when the installed copy is renamed to a backup.
-    for prior in applications.glob(".halo-previous-*/" + app.name):
-        with (prior / "Contents/Info.plist").open("rb") as stream:
-            info = plistlib.load(stream)
-        if info.get("CFBundleIdentifier") == "local.halo.ce-universal":
+    for prior in (path for name in dict.fromkeys((app.name, *LEGACY_APP_NAMES))
+                  for path in applications.glob(".halo-previous-*/" + name)):
+        try:
+            with (prior / "Contents/Info.plist").open("rb") as stream:
+                info = plistlib.load(stream)
+        except (OSError, plistlib.InvalidFileException, ValueError, ExpatError):
+            continue
+        if isinstance(info, dict) and info.get("CFBundleIdentifier") == "local.halo.ce-universal":
             unregister(prior)
             prior.rename(prior.with_name(prior.name + ".backup"))
     # Spotlight can rediscover unregistered development bundles, and launching
@@ -421,7 +444,7 @@ def main():
     package(None if args.no_data_path or args.release else args.data_root,
             sign_identity=args.sign_identity, release=args.release, version=args.version, build=args.build_number)
     if args.install:
-        install_app(BUILD / "Halo CE Universal.app", args.install)
+        install_app(BUILD / (APP_NAME + ".app"), args.install)
 
 
 if __name__ == "__main__":

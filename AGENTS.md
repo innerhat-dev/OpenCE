@@ -2,10 +2,12 @@
 
 ## Project direction
 
-This is `pfista/halo-ce-universal`, the Xbox-derived Apple port. Preserve original
+This is **Halo OG**, `pfista/halo-og`, a cross-platform Xbox-derived port. Preserve original
 Xbox Halo: Combat Evolved NTSC gameplay and presentation while improving native
 performance, portability and online play. Community maps are separate content
-imports; they do not authorize adopting another engine's competitive rules.
+imports. Custom maps and explicitly selected competitive options serve serious
+OG Halo players; they do not authorize adopting another engine's rules as the
+original-game baseline. Keep optional host tools separate and off by default.
 
 ## Reviewing cybersecurity upstream
 
@@ -51,7 +53,7 @@ to an Xbox executable, or a successful smoke test as proof of full retail parity
 ## Local Mac build installation
 
 After each successful local macOS app build, install the built app into
-`/Applications/Halo CE Universal.app`. This is the user's default for this
+`/Applications/Halo OG.app`. This is the user's default for this
 project. Use the build script's `--install` option or its `install_app` helper
 for an already-built app; the installer verifies the bundle and preserves the
 previous copy. Verify the installed signature and `Contents/Resources/BuildInfo.txt`

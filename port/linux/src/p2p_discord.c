@@ -325,7 +325,7 @@ void p2p_discord_update(void)
 			running; the game then receives the invite once connected */
 			snprintf(scheme, sizeof(scheme), "discord-%s", application);
 			/* (it lets go of the p2p lock while it may wait) */
-			p2p_register_url_scheme(scheme, "Halo: Combat Evolved");
+			p2p_register_url_scheme(scheme, "Halo OG");
 		}
 	}
 	if (!discord.enabled)

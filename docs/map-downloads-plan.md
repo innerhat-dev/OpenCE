@@ -46,6 +46,13 @@ The canonical macOS location is outside the app bundle:
     Downloads/<hash>-<UUID>.partial
 ```
 
+On first launch the app copies the legacy `Halo CE Universal` Application
+Support tree into `Halo OG`, including settings, profiles, saves and maps.
+Original files and existing destination files are preserved. Managed selections
+are repointed only after their copied targets are complete. A copy failure
+stops launch with an error so an empty new directory cannot hide prior settings.
+Explicit development save-root overrides are outside this migration.
+
 The source folder and prior successful imports are preserved. Copy failure,
 validation failure or cancellation before copying leaves the prior selection
 unchanged. Original ISO bytes are not archived automatically. Existing

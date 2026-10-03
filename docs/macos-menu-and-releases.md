@@ -1,4 +1,4 @@
-# Mac menu, local data and releases
+# Halo OG Mac menu, local data and releases
 
 The native AppKit menu runs in the game's process. Its monochrome helmet opens
 Settings, changes fullscreen immediately, selects game data, opens saves and
@@ -9,12 +9,12 @@ icon is retained; `port/macos/Helmet.svg` generates a vector template PDF.
 
 ## GitHub Actions DMG
 
-The [macOS DMG workflow](https://github.com/pfista/halo-ce-universal/actions/workflows/macos-dmg.yml)
+The [macOS DMG workflow](https://github.com/pfista/halo-og/actions/workflows/macos-dmg.yml)
 builds an Apple Silicon app on code pushes to `main` and manual runs. Sign in to
 GitHub, choose a successful run, and download **halo-macos-arm64-dmg** under
 **Artifacts**. Artifacts are retained for 14 days and contain:
 
-- `Halo-CE-Universal-macos-arm64.dmg`, with the app and an Applications shortcut.
+- `Halo-OG-macos-arm64.dmg`, with `Halo OG.app` and an Applications shortcut.
 - `README.txt`, with the build's minimum macOS version and installation steps.
 - `BuildInfo.txt`, identifying the source revision and compiled guest hash.
 - `SHA256SUMS`, for verifying the DMG after extracting the artifact ZIP.
@@ -23,7 +23,7 @@ The current bundled dependencies require macOS 26 or later on Apple Silicon.
 Use the minimum macOS version recorded in the artifact's `README.txt` for that
 build.
 No build tools are needed to run the download. Open the DMG, drag the app into
-Applications, and supply your own original Xbox game data on first launch.
+Applications as **Halo OG.app**, and supply your own original Xbox game data on first launch.
 These are ad hoc signed, unnotarized builds; see
 [Mac installation](../port/macos/README.md#download) for the first-launch steps.
 
@@ -38,6 +38,15 @@ Keychain credentials. Before upload, every bundled Mach-O architecture must have
 an ad hoc signature with no certificate authority or team identifier. The app
 uses the generic `local.halo.ce-universal` bundle identifier. Third-party helper
 identifiers and capability entitlements remain those of the pinned dependency.
+The app's displayed name is **Halo OG** and its bundle identifier remains stable.
+The canonical data directory is `~/Library/Application Support/Halo OG/`.
+Prior files are copied from `~/Library/Application Support/Halo CE Universal/`
+without deleting the original files or replacing files already in the new directory.
+Existing Halo OG settings take precedence. Copied settings point to copied managed
+data when that selection is complete; a conflicting selection continues using
+its intact legacy path. External game folders remain selected in place.
+If migration cannot complete, the app reports the error and stops launch so it
+can retry safely next time.
 
 ## Manual testing prerelease
 
@@ -63,7 +72,7 @@ workflows on latest main if needed.
 
 The prerelease includes:
 
-- `Halo-CE-Universal-macos-arm64.dmg`, `macos-README.txt` and `macos-BuildInfo.txt`.
+- `Halo-OG-macos-arm64.dmg`, `macos-README.txt` and `macos-BuildInfo.txt`.
 - `halo-windows-release.zip`, `halo-linux-release.zip` and `halo-android-release.zip`.
 - `SHA256SUMS` and `provenance.json` with source SHA, network protocol, CI run IDs,
   artifact IDs and SHA-256 hashes. Debug builds are omitted.
@@ -71,7 +80,7 @@ The prerelease includes:
 For a tag such as `test-v0.3.0-net11`, the direct Mac download is:
 
 ```text
-https://github.com/pfista/halo-ce-universal/releases/download/test-v0.3.0-net11/Halo-CE-Universal-macos-arm64.dmg
+https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11/Halo-OG-macos-arm64.dmg
 ```
 
 The URL becomes usable only after that tag is published. Public release assets
@@ -119,7 +128,7 @@ python3 tools/macos_build.py --host-only --no-data-path
 python3 tools/macos_release.py local-dmg
 ```
 
-The resulting `build/macos/Halo-0.3.0-local.dmg` is a local test artifact. It has
+The resulting `build/macos/Halo-OG-0.3.0-local.dmg` is a local test artifact. It has
 no notarization ticket and is not a verified public release. It includes an
 Applications shortcut and the app, without maps, ISOs or a local checkout path.
 
@@ -130,7 +139,7 @@ works). Nothing is downloaded or uploaded by this selection. Disc imports copy
 maps to a fresh directory in:
 
 ```text
-~/Library/Application Support/Halo CE Universal/Game Data/<import-id>/maps/
+~/Library/Application Support/Halo OG/Game Data/<import-id>/maps/
 ```
 
 Header checks require a supported Xbox release, including `ui.map` and `a10.map`.
@@ -147,7 +156,7 @@ See [managed storage and map downloads](map-downloads-plan.md) for the catalog,
 missing-map readiness flow and hosting configuration. The selected publisher
 is `https://dl.oghalo.com`; downloads default off until the player opts in.
 
-`macos-settings.json` in the existing Application Support directory records the
+`macos-settings.json` in the Halo OG Application Support directory records the
 data/source-image paths and fullscreen preference. Saves, profiles, cache and
 `config.toml` stay in their established locations outside the signed app.
 Settings, file-picker sheets and disc imports return control to SDL while the

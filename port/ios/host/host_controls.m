@@ -139,7 +139,7 @@ void host_ios_controls_initialize(SDL_Window *window) {
     descriptor.naxes = SDL_GAMEPAD_AXIS_COUNT; descriptor.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
     descriptor.axis_mask = (1u << SDL_GAMEPAD_AXIS_COUNT) - 1;
     descriptor.button_mask = (1u << SDL_GAMEPAD_BUTTON_COUNT) - 1;
-    descriptor.name = "Halo Touch Controls";
+    descriptor.name = "Halo OG Touch Controls";
     SDL_JoystickID id = SDL_AttachVirtualJoystick(&descriptor);
     touch_pad = SDL_OpenJoystick(id);
     if (!touch_pad) { host_logf(HOST_LOG_WARN, "Touch controls: %s", SDL_GetError()); return; }

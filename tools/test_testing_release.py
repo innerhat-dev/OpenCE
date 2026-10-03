@@ -95,6 +95,22 @@ class TestingReleaseTests(unittest.TestCase):
         self.assertEqual(release.verify_candidate(self.api, release.REPOSITORY, SHA, TAG, self.directory), record)
         self.assertEqual({p.name for p in self.directory.iterdir()}, release.ASSETS | {"release-notes.md"})
 
+    def test_release_setup_links_match_selected_source_and_verified_map(self):
+        self.prepare()
+        notes = (self.directory / "release-notes.md").read_text()
+        source = f"https://github.com/{release.REPOSITORY}/blob/{SHA}"
+        for path in ("README.md", "docs/playtesting.md", "port/linux/README.md#requirements"):
+            self.assertIn(f"({source}/{path})", notes)
+        self.assertIn(f"[downrush.map]({release.DOWNRUSH_URL})", notes)
+        self.assertIn(f"`{release.DOWNRUSH_SHA256}`", notes)
+        self.assertIn("Downloads default off", notes)
+        self.assertIn("~/Library/Application Support/Halo OG/", notes)
+        self.assertIn("physical cross-platform and Internet/NAT play still need testing", notes)
+        self.assertNotIn("/blob/main/", notes)
+        (self.directory / "release-notes.md").write_text(notes.replace(SHA, "b" * 40))
+        with self.assertRaisesRegex(RuntimeError, "notes changed"):
+            release.verify_candidate(self.api, release.REPOSITORY, SHA, TAG, self.directory)
+
     def test_runs_from_other_source_branch_repository_or_event_are_rejected(self):
         run = self.api.runs["build.yml"]
         for field, value in (("head_sha", "b" * 40), ("head_branch", "other"), ("conclusion", "failure"),
@@ -131,6 +147,20 @@ class TestingReleaseTests(unittest.TestCase):
                 destination.mkdir()
                 with self.assertRaisesRegex(RuntimeError, expected):
                     release.collect_mac(archive_path, destination, SHA)
+
+    def test_legacy_mac_filename_cannot_be_published_as_the_renamed_app(self):
+        legacy = "Halo-CE-Universal-macos-arm64.dmg"
+        archive_path = self.root / "legacy-mac.zip"
+        with zipfile.ZipFile(self.api.archives[10]) as original, zipfile.ZipFile(archive_path, "w") as output:
+            for name in original.namelist():
+                data = original.read(name)
+                if name == "SHA256SUMS":
+                    data = data.replace(release.DMG.encode(), legacy.encode())
+                output.writestr(legacy if name == release.DMG else name, data)
+        self.directory.mkdir()
+        with self.assertRaisesRegex(RuntimeError, "Unexpected files"):
+            release.collect_mac(archive_path, self.directory, SHA)
+        self.assertEqual(list(self.directory.iterdir()), [])
 
     def test_restricted_and_escaping_archive_entries_are_rejected(self):
         for name in ("../escape", "/absolute", "maps/ui.map", "disc.ISO", "signing.p12"):

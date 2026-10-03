@@ -410,7 +410,7 @@ static int updater_download_zip(const char *zip_path, char *error, size_t error_
 		snprintf(error, error_size, "could not start the download");
 		return 0;
 	}
-	window = SDL_CreateWindow("Halo", 640, 150, 0);
+	window = SDL_CreateWindow("Halo OG", 640, 150, 0);
 	if (window)
 		renderer = SDL_CreateRenderer(window, SDL_SOFTWARE_RENDERER);
 	while (!finished)

@@ -159,7 +159,9 @@ static const struct config_setting config_settings[] =
 		"single quotes: 'C:\\Games\\Halo'." },
 	{ "paths.saves", _config_string, "\"\"", "HALO_SAVE_ROOT", _environment_value, _platform_desktop,
 		"Where saved games and profiles go; empty for the usual place\n"
-		"(~/.local/share/halo-linux, or %APPDATA%\\halo on Windows)." },
+		"(~/.local/share/halo-og, or %APPDATA%\\Halo OG on Windows).\n"
+		"Legacy default saves are copied without replacing existing files;\n"
+		"if migration fails, the game reports it and keeps the legacy folder." },
 
 	{ "network.address", _config_string, "\"\"", "HALO_NET_ADDRESS", _environment_value, _platform_all,
 		"This machine's IPv4 address for system link, for a machine on several\n"

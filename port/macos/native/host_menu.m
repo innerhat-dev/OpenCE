@@ -38,13 +38,14 @@
 - (void)importImage:(NSURL *)image completion:(void (^)(BOOL))completion;
 - (void)acceptFolder:(NSURL *)folder completion:(void (^)(BOOL))completion;
 - (void)copyFolder:(NSURL *)folder completion:(void (^)(BOOL))completion;
+- (BOOL)migrateSupportIfNeeded:(NSURL *)support;
 @end
 
 static HaloMenu *menu;
 
 static void showError(NSError *error) {
     NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = @"Halo could not use that setting";
+    alert.messageText = @"Halo OG could not use that setting";
     alert.informativeText = error.localizedDescription ?: @"Please try again.";
     if (menu.gameRunning) {
         [menu showSettings:nil];
@@ -93,7 +94,59 @@ static void importProgress(void *context, const char *file, unsigned long long d
     });
 }
 
+static void migrationProgress(void *context, const char *file, unsigned long long done, unsigned long long total) {
+    struct import_progress *progress = context;
+    NSTextField *progressLabel = progress->label;
+    NSProgressIndicator *bar = progress->bar;
+    NSString *name = [NSString stringWithUTF8String:file] ?: @"Saved data";
+    dispatch_async(dispatch_get_main_queue(), ^{
+        progressLabel.stringValue = total ? [NSString stringWithFormat:@"%@ — %llu of %llu MB", name, done >> 20, total >> 20] : name;
+        bar.indeterminate = !total;
+        if (total) { [bar stopAnimation:nil]; bar.doubleValue = 100.0 * done / total; }
+        else [bar startAnimation:nil];
+    });
+}
+
 @implementation HaloMenu
+- (BOOL)migrateSupportIfNeeded:(NSURL *)support {
+    if (!HaloSupportDirectoryNeedsMigration(support)) return YES;
+    self.importing = YES;
+    NSURL *parent = [NSURL fileURLWithPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support"] isDirectory:YES];
+    NSURL *legacy = [parent URLByAppendingPathComponent:@"Halo CE Universal" isDirectory:YES];
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 520, 150)
+        styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
+    window.title = @"Preparing Halo OG Data";
+    window.releasedWhenClosed = NO;
+    label(window.contentView, @"Copying your saved data into Halo OG’s Application Support folder.", NSMakeRect(24, 103, 472, 25), NO);
+    NSTextField *status = label(window.contentView, @"Your original files and existing Halo OG files stay in place.", NSMakeRect(24, 73, 472, 22), YES);
+    NSProgressIndicator *bar = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(24, 35, 472, 18)];
+    bar.style = NSProgressIndicatorStyleBar;
+    bar.indeterminate = YES;
+    [window.contentView addSubview:bar];
+    [window center]; [window makeKeyAndOrderFront:nil]; [bar startAnimation:nil];
+    __block struct import_progress progress = {.label = status, .bar = bar};
+    __block BOOL finished = NO, success = NO;
+    __block NSError *migrationError = nil;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        @autoreleasepool {
+            BOOL copied = HaloMigrateLegacySupportDirectory(legacy, support, migrationProgress, &progress, &migrationError);
+            dispatch_async(dispatch_get_main_queue(), ^{ success = copied; finished = YES; });
+        }
+    });
+    /* This is before the game starts; keep the launch window responsive while
+       copying large imports, with no simulation or network tick running yet. */
+    while (!finished) [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+    [bar stopAnimation:nil]; [window close];
+    self.importing = NO;
+    if (!success) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"Halo OG could not finish copying your saved data";
+        alert.informativeText = [NSString stringWithFormat:@"%@\n\nThe older Application Support folder and existing Halo OG files were preserved. The game will close so you can fix the issue and retry; it will not start with empty settings.", migrationError.localizedDescription ?: @"The copy could not finish."];
+        [alert addButtonWithTitle:@"Quit and Retry Later"];
+        [alert runModal];
+    }
+    return success;
+}
 - (BOOL)respondsToSelector:(SEL)selector {
     return [super respondsToSelector:selector] || [self.previousDelegate respondsToSelector:selector];
 }
@@ -118,12 +171,12 @@ static void importProgress(void *context, const char *file, unsigned long long d
     NSImage *image = [[NSImage alloc] initWithContentsOfURL:icon];
     image.size = NSMakeSize(18, 18);
     image.template = YES;
-    self.status.button.image = image ?: [NSImage imageWithSystemSymbolName:@"gamecontroller" accessibilityDescription:@"Halo"];
-    self.status.button.toolTip = @"Halo CE Universal";
-    self.status.button.accessibilityLabel = @"Halo CE Universal";
-    NSMenu *statusMenu = [[NSMenu alloc] initWithTitle:@"Halo"];
+    self.status.button.image = image ?: [NSImage imageWithSystemSymbolName:@"gamecontroller" accessibilityDescription:@"Halo OG"];
+    self.status.button.toolTip = @"Halo OG";
+    self.status.button.accessibilityLabel = @"Halo OG";
+    NSMenu *statusMenu = [[NSMenu alloc] initWithTitle:@"Halo OG"];
     statusMenu.delegate = self;
-    NSMenuItem *title = [[NSMenuItem alloc] initWithTitle:@"Halo CE Universal" action:nil keyEquivalent:@""];
+    NSMenuItem *title = [[NSMenuItem alloc] initWithTitle:@"Halo OG" action:nil keyEquivalent:@""];
     title.enabled = NO;
     [statusMenu addItem:title];
     [statusMenu addItem:NSMenuItem.separatorItem];
@@ -137,18 +190,18 @@ static void importProgress(void *context, const char *file, unsigned long long d
     item(statusMenu, @"Edit Controls and Advanced Settings…", @selector(openConfig:), @"");
     [statusMenu addItem:NSMenuItem.separatorItem];
     item(statusMenu, @"Check for Updates…", @selector(checkUpdates:), @"");
-    NSMenuItem *statusQuit = item(statusMenu, @"Quit Halo", @selector(terminate:), @"q");
+    NSMenuItem *statusQuit = item(statusMenu, @"Quit Halo OG", @selector(terminate:), @"q");
     statusQuit.target = NSApp;
     self.status.menu = statusMenu;
 
     NSMenu *main = [[NSMenu alloc] initWithTitle:@"Main"];
-    NSMenuItem *app = [[NSMenuItem alloc] initWithTitle:@"Halo" action:nil keyEquivalent:@""];
-    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Halo"];
-    item(appMenu, @"About Halo CE Universal", @selector(about:), @"");
+    NSMenuItem *app = [[NSMenuItem alloc] initWithTitle:@"Halo OG" action:nil keyEquivalent:@""];
+    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Halo OG"];
+    item(appMenu, @"About Halo OG", @selector(about:), @"");
     item(appMenu, @"Settings…", @selector(showSettings:), @",");
     item(appMenu, @"Check for Updates…", @selector(checkUpdates:), @"");
     [appMenu addItem:NSMenuItem.separatorItem];
-    NSMenuItem *appQuit = item(appMenu, @"Quit Halo", @selector(terminate:), @"q");
+    NSMenuItem *appQuit = item(appMenu, @"Quit Halo OG", @selector(terminate:), @"q");
     appQuit.target = NSApp;
     app.submenu = appMenu;
     [main addItem:app];
@@ -169,7 +222,7 @@ static void importProgress(void *context, const char *file, unsigned long long d
             entry.title = host_sdl_is_fullscreen() ? @"Exit Full Screen" : @"Enter Full Screen";
         if (entry.action == @selector(checkUpdates:))
             entry.title = self.pendingInstall ? @"Update Ready — Quit to Install" : self.availableVersion
-                ? [NSString stringWithFormat:@"Update to Halo %@…", self.availableVersion] : @"Check for Updates…";
+                ? [NSString stringWithFormat:@"Update to Halo OG %@…", self.availableVersion] : @"Check for Updates…";
     }
 }
 - (BOOL)validateMenuItem:(NSMenuItem *)entry {
@@ -198,7 +251,11 @@ static void importProgress(void *context, const char *file, unsigned long long d
     }
 }
 - (void)showGame:(id)sender { (void)sender; host_sdl_show_game(); }
-- (void)about:(id)sender { (void)sender; host_sdl_release_mouse(); [NSApp orderFrontStandardAboutPanel:self]; }
+- (void)about:(id)sender {
+    (void)sender;
+    host_sdl_release_mouse();
+    [NSApp orderFrontStandardAboutPanelWithOptions:@{NSAboutPanelOptionApplicationName:@"Halo OG"}];
+}
 - (void)quit:(id)sender {
     (void)sender;
     if (self.importing) return;
@@ -210,7 +267,7 @@ static void importProgress(void *context, const char *file, unsigned long long d
 - (void)buildSettings {
     self.settingsWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 520, 500)
         styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
-    self.settingsWindow.title = @"Halo Settings";
+    self.settingsWindow.title = @"Halo OG Settings";
     self.settingsWindow.releasedWhenClosed = NO;
     self.settingsWindow.preventsApplicationTerminationWhenModal = NO;
     self.settingsWindow.level = NSFloatingWindowLevel;
@@ -225,7 +282,7 @@ static void importProgress(void *context, const char *file, unsigned long long d
     self.sourceLabel = label(content, @"", NSMakeRect(24, 182, 472, 20), YES);
     button(content, @"Choose Disc Image…", @selector(selectImage:), NSMakeRect(20, 143, 183, 32));
     button(content, @"Choose Maps Folder…", @selector(selectFolder:), NSMakeRect(211, 143, 193, 32));
-    label(content, @"Changes to game data take effect when Halo next opens.", NSMakeRect(24, 116, 472, 19), YES).font = [NSFont systemFontOfSize:11];
+    label(content, @"Changes to game data take effect when Halo OG next opens.", NSMakeRect(24, 116, 472, 19), YES).font = [NSFont systemFontOfSize:11];
     self.automaticUpdatesButton = [NSButton checkboxWithTitle:@"Automatically check for updates"
                                                                   target:self action:@selector(automaticUpdates:)];
     self.automaticUpdatesButton.frame = NSMakeRect(24, 78, 472, 24);
@@ -298,7 +355,7 @@ static void importProgress(void *context, const char *file, unsigned long long d
     }
     NSAlert *alert = [[NSAlert alloc] init];
     alert.messageText = @"Allow community map downloads?";
-    alert.informativeText = @"Halo will download approved maps from this build's configured HTTPS catalog into Application Support. Missing maps and the catalog's selected launch maps can download while you play. Your original maps and disc images stay in place.";
+    alert.informativeText = @"Halo OG will download approved maps from this build's configured HTTPS catalog into Application Support. Missing maps and the catalog's selected launch maps can download while you play. Your original maps and disc images stay in place.";
     [alert addButtonWithTitle:@"Allow Downloads"];
     [alert addButtonWithTitle:@"Cancel"];
     [alert beginSheetModalForWindow:self.settingsWindow completionHandler:^(NSModalResponse response) {
@@ -334,7 +391,7 @@ static void importProgress(void *context, const char *file, unsigned long long d
     } else {
         NSAlert *alert = [[NSAlert alloc] init];
         alert.messageText = @"Advanced settings appear after the first game launch";
-        alert.informativeText = @"Start Halo once to create its controls and advanced settings file.";
+        alert.informativeText = @"Start Halo OG once to create its controls and advanced settings file.";
         if (self.gameRunning) {
             [self showSettings:nil];
             [alert beginSheetModalForWindow:self.settingsWindow completionHandler:nil];
@@ -365,9 +422,9 @@ static void importProgress(void *context, const char *file, unsigned long long d
     NSError *copyError = nil;
     unsigned long long bytes = HaloGameDataCopySize(valid, &copyError);
     NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = @"Let Halo manage a copy of these maps?";
+    alert.messageText = @"Let Halo OG manage a copy of these maps?";
     alert.informativeText = copyError ? @"This folder uses linked map data. Use it in place to preserve your developer setup."
-        : [NSString stringWithFormat:@"Halo can copy about %.1f GB into its Application Support folder and organize community maps there. Your original files stay in place.", bytes / 1073741824.0];
+        : [NSString stringWithFormat:@"Halo OG can copy about %.1f GB into its Application Support folder and organize community maps there. Your original files stay in place.", bytes / 1073741824.0];
     [alert addButtonWithTitle:@"Copy and Manage"];
     [alert addButtonWithTitle:@"Use This Folder"];
     [alert addButtonWithTitle:@"Cancel"];
@@ -388,7 +445,7 @@ static void importProgress(void *context, const char *file, unsigned long long d
 - (void)copyFolder:(NSURL *)folder completion:(void (^)(BOOL))completion {
     NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 470, 130)
         styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
-    window.title = @"Copying Halo Maps";
+    window.title = @"Copying Halo OG Maps";
     window.level = NSFloatingWindowLevel;
     NSTextField *progressLabel = label(window.contentView, @"Preparing a managed copy…", NSMakeRect(24, 78, 422, 22), NO);
     NSProgressIndicator *bar = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(24, 48, 422, 18)];
@@ -434,7 +491,7 @@ static void importProgress(void *context, const char *file, unsigned long long d
 - (void)importImage:(NSURL *)image completion:(void (^)(BOOL))completion {
     NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 470, 130)
         styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
-    window.title = @"Importing Halo Maps";
+    window.title = @"Importing Halo OG Maps";
     window.level = NSFloatingWindowLevel;
     NSTextField *progressLabel = label(window.contentView, @"Reading disc image…", NSMakeRect(24, 78, 422, 22), NO);
     NSProgressIndicator *bar = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(24, 48, 422, 18)];
@@ -469,7 +526,7 @@ static void importProgress(void *context, const char *file, unsigned long long d
     if (!self.gameRunning) return;
     NSAlert *alert = [[NSAlert alloc] init];
     alert.messageText = @"Game data updated";
-    alert.informativeText = @"Halo will use your selection the next time it opens. Your current game can continue.";
+    alert.informativeText = @"Halo OG will use your selection the next time it opens. Your current game can continue.";
     [self showSettings:nil];
     [alert beginSheetModalForWindow:self.settingsWindow completionHandler:nil];
 }
@@ -518,13 +575,13 @@ static void importProgress(void *context, const char *file, unsigned long long d
 - (void)standardUserDriverWillHandleShowingUpdate:(BOOL)handle forUpdate:(SUAppcastItem *)update state:(SPUUserUpdateState *)state {
     (void)handle; (void)state;
     self.availableVersion = update.displayVersionString;
-    self.status.button.toolTip = [NSString stringWithFormat:@"Halo %@ is available", self.availableVersion];
+    self.status.button.toolTip = [NSString stringWithFormat:@"Halo OG %@ is available", self.availableVersion];
 }
 - (BOOL)updater:(SPUUpdater *)updater shouldPostponeRelaunchForUpdate:(SUAppcastItem *)update untilInvokingBlock:(void (^)(void))install {
     (void)updater; (void)update;
     if (!self.gameRunning) return NO;
     self.pendingInstall = install;
-    self.status.button.toolTip = @"Halo update ready — quit the game to install";
+    self.status.button.toolTip = @"Halo OG update ready — quit the game to install";
     return YES;
 }
 - (BOOL)updater:(SPUUpdater *)updater willInstallUpdateOnQuit:(SUAppcastItem *)update immediateInstallationBlock:(void (^)(void))install {
@@ -583,13 +640,15 @@ void host_menu_initialize_application(void) {
 int host_menu_prepare(const char *support, const char *fallback, char *data, size_t capacity) {
     @autoreleasepool {
         menu = [[HaloMenu alloc] init];
-        menu.preferences = [[HaloPreferences alloc] initWithSupportDirectory:[NSURL fileURLWithPath:@(support) isDirectory:YES]];
         menu.previousDelegate = NSApp.delegate;
         NSApp.delegate = menu;
         if (HaloUpdateConfigurationIsValid(NSBundle.mainBundle.infoDictionary))
             menu.updater = [[SPUStandardUpdaterController alloc] initWithStartingUpdater:YES updaterDelegate:menu userDriverDelegate:menu];
         [menu buildMenus];
         [NSApp finishLaunching];
+        NSURL *supportDirectory = [NSURL fileURLWithPath:@(support) isDirectory:YES];
+        if (![menu migrateSupportIfNeeded:supportDirectory]) return 0;
+        menu.preferences = [[HaloPreferences alloc] initWithSupportDirectory:supportDirectory];
         NSString *selected = menu.preferences.dataPath;
         const char *override = getenv("HALO_DATA_ROOT");
         if (override && *override) selected = @(override);
@@ -601,7 +660,7 @@ int host_menu_prepare(const char *support, const char *fallback, char *data, siz
         }
         while (!valid) {
             NSAlert *alert = [[NSAlert alloc] init];
-            alert.messageText = @"Choose your Halo game data";
+            alert.messageText = @"Choose your Halo OG game data";
             alert.informativeText = @"Use your own original Xbox Halo disc image or extracted maps folder. The app does not include game data.";
             [alert addButtonWithTitle:@"Choose Disc Image…"];
             [alert addButtonWithTitle:@"Choose Maps Folder…"];

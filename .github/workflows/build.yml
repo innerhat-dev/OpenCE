@@ -74,7 +74,7 @@ jobs:
         run: >-
           python -m unittest tools.test_device_settings tools.test_windows_shared_headers
           tools.test_game_settings.NativeGameSettingsTests.test_native_menu
-          tools.test_performance_mouse
+          tools.test_performance_mouse tools.test_save_migration
 
       - name: Compile cache
         run: ccache --show-stats
@@ -211,7 +211,7 @@ jobs:
         run: >-
           python -m unittest tools.test_device_settings tools.test_windows_shared_headers
           tools.test_game_settings.NativeGameSettingsTests.test_native_menu
-          tools.test_performance_mouse
+          tools.test_performance_mouse tools.test_save_migration
 
       - name: Compile cache
         run: ccache --show-stats

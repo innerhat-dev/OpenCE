@@ -69,8 +69,14 @@ the game asks for the disc image again at the next start.
 | `u:\` | `u/` in the save root. This folder contains the user data. |
 
 The save root is `paths.saves` in `config.toml`. If that setting is empty,
-the save root is `$XDG_DATA_HOME/halo-linux` (usually
-`~/.local/share/halo-linux`).
+the save root is `$XDG_DATA_HOME/halo-og` (usually
+`~/.local/share/halo-og`). The first launch copies regular files and folders
+from the old `halo-linux` folder, preserving both the original files and
+any files already in the new folder. A failed copy, symbolic link, or special
+file is reported in the log and keeps the old save root for that run; retry
+after correcting the issue. Explicit `paths.saves` or `HALO_SAVE_ROOT` values
+continue to select their exact folder without migration. `config.toml` remains
+beside the executable so existing settings are read before selecting saves.
 
 The game makes the folders when it needs them. Names of files and folders
 are not case-sensitive, as on the Xbox.
