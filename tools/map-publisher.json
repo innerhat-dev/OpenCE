@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "account_id": "39353b0c2249998b78adc016897ef725",
+  "bucket": "halo",
+  "public_base_url": "https://dl.oghalo.com/",
+  "catalog_key": "catalogs/testing/current.json",
+  "allowed_map_ids": ["downrush"]
+}
