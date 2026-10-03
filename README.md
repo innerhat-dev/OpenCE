@@ -1,184 +1,99 @@
-Halo CE Universal — Apple Silicon and iPhone
-=============
+# Halo OG
 
-This fork adds playable native Apple Silicon macOS and iPhone builds to
-[cybersecurity/halo-ce-universal](https://github.com/cybersecurity/halo-ce-universal).
-It builds on the decompilation of Halo: Combat Evolved build 2342
-(`cachebeta.exe`, sha256 `4cc87b45f721270392a96f1674ed2b5cd4a7bb4355faeab4531d1cf1884d9520`).
+Original Xbox **Halo: Combat Evolved**, brought to modern devices through its
+decompilation and native ports.
 
-**Start here: [Apple build setup](docs/apple-build.md)**, then follow the
-[Mac instructions](port/macos/README.md#build) or
-[iPhone instructions](port/ios/README.md#build).
-The [community-map plan](docs/competitive-maps-plan.md) sets the next direction:
-establish original-Xbox gameplay on Mac, then import JukkisP's maps.
-[Community-map support](docs/community-maps.md) imports all 40 package maps as
-Xbox v5 caches with stock gameplay dependencies and normal menu selection.
-This fork follows an [original-Xbox fidelity policy](docs/xbox-fidelity.md):
-review upstream fixes individually and preserve original presentation and rules.
-The Apple renderer uses ANGLE's Metal backend. Mac keyboard/mouse and iPhone
-touch gameplay and audio have been tested; physical iPhone gamepad play and
-the full campaign still need testing.
+Our goal is to reproduce the Halo 1 experience that OG players know: movement,
+weapons, sounds, presentation, and the original 30 Hz simulation. Community maps
+and explicitly enabled competitive/practice tools give serious players more
+ways to play while keeping OG rules as the default. Faithful reproduction is
+the goal; complete retail parity is still being tested.
 
-Supply your own original Xbox game data. Native builds use the SDK declarations
-checked into the repository and do not require the Xbox SDK. Game images, maps,
-the XDK, signing identities, provisioning profiles and built apps are excluded
-from the Git source tree; GitHub Actions provides builds as separate artifacts.
-iPhone developers use their own Apple development team and app identifier.
+**[Get running and join the playtest →](docs/playtesting.md)**
 
-![Halo: Combat Evolved main menu running on Apple Silicon macOS](docs/images/main-menu.png)
-
-The port starts from the decompilation of [bnunu/halo-1](https://github.com/bnunu/halo-1).
-That project is a fork of [punpckhdq/halo](https://github.com/punpckhdq/halo).
+![Original Halo main menu running on Apple Silicon](docs/images/main-menu.png)
 
 ## Download
 
-For this fork's **Apple Silicon Mac build**, sign in to GitHub and open
-[macOS DMG](https://github.com/pfista/halo-ce-universal/actions/workflows/macos-dmg.yml).
-Choose a successful run, then download **halo-macos-arm64-dmg** under **Artifacts**.
-Extract the ZIP, open `Halo-CE-Universal-macos-arm64.dmg`, and drag the app to
-Applications. Artifacts are retained for 14 days and include `README.txt`,
-`BuildInfo.txt` and `SHA256SUMS`. The workflow runs on code pushes to `main`
-and can be started manually.
+Use the **[test-v0.3.0-net11 testing release](https://github.com/pfista/halo-og/releases/tag/test-v0.3.0-net11)**.
+Choose your platform:
 
-The current dependencies require **macOS 26 or later on Apple Silicon**.
-The artifact's `README.txt` records the minimum macOS version for that build.
-This is an experimental, ad hoc signed build without Apple notarization;
-macOS may require an explicit opening approval. No Homebrew or build tools are
-needed to run it. Supply your own original Xbox game data on first launch.
-See [Mac downloads and installation](port/macos/README.md#download) for details.
-
-The following links are **cybersecurity upstream releases**, which can differ
-from this fork's code and multiplayer protocol:
-
-| Platform | Release | Debug |
+| Platform | Testing package | Requirements |
 | --- | --- | --- |
-| Linux | [halo-linux-release.zip](https://github.com/cybersecurity/halo-ce-universal/releases/latest/download/halo-linux-release.zip) | [halo-linux-debug.zip](https://github.com/cybersecurity/halo-ce-universal/releases/latest/download/halo-linux-debug.zip) |
-| Windows | [halo-windows-release.zip](https://github.com/cybersecurity/halo-ce-universal/releases/latest/download/halo-windows-release.zip) | [halo-windows-debug.zip](https://github.com/cybersecurity/halo-ce-universal/releases/latest/download/halo-windows-debug.zip) |
-| Android | [halo-android-release.zip](https://github.com/cybersecurity/halo-ce-universal/releases/latest/download/halo-android-release.zip) | [halo-android-debug.zip](https://github.com/cybersecurity/halo-ce-universal/releases/latest/download/halo-android-debug.zip) |
+| Mac | [Halo-OG-macos-arm64.dmg](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11/Halo-OG-macos-arm64.dmg) | Apple Silicon, macOS 26+ |
+| Windows | [halo-windows-release.zip](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11/halo-windows-release.zip) | x86/x86-64 PC, OpenGL 4.5 |
+| Linux | [halo-linux-release.zip](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11/halo-linux-release.zip) | x86, OpenGL 4.5, [32-bit runtime libraries](port/linux/README.md#requirements) |
+| Android | [halo-android-release.zip](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11/halo-android-release.zip) | ARM64, Android 9+, OpenGL ES 3; controller or keyboard |
 
-To compile the Apple ports yourself, use [Apple build setup](docs/apple-build.md)
-and the platform guides above; their scripts configure the build automatically.
-The [build instructions](#build-the-game) below cover the native ports.
+All packages in the release come from the **same source commit**. Use the same
+tag when playing together. The release includes `SHA256SUMS`, `provenance.json`,
+and Mac installation notes. These are experimental builds.
 
-The upstream desktop game updates itself. At start-up it looks for a newer
-release, and asks if you want to install it. Refer to "Updates" in
-[port/linux/README.md](port/linux/README.md#updates). This fork's Mac CI downloads
-do not enable automatic updates; download a newer artifact to update.
+If the release is not available, sign in to GitHub and use successful runs of
+this repository's [macOS DMG workflow](https://github.com/pfista/halo-og/actions/workflows/macos-dmg.yml)
+or [Build workflow](https://github.com/pfista/halo-og/actions/workflows/build.yml).
+Download the platform's `halo-…-release` artifact, or `halo-macos-arm64-dmg`, and
+match the runs' commit SHA. Artifact downloads are ZIPs and expire.
 
-Each build of the upstream `main` branch that passes on all three platforms is a new
-release. The [Releases](https://github.com/cybersecurity/halo-ce-universal/releases)
-page keeps the last five releases. If the latest build has a problem, get
-an older build from that page. This fork keeps CI builds as artifacts;
-working on its `main` does not automatically publish a release or post to Discord.
+The Mac test build is ad-hoc signed and unnotarized. Install **Halo OG.app** into
+Applications; no Homebrew or developer tools are needed. Testing packages have
+automatic updates disabled. [Installation steps](docs/playtesting.md) explain
+first launch, platform dependencies, and updating.
 
-## Game data
+## Get running
 
-The port does not include the game data. Download an Xbox disc image
-(`.xiso` or `.iso`) of Halo: Combat Evolved. All versions of the game
-operate. The maps of the European (PAL) version were made for a slower
-console. The port changes them to play as the North American (NTSC) maps do,
-so players of the two versions can play together.
+1. Download and install the package for your platform.
+2. Supply your own original Xbox Halo disc image (`.iso` / `.xiso`) or complete
+   extracted `maps` folder. **USA NTSC data is recommended** and required by the
+   current community-map collection. Game data is not bundled; PC, Custom
+   Edition, Anniversary, and MCC data are not substitutes.
+3. Create/select a profile, try a stock map, then
+   [join the multiplayer playtest](docs/playtesting.md#play-together).
 
-1. Start the game.
-2. At the first start, the game asks for the disc image. Select it.
-3. The game extracts the `maps/` folder. Then the game starts.
+Mac first launch imports a disc or offers to manage a copy of your maps.
+Data, saves, and settings live in `~/Library/Application Support/Halo OG/`.
+Prior `Halo CE Universal` data is copied where needed, preserving the old folder
+and existing files. External map folders can remain selected.
+[Data management details](docs/macos-menu-and-releases.md#independently-supplied-data).
 
-On Linux and Windows, the game puts `maps/` next to the executable. On
-Android, copy the disc image to the phone first. The app puts `maps/` in its
-data folder. Refer to [port/android/README.md](port/android/README.md).
+## Community maps and competitive options
 
-## Platforms
+Mac Settings can **download approved community maps in the background** after
+you opt in. The Cloudflare R2 pilot currently serves **Downrush**, built for
+Xbox v5 NTSC data. Verified downloads remain usable offline. Windows, Linux,
+and Android currently install that same map manually;
+[community-map setup](docs/playtesting.md#community-maps) includes its download.
 
-Each platform has its own instructions:
+**PB Options** offers a match timer, spawn markers, timer announcements, and
+optional silent movement/weapon-ready sounds. All modifications default **off**;
+the host chooses the match's options. Use **Stock** for original-rule play.
+Timer announcements need a separate audio pack, not bundled with these builds.
+[PB Options](docs/performance-options.md) explains settings and compatibility.
 
-| Platform | Instructions |
-| --- | --- |
-| Linux (32-bit x86 executable, OpenGL 4.5, SDL3) | [port/linux/README.md](port/linux/README.md) |
-| Windows (32-bit x86 executable, OpenGL 4.5, SDL3) | [port/windows/README.md](port/windows/README.md) |
-| Android (arm64 app, OpenGL ES 3, SDL3) | [port/android/README.md](port/android/README.md) |
+The current network protocol is **11**; protocol-10 builds need updating.
+Enabled PB Options require compatible peers. For the first cross-platform
+tests, use matching Halo OG packages with PB Options off.
 
-The Linux README also gives the controls, the settings and the multiplayer
-functions. These are almost the same on all platforms.
+## What has been checked
 
-## Multiplayer
+Native Mac campaign/input/audio smoke checks and protocol-11 stock multiplayer
+have been exercised. A client starting without Downrush downloaded the verified
+pilot and completed two consecutive Slayer matches with a host on the **same
+physical Mac**; offline reuse also passed. Physical cross-platform devices,
+Internet/NAT play, long sessions, full campaign coverage, and reference-Xbox
+fidelity remain acceptance work. See the [fidelity policy](docs/xbox-fidelity.md),
+[protocol review](docs/upstream-review-2026-10-03.md), and
+[map-delivery evidence](docs/map-publishing.md).
 
-The game can play system link games on a local network and on the internet:
+## Build and contribute
 
-- A system link game can have up to 128 players on up to 128 machines.
-- Linux, Windows and Android machines can play in the same game.
-- An invite link lets a machine join a game on the internet. No server of
-  this project is necessary.
-- The netcode is new. Each machine moves its own player at once,
-  and the host makes the decisions for the game. Refer to
-  [port/linux/NETCODE.md](port/linux/NETCODE.md).
+[Build from source](docs/building.md) · [Apple setup](docs/apple-build.md) ·
+[Community-map conversion](docs/community-maps.md) ·
+[Report a playtest problem](docs/playtesting.md#report-a-problem)
 
-## Build the game
-
-You do not need the Xbox SDK. The port supplies the SDK declarations that
-the game uses. Refer to [port/include/xdk](port/include/xdk/README.md).
-
-To build the game:
-
-1. Install Python and [ninja](https://ninja-build.org/).
-2. Install the tools for your platform. Refer to the README for the
-   platform.
-3. In the root folder of the repository, enter `python configure.py`.
-4. Enter `ninja` with the target for the platform:
-
-### iPhone development build
-
-The experimental iPhone port targets iOS 26+ with signed ARM game code, a
-Metal-backed renderer, touch controls and gamepad support. See
-[port/ios/README.md](port/ios/README.md) for the Xcode build and device signing.
-
-### Apple Silicon macOS build
-
-`python3 tools/macos_build.py` builds a native ARM64 Mac app using ANGLE's Metal
-backend. Campaign gameplay, mouse capture, and audio have been confirmed on an
-M5 Mac. See [port/macos/README.md](port/macos/README.md) for dependency setup,
-launch instructions, validation limits, and the next performance phase.
-
-### Android build
-
-If you enter `ninja` without a target, ninja builds the game for the
-computer that you use.
-
-`tools/ci_build.py` makes the same builds as GitHub Actions. For example,
-enter `python tools/ci_build.py linux release`.
-
-### Build options
-
-Give these options to `configure.py`:
-
-| Option | Result |
-| --- | --- |
-| (none) | A debug build. A failed assertion stops the game. |
-| `--release` | A release build. The game does not examine assertions, as in the retail game. |
-| `--portable` | The Linux and Windows builds operate on all x86-64 processors. Use this option for builds that you give to other persons. |
-| `--lto=thin`, `--lto=off` | Less link-time optimization. The link is faster. |
-| `--pgo=off` | No profile-guided optimization. |
-| `--pgo=train` | Records a new optimization profile. Refer to "Optimization profiles". |
-
-Without `--portable`, the Linux and Windows builds use all the instructions
-of the processor that builds them (`-march=native`). Such a build does not
-always start on a different computer.
-
-### Optimization profiles
-
-The builds use profiles of the game to optimize the code:
-
-- `pgo/halo_linux.profdata` for Linux and Android.
-- `pgo/halo_windows.profdata` for Windows.
-
-The profiles need clang 22 or later. With an older clang, the builds do not
-use the profiles.
-
-To record a new profile:
-
-1. Delete the profile.
-2. Enter `python configure.py --pgo=train`.
-3. Enter `ninja linux` or `ninja windows`.
-
-The build then plays the main menu and the first minute of each campaign
-level. This procedure continues for approximately 15 minutes. The game
-data must be in `assets/`.
+The experimental [iPhone port](port/ios/README.md) is a developer build with no
+installation package in this testing release. Halo OG builds on
+[bnunu/halo-1](https://github.com/bnunu/halo-1),
+[punpckhdq/halo](https://github.com/punpckhdq/halo), and the platform work in
+[cybersecurity/halo-ce-universal](https://github.com/cybersecurity/halo-ce-universal).
+We review upstream changes individually and keep optional modifications explicit.
