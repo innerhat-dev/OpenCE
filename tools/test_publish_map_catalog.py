@@ -171,6 +171,17 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual(self.http.objects[self.catalog_key], self.prepared.catalog)
         self.assertEqual(self.http.objects[self.key], self.data)
 
+    def test_private_read_failure_after_catalog_write_does_not_claim_rollback(self):
+        request = self.r2.request
+        def unavailable_after_write(method, key, **kwargs):
+            if method == "GET" and key == self.catalog_key and key in self.http.objects:
+                return publisher.Response(503, {}, b"")
+            return request(method, key, **kwargs)
+        with patch.object(self.r2, "request", side_effect=unavailable_after_write):
+            with self.assertRaisesRegex(publisher.PublishError, "publication may already have completed"):
+                self.publish()
+        self.assertEqual(self.http.objects[self.catalog_key], self.prepared.catalog)
+
     def test_prepared_inventory_hash_and_scope_are_checked_before_network(self):
         catalog_path = self.directory / "catalog.json"
         original = catalog_path.read_bytes()
@@ -260,10 +271,12 @@ class PublisherTests(unittest.TestCase):
 
     def test_network_errors_are_redacted_and_redirects_are_refused(self):
         http = publisher.HTTPS()
-        with patch.object(http.opener, "open", side_effect=OSError("private token must never appear")):
+        with patch.object(http.opener, "open", side_effect=OSError("private token must never appear")) as transport:
             with self.assertRaises(publisher.PublishError) as error:
                 http.request("GET", "https://api.cloudflare.com/", headers={"Authorization": "Bearer private_token"})
         self.assertNotIn("private", str(error.exception))
+        request = transport.call_args.args[0]
+        self.assertEqual(request.get_header("User-agent"), "Halo-OG-map-publisher/1")
         self.assertIsNone(publisher.NoRedirect().redirect_request(None, None, 302, "redirect", {}, "https://other.test/"))
         with self.assertRaises(publisher.PublishError):
             http.request("GET", "http://insecure.test/")

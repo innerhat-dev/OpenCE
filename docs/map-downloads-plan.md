@@ -1,8 +1,8 @@
 # Managed game data and community-map downloads
 
 Updated October 3, 2026. The source investigation started from `main` at
-`6c1f1ae8`. The implementation described below is local work; live R2 hosting
-and cross-platform acceptance remain separate checks.
+`6c1f1ae8`. The Downrush R2 pilot and native download/offline reuse were verified
+on October 3; cross-platform device acceptance remains a separate check.
 
 ## Implemented in this change
 
@@ -10,7 +10,7 @@ The Mac app can manage a copy of selected extracted maps and download approved
 community maps while it runs. The checked-in download configuration points at
 `https://dl.oghalo.com/catalogs/testing/current.json`; downloads remain off until
 the player opts in. Original game data stays local. Endpoint configuration and
-local tests do not establish live catalog/map publication or download success.
+local tests alone do not establish live catalog/map publication or download success.
 
 | Flow | Behavior |
 | --- | --- |
@@ -29,10 +29,10 @@ images remain user-imported data. No import/join operation uploads user data.
 
 ## Storage and integration points
 
-The established macOS location is preserved:
+The canonical macOS location is outside the app bundle:
 
 ```text
-~/Library/Application Support/Halo CE Universal/
+~/Library/Application Support/Halo OG/
   macos-settings.json            data/source-image paths, display/download consent
   config.toml                    existing advanced game settings
   <existing saves/profiles/cache/logs>
@@ -204,14 +204,16 @@ not full-file SHA-256 hashes.
 [R2 uploads](https://developers.cloudflare.com/r2/objects/upload-objects/)
 describes their format.
 
-Hosting needs the bucket/account/jurisdiction, selected domain, public/private
-decision and a bucket-scoped publisher upload credential. R2 Object Read &
+The selected public pilot uses bucket `halo`, domain `dl.oghalo.com`, and the
+concealed publisher credential in the `oghalo.com` 1Password environment.
+The approved object and public catalog were verified before native acceptance.
+See [the publisher workflow and evidence](map-publishing.md). R2 Object Read &
 Write can be limited to chosen buckets; bucket/domain administration needs
 separate permissions. Obtain developer credentials through the established
 1Password MCP environment mechanism and never print, commit or bundle secrets.
 [R2 authentication](https://developers.cloudflare.com/r2/api/tokens/)
-describes those scopes. No upload or hosting configuration is claimed by this
-document; verify the actual approved publication separately.
+describes those scopes. Additional map uploads still require an explicit
+publisher allowlist expansion and acceptance checks.
 
 ## Verification and next stages
 
@@ -223,6 +225,17 @@ capacity limits, collisions, offline cached reuse with downloads disabled,
 revalidation after deletion/catalog removal, retry, cancellation, HTTP catalog
 failure, PAL gating and uppercase folder/UI names. It uses no game assets,
 credentials or external network.
+
+For an explicit live acceptance check after publication, run
+`python3 tools/macos_map_download_smoke.py --data-root /path/to/NTSC/data --timeout 120`.
+It uses the production NSURLSession service and checked-in public endpoint,
+downloads `downrush` into a fresh isolated support directory, checks full
+size/SHA/header and guest-facing READY, then verifies unchanged cached bytes
+with a second downloads-disabled manager whose network requests are rejected
+and counted. It preserves logs and provenance/status JSON under
+`build/macos/tests/map-download-smoke/`; no user settings are modified. The
+explicit `--fixture-ntsc-ui` option uses an authored profile header and does
+not validate original retail data or gameplay. This command does not upload.
 
 `python3 tools/test_macos_menu.py --preferences` covers persistent consent,
 copy/source preservation, copied-byte identity, invalid-copy rollback,

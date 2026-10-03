@@ -174,7 +174,9 @@ class HTTPS:
     def request(self, method, url, *, headers=None, body=None, limit=16384):
         if urlsplit(url).scheme != "https":
             raise PublishError("Only HTTPS requests are permitted")
-        request = Request(url, data=body, headers=headers or {}, method=method)
+        request_headers = {"User-Agent": "Halo-OG-map-publisher/1"}
+        request_headers.update(headers or {})
+        request = Request(url, data=body, headers=request_headers, method=method)
         try:
             with self.opener.open(request, timeout=60) as response:
                 result_headers = {key.lower(): value for key, value in response.headers.items()}

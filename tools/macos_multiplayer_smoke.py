@@ -98,6 +98,8 @@ def main():
                         help="Native executable, including one inside a candidate app bundle")
     parser.add_argument("--native-menu", action="store_true",
                         help="Use the app bundle's guest and native menus (requires --executable inside the app)")
+    parser.add_argument("--download-client", action="store_true",
+                        help="Give only the host --map-source; opt the isolated native client into configured HTTPS downloads")
     parser.add_argument("--host-address", help="A configured local IPv4 address, other than 127.0.0.1")
     parser.add_argument("--client-address", help="Another configured local IPv4 address")
     args = parser.parse_args()
@@ -113,6 +115,8 @@ def main():
             parser.error("The custom map filename collides with a stock map")
     if args.native_menu and args.executable.parent.name != 'MacOS':
         parser.error('--native-menu requires an executable inside the candidate app bundle')
+    if args.download_client and (not args.native_menu or not map_source):
+        parser.error('--download-client requires --native-menu and an explicit --map-source')
     if args.score < 0 or not re.fullmatch(r"[a-zA-Z0-9_ -]+(?:,[a-zA-Z0-9_ -]+)*", args.variants):
         parser.error("Use non-empty variant names and a nonnegative score")
     host_address = args.host_address
@@ -150,8 +154,11 @@ def main():
             folder = out / role
             folders[role] = folder
             environment = prepare(folder, role, args.mode, args.seconds, host_address, client_address,
-                                  args.variants, args.score, args.map, map_source,
+                                  args.variants, args.score, args.map,
+                                  None if args.download_client and role == "client" else map_source,
                                   args.reference_profile, args.screenshot_every)
+            if args.download_client and role == "client":
+                (folder / "saves/macos-settings.json").write_text(json.dumps({"community_downloads": True}))
             command = [str(args.executable.resolve())]
             if not args.native_menu:
                 command.append(str(args.guest.resolve()))
@@ -195,6 +202,13 @@ def main():
         }
         if args.mode == "invite":
             checks["encrypted_peer_connected"] = all("Internet play: connected to" in log for log in logs.values())
+        if args.download_client:
+            managed = folders["client"] / "saves/Community Maps/maps" / (args.map.lower() + ".map")
+            checks["client_started_without_custom_map"] = not (folders["client"] / "data/maps" / (args.map + ".map")).exists()
+            checks["client_download_matches_host"] = False
+            if managed.is_file():
+                with managed.open("rb") as downloaded, map_source.open("rb") as original:
+                    checks["client_download_matches_host"] = hashlib.file_digest(downloaded, "sha256").digest() == hashlib.file_digest(original, "sha256").digest()
         expected_matches = len(args.variants.split(","))
         if expected_matches > 1:
             checks["host_created_all_matches"] = len(re.findall(r"network test: game \d+,", logs["host"])) >= expected_matches
@@ -207,6 +221,7 @@ def main():
                   "map": args.map, "map_sha256": hashlib.sha256(map_source.read_bytes()).hexdigest() if map_source else None,
                   "reference_profile": args.reference_profile,
                   "native_menu": args.native_menu,
+                  "download_client": args.download_client,
                   "variants": args.variants, "score_to_win": args.score,
                   "exit_codes": codes, "logged_ticks": {k: len(v) for k, v in ticks.items()},
                   "checks": checks, "passed": all(checks.values())}

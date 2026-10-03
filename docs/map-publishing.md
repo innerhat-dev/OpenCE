@@ -71,3 +71,24 @@ Run the offline regression tests with:
 ```sh
 python3 -m unittest tools.test_publish_map_catalog tools.test_map_catalog
 ```
+
+On October 3, 2026 the Downrush pilot was uploaded and both its immutable object
+and public catalog were verified against the prepared bytes. The production
+native downloader fetched all 26,480,640 bytes, validated SHA-256
+`3282e580e782f939ae00c63f01971238eb0f85db19a2467efe42b5cb5600d126`, and reached
+READY. A second downloads-disabled manager reused those bytes with zero network
+requests. Evidence is in the ignored local review output under
+`build/macos/netcode-v11-review-2026-10-03/r2-native-download/`.
+
+The publisher identifies itself as `Halo-OG-map-publisher/1`.
+The selected public endpoint returned HTTP 403 for Python's default user agent;
+the descriptive publisher identity and the native NSURLSession client both
+received the exact approved bytes without changing Cloudflare access rules.
+The upload credential is concealed in the `oghalo.com` 1Password environment.
+
+The real game smoke test then launched a host with Downrush and a native client
+without that map. The client downloaded matching bytes into its isolated
+managed library and both completed two consecutive Slayer matches over protocol
+11, with bidirectional updates and no assertions or faults. Evidence is in
+`build/macos/netcode-v11-review-2026-10-03/r2-client-multiplayer/validation.json`.
+This is two instances on one Mac; cross-platform device play remains unverified.
