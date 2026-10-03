@@ -134,6 +134,9 @@ symbols in this file:
 #include "interface/ui_widget.h"
 #include "scenario/scenario_definitions.h"
 #include "sound/sound_manager.h"
+#ifdef HALO_MACOS
+#include "halo_custom_maps.h"
+#endif
 
 /* ---------- constants */
 
@@ -761,7 +764,11 @@ boolean cache_files_map_plays_multiplayer(
 	build[0] = 0;
 	if (!map_name || !map_name[0])
 		return TRUE;
+#ifdef HALO_MACOS
+	if (!native_map_get_path(map_name, path, sizeof(path))) return FALSE;
+#else
 	snprintf(path, sizeof(path), "%s%s.map", cache_files_map_directory(), tag_name_strip_path(map_name));
+#endif
 	file = CreateFileA(path, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
 	if (file != INVALID_HANDLE_VALUE)
 	{
@@ -834,6 +841,12 @@ boolean cache_files_give_time_to_precache(
 	}
 	else
 	{
+#ifdef HALO_MACOS
+		/* A catalog map may still be downloading. Keep the client unready until
+		the verified file is atomically installed; failures appear in native
+		Map Downloads and can be retried without reporting a damaged disc. */
+		if (native_map_download_pending(map_name)) return FALSE;
+#endif
 		if (cache_files_precache_in_progress() &&
 			!cache_files_precache_is_copying_map(map_name))
 		{

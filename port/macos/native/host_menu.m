@@ -1,6 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import <Sparkle/Sparkle.h>
 #import "HaloPreferences.h"
+#import "HaloMapDownloads.h"
 #include <SDL3/SDL.h>
 #include "host_menu.h"
 #include <stdlib.h>
@@ -15,6 +16,9 @@
 @property(nonatomic, strong) NSTextField *sourceLabel;
 @property(nonatomic, strong) NSButton *fullscreenButton;
 @property(nonatomic, strong) NSButton *automaticUpdatesButton;
+@property(nonatomic, strong) NSButton *communityDownloadsButton;
+@property(nonatomic, strong) NSTextField *downloadsLabel;
+@property(nonatomic, strong) HaloMapDownloads *mapDownloads;
 @property(nonatomic, strong) SPUStandardUpdaterController *updater;
 @property(nonatomic, strong) id previousDelegate;
 @property(nonatomic) BOOL gameRunning;
@@ -32,6 +36,8 @@
 - (void)showSettings:(id)sender;
 - (void)closeSettings:(id)sender;
 - (void)importImage:(NSURL *)image completion:(void (^)(BOOL))completion;
+- (void)acceptFolder:(NSURL *)folder completion:(void (^)(BOOL))completion;
+- (void)copyFolder:(NSURL *)folder completion:(void (^)(BOOL))completion;
 @end
 
 static HaloMenu *menu;
@@ -202,7 +208,7 @@ static void importProgress(void *context, const char *file, unsigned long long d
     else [NSApp terminate:self];
 }
 - (void)buildSettings {
-    self.settingsWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 520, 350)
+    self.settingsWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 520, 500)
         styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
     self.settingsWindow.title = @"Halo Settings";
     self.settingsWindow.releasedWhenClosed = NO;
@@ -229,6 +235,24 @@ static void importProgress(void *context, const char *file, unsigned long long d
     button(content, @"Advanced Settings…", @selector(openConfig:), NSMakeRect(20, 14, 185, 32));
     NSButton *done = button(content, @"Done", @selector(closeSettings:), NSMakeRect(401, 14, 95, 32));
     done.keyEquivalent = @"\r";
+    for (NSView *view in content.subviews) {
+        if (view.frame.origin.y >= 116) {
+            NSRect frame = view.frame; frame.origin.y += 150; view.frame = frame;
+        }
+    }
+    label(content, @"Community Maps", NSMakeRect(24, 227, 472, 22), NO).font = [NSFont boldSystemFontOfSize:13];
+    self.communityDownloadsButton = [NSButton checkboxWithTitle:@"Download approved community maps in the background"
+        target:self action:@selector(communityDownloads:)];
+    self.communityDownloadsButton.frame = NSMakeRect(24, 197, 472, 24);
+    self.communityDownloadsButton.enabled = self.mapDownloads.configured && self.mapDownloads.compatibleData;
+    [content addSubview:self.communityDownloadsButton];
+    self.downloadsLabel = label(content, @"", NSMakeRect(24, 149, 472, 42), YES);
+    self.downloadsLabel.lineBreakMode = NSLineBreakByWordWrapping;
+    self.downloadsLabel.maximumNumberOfLines = 2;
+    self.downloadsLabel.font = [NSFont systemFontOfSize:11];
+    button(content, @"Check Maps / Retry", @selector(checkMaps:), NSMakeRect(20, 108, 164, 32));
+    button(content, @"Cancel Downloads", @selector(cancelMaps:), NSMakeRect(190, 108, 151, 32));
+    button(content, @"Open Library", @selector(openMapLibrary:), NSMakeRect(347, 108, 149, 32));
 }
 - (void)refreshSettings {
     self.dataLabel.stringValue = self.preferences.dataPath ?: self.launchDataPath ?: @"No maps selected";
@@ -236,6 +260,9 @@ static void importProgress(void *context, const char *file, unsigned long long d
     self.sourceLabel.stringValue = self.preferences.isoPath ? [@"Disc image: " stringByAppendingString:self.preferences.isoPath] : @"Using an extracted maps folder";
     self.sourceLabel.toolTip = self.preferences.isoPath;
     self.automaticUpdatesButton.state = self.updater.updater.automaticallyChecksForUpdates ? NSControlStateValueOn : NSControlStateValueOff;
+    self.communityDownloadsButton.state = self.preferences.communityDownloadsEnabled ? NSControlStateValueOn : NSControlStateValueOff;
+    self.downloadsLabel.stringValue = self.mapDownloads.statusText ?: @"Map hosting is not configured for this build.";
+    self.downloadsLabel.toolTip = self.downloadsLabel.stringValue;
     [self refreshFullscreen];
 }
 - (void)showSettings:(id)sender {
@@ -260,6 +287,37 @@ static void importProgress(void *context, const char *file, unsigned long long d
 }
 - (void)automaticUpdates:(NSButton *)sender {
     self.updater.updater.automaticallyChecksForUpdates = sender.state == NSControlStateValueOn;
+}
+- (void)communityDownloads:(NSButton *)sender {
+    BOOL enabled = sender.state == NSControlStateValueOn;
+    if (!enabled) {
+        NSError *error = nil;
+        if (![self.preferences setCommunityDownloadsEnabled:NO error:&error]) showError(error);
+        else [self.mapDownloads setDownloadsEnabled:NO];
+        [self refreshSettings]; return;
+    }
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Allow community map downloads?";
+    alert.informativeText = @"Halo will download approved maps from this build's configured HTTPS catalog into Application Support. Missing maps and the catalog's selected launch maps can download while you play. Your original maps and disc images stay in place.";
+    [alert addButtonWithTitle:@"Allow Downloads"];
+    [alert addButtonWithTitle:@"Cancel"];
+    [alert beginSheetModalForWindow:self.settingsWindow completionHandler:^(NSModalResponse response) {
+        NSError *error = nil;
+        if (response == NSAlertFirstButtonReturn) {
+            if (![self.preferences setCommunityDownloadsEnabled:YES error:&error]) showError(error);
+            else [self.mapDownloads setDownloadsEnabled:YES];
+        }
+        [self refreshSettings];
+    }];
+}
+- (void)checkMaps:(id)sender { (void)sender; [self.mapDownloads checkForMaps]; }
+- (void)cancelMaps:(id)sender { (void)sender; [self.mapDownloads cancelDownloads]; }
+- (void)openMapLibrary:(id)sender {
+    (void)sender;
+    NSURL *library = [self.preferences.supportDirectory URLByAppendingPathComponent:@"Community Maps" isDirectory:YES];
+    NSError *error = nil;
+    if (![NSFileManager.defaultManager createDirectoryAtURL:library withIntermediateDirectories:YES attributes:nil error:&error]) showError(error);
+    else [NSWorkspace.sharedWorkspace openURL:library];
 }
 - (void)openSaves:(id)sender {
     (void)sender;
@@ -295,10 +353,65 @@ static void importProgress(void *context, const char *file, unsigned long long d
     panel.allowsMultipleSelection = NO;
     NSModalResponse result = [panel runModal];
     if (result != NSModalResponseOK) return NO;
+    __block BOOL finished = NO, success = NO;
+    [self acceptFolder:panel.URL completion:^(BOOL accepted) { success = accepted; finished = YES; }];
+    while (!finished) [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+    return success;
+}
+- (void)acceptFolder:(NSURL *)folder completion:(void (^)(BOOL))completion {
     NSError *error = nil;
-    if (![self.preferences selectDataRoot:panel.URL iso:nil error:&error]) { showError(error); return NO; }
-    [self refreshSettings];
-    return YES;
+    NSURL *valid = HaloValidateGameData(folder, &error);
+    if (!valid) { showError(error); completion(NO); return; }
+    NSError *copyError = nil;
+    unsigned long long bytes = HaloGameDataCopySize(valid, &copyError);
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Let Halo manage a copy of these maps?";
+    alert.informativeText = copyError ? @"This folder uses linked map data. Use it in place to preserve your developer setup."
+        : [NSString stringWithFormat:@"Halo can copy about %.1f GB into its Application Support folder and organize community maps there. Your original files stay in place.", bytes / 1073741824.0];
+    [alert addButtonWithTitle:@"Copy and Manage"];
+    [alert addButtonWithTitle:@"Use This Folder"];
+    [alert addButtonWithTitle:@"Cancel"];
+    alert.buttons.firstObject.enabled = !copyError;
+    void (^apply)(NSModalResponse) = ^(NSModalResponse response) {
+        if (response == NSAlertFirstButtonReturn && !copyError) [self copyFolder:valid completion:completion];
+        else if (response == NSAlertSecondButtonReturn) {
+            NSError *selectionError = nil;
+            BOOL success = [self.preferences selectDataRoot:valid iso:nil error:&selectionError];
+            if (!success) showError(selectionError);
+            else [self refreshSettings];
+            completion(success);
+        } else completion(NO);
+    };
+    if (self.gameRunning) [alert beginSheetModalForWindow:self.settingsWindow completionHandler:apply];
+    else apply([alert runModal]);
+}
+- (void)copyFolder:(NSURL *)folder completion:(void (^)(BOOL))completion {
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 470, 130)
+        styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
+    window.title = @"Copying Halo Maps";
+    window.level = NSFloatingWindowLevel;
+    NSTextField *progressLabel = label(window.contentView, @"Preparing a managed copy…", NSMakeRect(24, 78, 422, 22), NO);
+    NSProgressIndicator *bar = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(24, 48, 422, 18)];
+    bar.indeterminate = NO; bar.minValue = 0; bar.maxValue = 100;
+    [window.contentView addSubview:bar];
+    label(window.contentView, @"Your original maps and existing saves stay in place.", NSMakeRect(24, 16, 422, 19), YES);
+    [window center]; [window makeKeyAndOrderFront:self];
+    self.importing = YES;
+    __block struct import_progress progress = {progressLabel, bar};
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSError *error = nil;
+        NSURL *imported = HaloCopyGameData(folder, self.preferences.supportDirectory, importProgress, &progress, &error);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.importing = NO; [window orderOut:self];
+            NSError *selectionError = error;
+            BOOL success = imported && [self.preferences selectDataRoot:imported iso:nil error:&selectionError];
+            if (!success) {
+                if (imported) [NSFileManager.defaultManager removeItemAtURL:imported error:nil];
+                showError(selectionError);
+            } else [self refreshSettings];
+            completion(success);
+        });
+    });
 }
 - (BOOL)chooseImage {
     host_sdl_release_mouse();
@@ -373,9 +486,7 @@ static void importProgress(void *context, const char *file, unsigned long long d
     panel.allowsMultipleSelection = NO;
     [panel beginSheetModalForWindow:self.settingsWindow completionHandler:^(NSModalResponse response) {
         if (self.quitting || response != NSModalResponseOK) return;
-        NSError *error = nil;
-        if (![self.preferences selectDataRoot:panel.URL iso:nil error:&error]) showError(error);
-        else { [self refreshSettings]; [self changedDataNotice]; }
+        [self acceptFolder:panel.URL completion:^(BOOL success) { if (success) [self changedDataNotice]; }];
     }];
 }
 - (void)selectImage:(id)sender {
@@ -503,6 +614,16 @@ int host_menu_prepare(const char *support, const char *fallback, char *data, siz
         /* Development overrides apply to this launch; chooser actions save the
            next launch's selection without changing the current game's files. */
         menu.launchDataPath = valid.path;
+        NSURL *downloadConfiguration = [NSBundle.mainBundle URLForResource:@"map-downloads" withExtension:@"json"];
+        NSData *downloadSettings = downloadConfiguration ? [NSData dataWithContentsOfURL:downloadConfiguration] : nil;
+        NSDictionary *downloadConfig = downloadSettings ? [NSJSONSerialization JSONObjectWithData:downloadSettings options:0 error:nil] : nil;
+        menu.mapDownloads = [[HaloMapDownloads alloc] initWithSupportDirectory:menu.preferences.supportDirectory
+            configuration:downloadConfig sessionConfiguration:nil];
+        [menu.mapDownloads setGameDataRoot:valid];
+        [menu.mapDownloads activateForHost];
+        __weak HaloMenu *weakMenu = menu;
+        menu.mapDownloads.statusChanged = ^{ [weakMenu refreshSettings]; };
+        [menu.mapDownloads startEnabled:menu.preferences.communityDownloadsEnabled];
         if (!getenv("HALO_WINDOWED")) SDL_setenv_unsafe("HALO_WINDOWED", menu.preferences.windowed ? "1" : "0", 1);
         return [valid.path getCString:data maxLength:capacity encoding:NSUTF8StringEncoding] ? 1 : 0;
     }
@@ -512,6 +633,7 @@ void host_menu_window_changed(void) { [menu refreshFullscreen]; }
 void host_menu_finish_game(int exit_code) {
     @autoreleasepool {
         menu.quitting = YES;
+        [menu.mapDownloads cancelDownloads];
         [menu closeSettings:nil];
         menu.gameRunning = NO;
         if (!exit_code && menu.pendingInstall) {

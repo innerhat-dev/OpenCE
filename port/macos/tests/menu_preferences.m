@@ -35,10 +35,42 @@ int main(int argc, const char **argv) {
         assert([@"[bindings]\nx = \"E\"\n" writeToURL:controls atomically:YES encoding:NSUTF8StringEncoding error:&error]);
         preferences = [[HaloPreferences alloc] initWithSupportDirectory:support];
         assert([preferences setWindowed:YES error:&error]);
+        assert(!preferences.communityDownloadsEnabled);
+        assert([preferences setCommunityDownloadsEnabled:YES error:&error]);
+        assert([[HaloPreferences alloc] initWithSupportDirectory:support].communityDownloadsEnabled);
+        assert([preferences setCommunityDownloadsEnabled:NO error:&error]);
+        assert(![[HaloPreferences alloc] initWithSupportDirectory:support].communityDownloadsEnabled);
         NSData *before = [NSData dataWithContentsOfURL:settings];
         assert(![preferences selectDataRoot:[test URLByAppendingPathComponent:@"pc"] iso:nil error:&error]);
         assert([[NSData dataWithContentsOfURL:settings] isEqualToData:before]);
         assert([preferences.dataPath isEqualToString:valid.path]);
+        assert(HaloGameDataCopySize(valid, &error) == 4096);
+        NSURL *copied = HaloCopyGameData(valid, support, NULL, NULL, &error);
+        assert(copied && ![copied.path isEqual:valid.path]);
+        assert([[NSData dataWithContentsOfURL:[copied URLByAppendingPathComponent:@"maps/ui.map"]]
+            isEqual:[NSData dataWithContentsOfURL:[valid URLByAppendingPathComponent:@"maps/ui.map"]]]);
+        assert([preferences.dataPath isEqual:valid.path]);
+        assert([NSFileManager.defaultManager fileExistsAtPath:[valid URLByAppendingPathComponent:@"maps/a10.map"].path]);
+        NSData *unchanged = [NSData dataWithContentsOfURL:settings];
+        assert(!HaloCopyGameData([test URLByAppendingPathComponent:@"pc"], support, NULL, NULL, &error));
+        assert([[NSData dataWithContentsOfURL:settings] isEqual:unchanged]);
+        NSURL *uppercase = [test URLByAppendingPathComponent:@"upper/MAPS"];
+        assert([NSFileManager.defaultManager createDirectoryAtURL:uppercase withIntermediateDirectories:YES attributes:nil error:nil]);
+        for (NSString *name in @[@"ui", @"a10"]) {
+            NSData *bytes = [NSData dataWithContentsOfURL:[valid URLByAppendingPathComponent:[NSString stringWithFormat:@"maps/%@.map", name]]];
+            assert([bytes writeToURL:[uppercase URLByAppendingPathComponent:[name.uppercaseString stringByAppendingString:@".MAP"]] atomically:YES]);
+        }
+        assert(HaloGameDataCopySize(uppercase, &error) == 4096);
+        assert(HaloCopyGameData(uppercase, support, NULL, NULL, &error));
+        NSURL *linkedRoot = [test URLByAppendingPathComponent:@"linked/maps"];
+        assert([NSFileManager.defaultManager createDirectoryAtURL:linkedRoot withIntermediateDirectories:YES attributes:nil error:nil]);
+        for (NSString *name in @[@"ui", @"a10"]) {
+            assert(([NSFileManager.defaultManager createSymbolicLinkAtURL:[linkedRoot URLByAppendingPathComponent:[name stringByAppendingPathExtension:@"map"]]
+                withDestinationURL:[valid URLByAppendingPathComponent:[NSString stringWithFormat:@"maps/%@.map", name]] error:nil]));
+        }
+        assert(HaloValidateGameData(linkedRoot, &error));
+        assert(!HaloCopyGameData(linkedRoot, support, NULL, NULL, &error));
+        assert([[NSData dataWithContentsOfURL:settings] isEqual:unchanged]);
         NSURL *image = [test URLByAppendingPathComponent:@"disc.iso"];
         NSURL *imported = HaloImportDiscImage(image, support, progress, NULL, &error);
         assert(imported && progressCalls == 2);

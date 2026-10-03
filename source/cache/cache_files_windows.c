@@ -192,6 +192,9 @@ symbols in this file:
 #include "rasterizer/rasterizer.h"
 
 #include <xtl.h>
+#ifdef HALO_MACOS
+#include "halo_custom_maps.h"
+#endif
 
 /* ---------- constants */
 
@@ -1152,7 +1155,11 @@ static void cache_file_get_map_path(
 	const char *map_name,
 	char *path)
 {
+#ifdef HALO_MACOS
+	if (!native_map_get_path(map_name, path, 256)) path[0] = 0;
+#else
 	sprintf(path, "%s%s.map", cache_files_map_directory(), map_name);
+#endif
 
 	return;
 }

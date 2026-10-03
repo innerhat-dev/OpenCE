@@ -49,14 +49,28 @@ HARNESS = r'''
 #include <sys/stat.h>
 #include "xtl.h"
 static char directory[256];
+static char overlay[256];
+static int download_status;
 void set_directory(const char *p) { snprintf(directory, sizeof(directory), "%s/", p); }
+void set_overlay(const char *p) { snprintf(overlay, sizeof(overlay), "%s/", p); }
+void set_download_status(int status) { download_status = status; }
+int halo_map_download_directory(char *out, unsigned long capacity) {
+    if (!overlay[0]) return 0;
+    snprintf(out, capacity, "%s", overlay); return 1;
+}
+int halo_map_download_request(const char *map) { (void)map; return download_status; }
+static void resolve(const char *path, char *out, size_t capacity) {
+    if (!strncmp(path, "m:\\", 3)) snprintf(out, capacity, "%s%s", overlay, path + 3);
+    else snprintf(out, capacity, "%s", path);
+}
 const char *cache_files_map_directory(void) { return directory; }
 const char *cache_files_build_region(const char *build) {
     return !strcmp(build, "01.10.12.2276") || !strcmp(build, "01.01.14.2342") ? "region" : NULL;
 }
-struct handle { int kind; FILE *file; DIR *dir; };
+struct handle { int kind; FILE *file; DIR *dir; char root[512]; };
 HANDLE CreateFileA(const char *name, int access, int share, void *security, int creation, int flags, void *template) {
-    struct handle *h = calloc(1, sizeof(*h)); h->kind = 1; h->file = fopen(name, "rb");
+    char path[512]; resolve(name, path, sizeof(path));
+    struct handle *h = calloc(1, sizeof(*h)); h->kind = 1; h->file = fopen(path, "rb");
     if (!h->file) { free(h); return INVALID_HANDLE_VALUE; } return h;
 }
 int ReadFile(HANDLE handle, void *data, unsigned long size, unsigned long *read, void *overlapped) {
@@ -69,14 +83,16 @@ int FindNextFileA(HANDLE handle, WIN32_FIND_DATAA *out) {
     struct handle *h = handle; struct dirent *entry;
     while ((entry = readdir(h->dir))) {
         if (entry->d_name[0] == '.') continue;
-        char path[512]; struct stat info; snprintf(path, sizeof(path), "%s%s", directory, entry->d_name);
+        char path[1024]; struct stat info; snprintf(path, sizeof(path), "%s%s", h->root, entry->d_name);
         if (stat(path, &info)) continue;
         out->dwFileAttributes = S_ISDIR(info.st_mode) ? FILE_ATTRIBUTE_DIRECTORY : 0;
         snprintf(out->cFileName, sizeof(out->cFileName), "%s", entry->d_name); return 1;
     } return 0;
 }
 HANDLE FindFirstFileA(const char *pattern, WIN32_FIND_DATAA *out) {
-    struct handle *h = calloc(1, sizeof(*h)); h->dir = opendir(directory);
+    struct handle *h = calloc(1, sizeof(*h)); resolve(pattern, h->root, sizeof(h->root));
+    char *wildcard = strchr(h->root, '*'); if (wildcard) *wildcard = 0;
+    h->dir = opendir(h->root);
     if (!h->dir || !FindNextFileA(h, out)) {
         if (h->dir) closedir(h->dir); free(h); return INVALID_HANDLE_VALUE;
     } return h;
@@ -104,7 +120,7 @@ class NativeMapTests(unittest.TestCase):
         (cls.folder / "xtl.h").write_text(XTL)
         (cls.folder / "harness.c").write_text(HARNESS)
         library = cls.folder / "maps.dylib"
-        subprocess.run(["clang", "-shared", "-fPIC", "-Wall", "-Wextra", "-Wno-unused-parameter",
+        subprocess.run(["clang", "-shared", "-fPIC", "-Wall", "-Wextra", "-Wno-unused-parameter", "-DHALO_MACOS=1",
                         "-I", str(cls.folder), "-iquote", str(ROOT / "port/linux/include"),
                         "-include", str(ROOT / "port/linux/include/halo_port_capacity.h"),
                         str(ROOT / "port/linux/game/custom_maps.c"), str(cls.folder / "harness.c"),
@@ -115,6 +131,10 @@ class NativeMapTests(unittest.TestCase):
         cls.lib.native_multiplayer_map_list.argtypes = [ctypes.POINTER(ctypes.c_char_p), ctypes.c_short, ctypes.POINTER(ctypes.c_short)]
         cls.lib.native_multiplayer_map_list.restype = ctypes.POINTER(ctypes.c_char_p)
         cls.lib.set_directory.argtypes = [ctypes.c_char_p]
+        cls.lib.set_overlay.argtypes = [ctypes.c_char_p]
+        cls.lib.set_download_status.argtypes = [ctypes.c_int]
+        cls.lib.native_map_get_path.argtypes = [ctypes.c_char_p, ctypes.c_void_p, ctypes.c_uint]
+        cls.lib.native_map_download_pending.argtypes = [ctypes.c_char_p]
 
     @classmethod
     def tearDownClass(cls):
@@ -122,6 +142,65 @@ class NativeMapTests(unittest.TestCase):
 
     def valid(self, data, filename="downrush.map"):
         return bool(self.lib.native_map_header_valid(ctypes.create_string_buffer(bytes(data)), filename.encode()))
+
+    def setUp(self):
+        self.lib.set_overlay(b"")
+        self.lib.set_download_status(0)
+
+    def map_list(self):
+        stock = (ctypes.c_char_p * len(STOCK))(*[s.encode() for s in STOCK])
+        count = ctypes.c_short()
+        result = self.lib.native_multiplayer_map_list(stock, len(STOCK), ctypes.byref(count))
+        return [result[i] for i in range(count.value)]
+
+    def test_overlay_and_rescan_preserve_user_files_and_stock(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary) / "user"
+            overlay = Path(temporary) / "downloads"
+            base.mkdir(); overlay.mkdir()
+            self.lib.set_directory(str(base).encode())
+            self.lib.set_overlay(str(overlay).encode())
+            self.lib.set_download_status(1)
+            (base / "downrush.map").write_bytes(header())
+            (overlay / "downrush.map").write_bytes(header())
+            (overlay / "bloodgulch.map").write_bytes(header("bloodgulch"))
+            (overlay / "pending.partial").write_bytes(header("pending"))
+            self.assertEqual(self.map_list(), [s.encode() for s in STOCK] + [b"downrush"])
+            (overlay / "atlas.map").write_bytes(header("atlas"))
+            (overlay / "Unverified.map").write_bytes(header("unverified"))
+            self.assertEqual(self.map_list(), [s.encode() for s in STOCK] + [b"atlas", b"downrush"])
+            self.lib.set_download_status(2)
+            self.assertEqual(self.map_list(), [s.encode() for s in STOCK] + [b"downrush"])
+            self.lib.set_download_status(1)
+            path = ctypes.create_string_buffer(256)
+            self.assertTrue(self.lib.native_map_get_path(b"levels\\downrush\\downrush", path, len(path)))
+            self.assertEqual(path.value, str(base / "downrush.map").encode())
+            (base / "downrush.map").unlink()
+            self.assertTrue(self.lib.native_map_get_path(b"downrush", path, len(path)))
+            self.assertEqual(path.value, b"m:\\downrush.map")
+            self.assertTrue(self.lib.native_map_get_path(b"DownRush", path, len(path)))
+            self.assertEqual(path.value, b"m:\\downrush.map")
+            (overlay / "downrush.map").unlink()
+            (overlay / "DOWNRUSH.map").write_bytes(header())
+            if not (overlay / "downrush.map").exists():  # case-sensitive filesystem
+                self.assertTrue(self.lib.native_map_get_path(b"downrush", path, len(path)))
+                self.assertEqual(path.value, str(base / "downrush.map").encode())
+            self.assertTrue(self.lib.native_map_get_path(b"bloodgulch", path, len(path)))
+            self.assertEqual(path.value, str(base / "bloodgulch.map").encode())
+            self.assertFalse(self.lib.native_map_get_path(b"downrush", path, 4))
+
+    def test_missing_map_waits_only_for_catalog_download_and_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            self.lib.set_directory(temporary.encode())
+            for status, pending in ((0, 0), (1, 0), (2, 2), (-1, -1)):
+                self.lib.set_download_status(status)
+                self.assertEqual(self.lib.native_map_download_pending(b"downrush"), pending)
+                self.assertEqual(self.lib.native_map_download_pending(b"bloodgulch"), 0)
+                self.assertEqual(self.lib.native_map_download_pending(b"ui"), 0)
+                self.assertEqual(self.lib.native_map_download_pending(b"a10"), 0)
+                self.assertEqual(self.lib.native_map_download_pending(b"bad.name"), 0)
+            Path(temporary, "downrush.map").write_bytes(header())
+            self.assertEqual(self.lib.native_map_download_pending(b"downrush"), 0)
 
     def test_header_acceptance_and_capacity(self):
         self.assertTrue(self.valid(header()))

@@ -325,13 +325,14 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     imports_s = gen_dir / "imports.s"
     host_table_c = build_root / "host" / "host_import_table.c"
     host_imports_list = PORT_DIR / "host_imports.list"
+    platform_imports = [Path("port/macos/host_imports.list")] if macos else []
     n.rule(
         name="android_imports",
         command=f"{python} tools/android_imports.py {'--ios ' if ios else ''}--host-table {host_table_c} {imports_s} $in",
         description="ANDROID IMPORTS",
     )
     n.build(outputs=[imports_s, host_table_c], rule="android_imports",
-            inputs=[host_imports_list, posix_imports, gl_imports],
+            inputs=[host_imports_list, posix_imports, gl_imports, *platform_imports],
             implicit=[Path("tools/android_imports.py")])
 
     generated_headers = [*xdk_headers(), alltypes, syscall_h, version_h, gl_stamp,

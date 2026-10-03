@@ -19,9 +19,10 @@ extern uint32_t host_sdl_create_window(const char *, int, int, int64_t);
 - (void)selectImage:(id)sender;
 - (void)openConfig:(id)sender;
 - (void)importImage:(NSURL *)image completion:(void (^)(BOOL))completion;
+- (void)copyFolder:(NSURL *)folder completion:(void (^)(BOOL))completion;
 @end
 
-static void check_main_loop(const char *image) {
+static void check_main_loop(const char *image, const char *data) {
     NSMenuItem *settings = NSApp.mainMenu.itemArray[0].submenu.itemArray[1];
     id<MenuActions> target = settings.target;
     int sender = socket(AF_INET, SOCK_DGRAM, 0), receiver = socket(AF_INET, SOCK_DGRAM, 0);
@@ -31,7 +32,7 @@ static void check_main_loop(const char *image) {
     socklen_t size = sizeof(address);
     assert(getsockname(receiver, (void *)&address, &size) == 0);
     assert(fcntl(receiver, F_SETFL, O_NONBLOCK) == 0);
-    __block BOOL imported = NO;
+    __block BOOL imported = NO, copied = NO;
     unsigned step = 0, ticks = 0, received = 0;
     BOOL quit = NO;
     Uint64 started = SDL_GetTicks();
@@ -67,14 +68,20 @@ static void check_main_loop(const char *image) {
             assert(!imported && !NSApp.modalWindow);
             step++;
         } else if (step == 6 && imported && elapsed > 2900) {
+            [target copyFolder:[NSURL fileURLWithPath:@(data)] completion:^(BOOL success) {
+                assert(success); copied = YES;
+            }];
+            assert(!copied && !NSApp.modalWindow);
+            step++;
+        } else if (step == 7 && copied && elapsed > 3100) {
             [target openConfig:nil];
             assert(window.attachedSheet && !NSApp.modalWindow);
             step++;
-        } else if (step == 7 && elapsed > 3400) {
+        } else if (step == 8 && elapsed > 3400) {
             [target closeSettings:nil];
             assert(!window.visible);
             step++;
-        } else if (step == 8 && elapsed > 3900) {
+        } else if (step == 9 && elapsed > 3900) {
             [target showSettings:nil];
             [target selectFolder:nil];
             assert(window.attachedSheet);
@@ -95,9 +102,9 @@ static void check_main_loop(const char *image) {
     }
     close(sender);
     close(receiver);
-    fprintf(stderr, "Menu loop: quit=%d imported=%d step=%u ticks=%u packets=%u\n", quit, imported, step, ticks, received);
-    assert(quit && imported && step == 9 && ticks >= 20 && received == ticks);
-    printf("Settings, folder/image sheets, import and quit kept the main loop running (%u packets)\n", received);
+    fprintf(stderr, "Menu loop: quit=%d imported=%d copied=%d step=%u ticks=%u packets=%u\n", quit, imported, copied, step, ticks, received);
+    assert(quit && imported && copied && step == 10 && ticks >= 20 && received == ticks);
+    printf("Settings, folder/image sheets, disc import, managed copy and quit kept the main loop running (%u packets)\n", received);
 }
 
 int main(int argc, const char **argv) {
@@ -119,7 +126,7 @@ int main(int argc, const char **argv) {
         assert(host_sdl_create_window("Halo Menu Test", 640, 480, 0));
         host_menu_begin_game();
         if (argc == 4) {
-            check_main_loop(argv[3]);
+            check_main_loop(argv[3], argv[2]);
             host_menu_finish_game(0);
             SDL_Quit();
             return 0;

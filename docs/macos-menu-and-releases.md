@@ -144,8 +144,8 @@ Extracted-folder selection offers **Copy and Manage**, **Use This Folder**, or
 the original files. Community downloads have separate opt-in controls and a
 verified library under `Community Maps/maps/`; user-supplied files take priority.
 See [managed storage and map downloads](map-downloads-plan.md) for the catalog,
-missing-map readiness flow and hosting configuration. Hosting is unconfigured
-until an approved HTTPS catalog is selected.
+missing-map readiness flow and hosting configuration. The selected publisher
+is `https://dl.oghalo.com`; downloads default off until the player opts in.
 
 `macos-settings.json` in the existing Application Support directory records the
 data/source-image paths and fullscreen preference. Saves, profiles, cache and

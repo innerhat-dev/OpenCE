@@ -54,7 +54,7 @@ def audit_bundle(app):
     if {path.name for path in contents.iterdir()} - allowed:
         raise RuntimeError("Unexpected top-level content in the app")
     resources = contents / "Resources"
-    if {path.name for path in resources.iterdir()} - {"AppIcon.icns", "Helmet.pdf", "halo_guest.elf", "BuildInfo.txt", "Licenses"}:
+    if {path.name for path in resources.iterdir()} - {"AppIcon.icns", "Helmet.pdf", "halo_guest.elf", "BuildInfo.txt", "Licenses", "map-downloads.json"}:
         raise RuntimeError("Release resources must contain only the compiled engine, icons, build record and licenses")
     if {path.name for path in (contents / "MacOS").iterdir()} != {"halo"}:
         raise RuntimeError("Release executables must contain only the native host")

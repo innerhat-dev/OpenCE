@@ -56,5 +56,9 @@ jobs:
         run: python3 -m unittest tools.test_network_pings tools.test_network_v11
       - name: Native data import and packaging rules
         run: python3 tools/test_macos_menu.py
+      - name: Native community map download fixtures
+        run: python3 tools/test_macos_map_downloads.py
+      - name: Managed map lookup and precache readiness
+        run: python3 -m unittest tools.test_custom_maps tools.test_map_download_precache tools.test_map_catalog
       - name: Native Settings keeps the game loop running
         run: python3 tools/test_macos_menu.py --check-ui

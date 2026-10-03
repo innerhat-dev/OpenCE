@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "catalog_url": "https://dl.oghalo.com/catalogs/testing/current.json",
+  "objects_base_url": "https://dl.oghalo.com/",
+  "allowed_origins": ["https://dl.oghalo.com"],
+  "profile": "stock-xbox-ntsc",
+  "cache_build": "01.10.12.2276",
+  "max_catalog_bytes": 1048576,
+  "max_map_bytes": 134217728,
+  "max_cache_bytes": 134217728,
+  "max_tag_bytes": 23068672,
+  "max_maps": 115
+}

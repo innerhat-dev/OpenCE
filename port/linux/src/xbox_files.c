@@ -24,6 +24,9 @@ matched case-insensitively, like the Xbox's FATX volumes.
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#ifdef HALO_MACOS
+#include "halo_custom_maps.h"
+#endif
 
 /* ---------- paths */
 
@@ -181,12 +184,26 @@ void platform_translate_path(const char *xbox_path, char *host_path, unsigned lo
 	char resolved[1024];
 	const char *cursor = xbox_path;
 	unsigned long length;
+#ifdef HALO_MACOS
+	BOOL managed_exact = FALSE;
+#endif
 
 	snprintf(resolved, sizeof(resolved), "%s", platform_data_root());
 	if (((cursor[0] >= 'a' && cursor[0] <= 'z') || (cursor[0] >= 'A' && cursor[0] <= 'Z')) && cursor[1] == ':')
 	{
 		char drive = (char)(cursor[0] | 0x20);
 
+#ifdef HALO_MACOS
+		if (drive == 'm')
+		{
+			managed_exact = TRUE;
+			/* M: is a read-only map namespace; downloader publishes verified files
+			atomically here. Existing D: game data always remains independent. */
+			if (!halo_map_download_directory(resolved, sizeof(resolved)))
+				snprintf(resolved, sizeof(resolved), "%s/Community Maps/maps", platform_save_root());
+		}
+		else
+#endif
 		if (drive != 'd')
 		{
 			struct posix_file_information information;
@@ -213,7 +230,11 @@ void platform_translate_path(const char *xbox_path, char *host_path, unsigned lo
 		if (!component_length || !strcmp(component, "."))
 			continue;
 
-		if (posix_find_entry_case_insensitive(resolved, component, on_disk, sizeof(on_disk)))
+		if (
+#ifdef HALO_MACOS
+			!managed_exact &&
+#endif
+			posix_find_entry_case_insensitive(resolved, component, on_disk, sizeof(on_disk)))
 		{
 			/* prefer an exact match when several spellings exist */
 			char exact[1100];
