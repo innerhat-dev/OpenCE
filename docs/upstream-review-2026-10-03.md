@@ -7,7 +7,8 @@ revision was `d1c7243cb20eab4488efa1266e259b1f4d5240f6`.
 The last full upstream integration remains `c55e4e2b` / Apple merge
 `aabe44417431c36e46aaa385a69a89a3c9d685c0`; selective v10 integration was
 `ea4dec3c28fcb4975ad36718c344bf5205b4c5eb`. This v11 addition is a focused
-working-tree port, with no upstream merge. Local integration commit is pending.
+selective port, with no upstream merge. Local integration commit:
+`694cc79d48654d862d3ecda51e71ea559f93bd2d`.
 The [fidelity policy](xbox-fidelity.md) remains in force.
 
 ## Protocol and compatibility boundary
@@ -87,9 +88,16 @@ or live state mutation. Existing ping codec/role/staleness tests and PB host
 capability/assets/saved-selection checks passed; host grenade-rule thresholds
 are covered by the PB authority fixture. `git diff --check` passed.
 
-These are focused source/ABI checks. Native app build/install, socket transport,
-consecutive matches, actual upstream-v11 interoperability, Windows/Linux devices,
-loss/jitter timing and controller gameplay require separate runtime evidence.
+The native ARM64 guest and Mac app built successfully, and the installed app
+passed strict signature verification. Standalone runtime probes passed for
+rebasing, allocation, clocks, synchronization, audio and network transports.
+Two real instances on one Mac completed two consecutive Slayer matches over
+the encrypted invite transport, with bidirectional updates and no assertions
+or faults (`consecutive-v11-final/validation.json` in the ignored local review
+output). Both used the original reference profile and separate data/save roots.
+This verifies fork-to-fork protocol 11 on one Mac. Actual upstream-v11
+interoperability, Windows/Linux/Android devices, Internet loss/jitter timing and
+controller gameplay still require separate runtime evidence.
 The pre-existing fidelity reports remain unchanged and document already-present
 input-timing differences from the Xbox reference; this patch does not establish
 retail parity or undo those historical differences. No matchmaking service,

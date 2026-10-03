@@ -5,7 +5,9 @@ from the repository root unless stated otherwise. The Mac game runs natively;
 the iPhone build also uses native ARM code and ANGLE's Metal renderer.
 
 To run the Mac app without compiling, download the
-[macOS DMG artifact](../port/macos/README.md#download). It bundles the runtime
+[macOS DMG](../port/macos/README.md#download). Published testing prereleases have
+direct asset links; unpublished CI artifacts require GitHub sign-in and expire.
+The DMG bundles the runtime
 dependencies; only your own original Xbox game data is needed separately.
 
 ## 1. Clone and install public dependencies
@@ -149,7 +151,11 @@ integrated. See the fidelity policy for the detailed review criteria.
 When a contribution is ready, prepare a focused branch against
 `upstream/main` and open a pull request into that repository. CI still checks
 fork pushes; automatic releases and Discord build notifications run only in
-the upstream repository.
+the upstream repository. Our fork also has a separate, explicitly dispatched
+[testing prerelease workflow](macos-menu-and-releases.md#manual-testing-prerelease)
+that collects successful Mac, Windows, Linux and Android builds from the same
+latest-main revision. Its protocol metadata comes from that revision; current
+source uses protocol 11. Fork CI disables the existing upstream self-updater.
 
 ## Source and build artifacts
 
@@ -160,7 +166,9 @@ Generated game binaries stay under `build/` and must not be committed. The
 builds a separate downloadable artifact from the committed source and public
 dependencies, with no game data or private SDK inputs. It audits the bundle
 before packaging and retains the DMG artifact for 14 days. This CI download is
-separate from the Developer ID and Sparkle release process.
+separate from the Developer ID and Sparkle release process. Manual testing
+publication can promote those audited CI outputs to a GitHub prerelease with
+tagged direct download links, without personal signing credentials or game data.
 
 Device signing settings belong in your local Xcode account and ignored build
 directory. Pass your team ID and bundle identifier on the command line; do not

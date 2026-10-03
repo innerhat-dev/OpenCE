@@ -12,7 +12,8 @@ release build does (profile-guided optimisation needs clang 22 or later,
 and is skipped with an older one). CI_COMPILER_LAUNCHER (ccache, say) is
 passed on as --compiler-launcher. A build of the main branch gets the run's
 number (HALO_BUILD_NUMBER), which its release is named after and the
-self-updater compares.
+self-updater compares, only in the upstream repository. Fork builds disable
+the updater, whose current download source belongs to upstream.
 """
 
 import argparse
@@ -41,6 +42,23 @@ def run(command, cwd=ROOT):
     subprocess.run([str(part) for part in command], cwd=cwd, check=True)
 
 
+def update_build_number(environment):
+    """Only upstream main publishes the build-* releases used by the updater."""
+    number = environment.get("GITHUB_RUN_NUMBER", "")
+    if (environment.get("GITHUB_REPOSITORY") == "cybersecurity/halo-ce-universal"
+            and environment.get("GITHUB_REF") == "refs/heads/main" and number.isdigit()):
+        return number
+    return "0"
+
+
+def android_install_build_number(environment):
+    """Keep APK upgrade ordering independent of the upstream-only updater."""
+    number = environment.get("GITHUB_RUN_NUMBER", "")
+    if number.isascii() and number.isdecimal() and 0 < int(number) <= 2100000000:
+        return number
+    return "0"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("platform", choices=sorted(OUTPUTS))
@@ -55,12 +73,10 @@ def main() -> int:
     launcher = os.environ.get("CI_COMPILER_LAUNCHER")
     if launcher:
         configure += ["--compiler-launcher", launcher]
-    # a build of main knows its number, which names its release (build-<n>),
-    # for the self-updater (port/linux/src/updater.c, and the Android app);
-    # other builds have none, and never look for updates
-    if os.environ.get("GITHUB_REF") == "refs/heads/main" and os.environ.get("GITHUB_RUN_NUMBER", "").isdigit():
-        os.environ["HALO_BUILD_NUMBER"] = os.environ["GITHUB_RUN_NUMBER"]
-        print(f"build number {os.environ['HALO_BUILD_NUMBER']}", flush=True)
+    # The current updater fetches cybersecurity's build-<n> releases. Never
+    # let a fork build offer to replace itself with that different product.
+    os.environ["HALO_BUILD_NUMBER"] = update_build_number(os.environ)
+    print(f"updater build number {os.environ['HALO_BUILD_NUMBER']}", flush=True)
     run(configure)
 
     if args.platform == "android":
@@ -68,7 +84,9 @@ def main() -> int:
         # same name: release is signed with the debug key, not debuggable)
         run(["ninja", "android"])
         gradlew = "gradlew.bat" if os.name == "nt" else "./gradlew"
-        run([gradlew, "--console=plain", "-q", f"assemble{args.config.capitalize()}"], cwd=ROOT / "port/android")
+        run([gradlew, "--console=plain", "-q",
+             "-PhaloInstallBuildNumber=" + android_install_build_number(os.environ),
+             f"assemble{args.config.capitalize()}"], cwd=ROOT / "port/android")
         outputs = [APKS[args.config]]
     else:
         run(["ninja", args.platform])

@@ -11,6 +11,15 @@ special entitlement, or security-setting change is required for this local build
 
 ## Download
 
+For shared testing, use a published tag in the
+[testing releases](https://github.com/pfista/halo-ce-universal/releases) and
+download `Halo-CE-Universal-macos-arm64.dmg` directly from its assets. Testing
+prereleases have permanent URLs containing the tag and require no GitHub sign-in.
+See [manual testing publication](../../docs/macos-menu-and-releases.md#manual-testing-prerelease)
+for the publishing workflow. No testing prerelease is created automatically.
+
+For an unpublished CI build:
+
 Sign in to GitHub and open the
 [macOS DMG workflow](https://github.com/pfista/halo-ce-universal/actions/workflows/macos-dmg.yml).
 Choose a successful run, then download **halo-macos-arm64-dmg** from its
@@ -34,6 +43,12 @@ launch; after attempting to open it, use **System Settings → Privacy & Securit
 On first launch, select your own original Xbox Halo disc image or extracted
 game folder. The download contains no maps or disc images. See
 [Mac data import and releases](../../docs/macos-menu-and-releases.md) for details.
+
+Cross-platform testers should use Mac, Windows, Linux or Android assets from
+the same testing tag. Its release notes and `provenance.json` identify the source
+revision and network protocol. New builds use protocol **11**; protocol 10
+clients cannot join these sessions. A successful CI build establishes packaging
+and build checks; play between platforms still needs testing.
 
 ## Launch
 

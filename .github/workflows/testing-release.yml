@@ -1,0 +1,71 @@
+name: Publish testing prerelease
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'New immutable testing tag, for example test-v0.3.0-net11'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testing-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: ${{ github.repository == 'pfista/halo-ce-universal' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test artifact selection and publication guards
+        run: python3 -m unittest tools.test_testing_release
+      - name: Validate and collect successful main builds
+        run: >-
+          python3 tools/testing_release.py prepare
+          --repository "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA"
+          --tag "$RELEASE_TAG" --directory "$RUNNER_TEMP/testing-release"
+      - name: Preserve validated release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: testing-release-candidate
+          path: ${{ runner.temp }}/testing-release
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: testing-release-candidate
+          path: ${{ runner.temp }}/testing-release
+      - name: Recheck source, provenance and unused tag; publish prerelease
+        run: >-
+          python3 tools/testing_release.py publish
+          --repository "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA"
+          --tag "$RELEASE_TAG" --directory "$RUNNER_TEMP/testing-release"

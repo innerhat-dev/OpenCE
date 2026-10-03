@@ -6,11 +6,12 @@ plugins {
 // native libraries (jniLibs) and the guest image (assets)
 def staged = new File(rootDir, "../../build/android")
 
-// a build of main knows its number (tools/ci_build.py), which names its
-// release and which the self-updater (Updater.java) compares; others have
-// none and never look for updates
+// Only upstream main enables the self-updater. Fork CI still needs an
+// increasing install version so same-key APKs can upgrade each other.
 def buildNumberText = System.getenv("HALO_BUILD_NUMBER") ?: "0"
 def buildNumber = buildNumberText.isInteger() ? buildNumberText.toInteger() : 0
+def installBuildNumberText = providers.gradleProperty("haloInstallBuildNumber").getOrElse(buildNumberText)
+def installBuildNumber = installBuildNumberText.isInteger() ? installBuildNumberText.toInteger() : 0
 
 // the workflow's signing key (.github/workflows/build.yml): every build of
 // main signed with it can install over the one before; without it, the
@@ -25,8 +26,8 @@ android {
         applicationId "com.halo.decomp"
         minSdk 28
         targetSdk 35
-        versionCode Math.max(1, buildNumber)
-        versionName buildNumber > 0 ? "build " + buildNumber : "1.0"
+        versionCode Math.max(1, installBuildNumber)
+        versionName installBuildNumber > 0 ? "build " + installBuildNumber : "1.0"
         buildConfigField "int", "HALO_BUILD_NUMBER", "${buildNumber}"
         ndk {
             abiFilters "arm64-v8a"

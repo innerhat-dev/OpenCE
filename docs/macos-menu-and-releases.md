@@ -39,6 +39,76 @@ an ad hoc signature with no certificate authority or team identifier. The app
 uses the generic `local.halo.ce-universal` bundle identifier. Third-party helper
 identifiers and capability entitlements remain those of the pinned dependency.
 
+## Manual testing prerelease
+
+The fork's **Publish testing prerelease** workflow runs only when explicitly
+dispatched on `main` with a new `test-...` tag, for example
+`test-v0.3.0-net11`. It publishes the latest `main` commit using existing,
+successful **Build** and **macOS DMG** workflow outputs from that exact commit.
+It does not rebuild, sign with a personal identity, or include game data.
+
+After these changes are committed and pushed, wait for both build workflows to
+succeed. In GitHub Actions, choose **Publish testing prerelease → Run workflow**,
+select `main`, and enter an unused testing tag. This explicit dispatch publishes
+a prerelease; code pushes do not publish. Prepare/collection uses a read-only
+token; the separate publication job alone receives `contents: write`.
+
+The helper rejects another source revision, non-main runs, unsuccessful runs,
+missing/expired artifacts, changed hashes, unexpected Mac contents, and reused
+tags/releases. Before publication it rechecks latest main and build provenance.
+If main advances while publication is queued, dispatch again after the new
+commit's builds finish. Workflow artifacts must still exist: Mac artifacts last
+14 days and other platform artifacts last 3 days. Manually rerun both build
+workflows on latest main if needed.
+
+The prerelease includes:
+
+- `Halo-CE-Universal-macos-arm64.dmg`, `macos-README.txt` and `macos-BuildInfo.txt`.
+- `halo-windows-release.zip`, `halo-linux-release.zip` and `halo-android-release.zip`.
+- `SHA256SUMS` and `provenance.json` with source SHA, network protocol, CI run IDs,
+  artifact IDs and SHA-256 hashes. Debug builds are omitted.
+
+For a tag such as `test-v0.3.0-net11`, the direct Mac download is:
+
+```text
+https://github.com/pfista/halo-ce-universal/releases/download/test-v0.3.0-net11/Halo-CE-Universal-macos-arm64.dmg
+```
+
+The URL becomes usable only after that tag is published. Public release assets
+require no GitHub sign-in and are retained until the release is deleted.
+Prereleases cannot be GitHub's “Latest” release, so share the tagged URL instead
+of `releases/latest/download`. Tags and assets are not overwritten. A failed
+publication can leave a new tag or incomplete release; inspect that state and
+use a fresh tag for a retry instead of overwriting it.
+
+Testers should use the same tag across platforms. Current source uses protocol
+**11**, which cannot join protocol 10 sessions; metadata extracts the actual
+protocol from the selected source instead of assuming it from the tag name.
+The DMG is Apple Silicon/macOS 26+, ad-hoc signed and unnotarized. Windows builds
+are portable x86 executables; Linux builds still need the documented 32-bit
+OpenGL/SDL/audio runtime dependencies. Android signing depends on the existing
+CI signing configuration. Build success does not establish cross-platform play.
+Fork CI builds disable the updater that otherwise targets cybersecurity's
+different build; Sparkle also remains disabled in these Mac CI builds.
+
+Read-only local preparation and verification are available without publication:
+
+```sh
+python3 tools/testing_release.py prepare --sha FULL_LATEST_MAIN_SHA \
+  --tag test-v0.3.0-net11 --directory /tmp/halo-testing-candidate
+python3 tools/testing_release.py verify --sha FULL_LATEST_MAIN_SHA \
+  --tag test-v0.3.0-net11 --directory /tmp/halo-testing-candidate
+```
+
+Use Python 3.11 or later, a fresh directory and the authenticated GitHub CLI. `prepare` downloads the
+existing artifacts and writes a candidate; only the explicit `publish` command
+creates a tag/release. The workflow uses that command in its publication job.
+
+GitHub documents [artifact download access](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts),
+[artifact metadata and download](https://docs.github.com/en/rest/actions/artifacts),
+[workflow source/run filters](https://docs.github.com/en/rest/actions/workflow-runs),
+and [prerelease/latest behavior](https://docs.github.com/en/rest/releases/releases).
+
 ## Independently supplied data
 
 After the initial game build and public dependency setup, build without a local
@@ -68,6 +138,14 @@ PC/Custom Edition/MCC maps and mixed releases are rejected. This checks the
 format, not completeness of every level: use a complete set from one disc.
 Failed imports preserve the previous selection and data. Successful imports
 retain earlier imports rather than deleting the person's files.
+
+Extracted-folder selection offers **Copy and Manage**, **Use This Folder**, or
+**Cancel**. Managed copies use the same Application Support layout and preserve
+the original files. Community downloads have separate opt-in controls and a
+verified library under `Community Maps/maps/`; user-supplied files take priority.
+See [managed storage and map downloads](map-downloads-plan.md) for the catalog,
+missing-map readiness flow and hosting configuration. Hosting is unconfigured
+until an approved HTTPS catalog is selected.
 
 `macos-settings.json` in the existing Application Support directory records the
 data/source-image paths and fullscreen preference. Saves, profiles, cache and
