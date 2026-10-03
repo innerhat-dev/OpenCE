@@ -164,6 +164,141 @@ class PublisherTests(unittest.TestCase):
             self.publish()
         self.assertEqual(self.http.objects[self.catalog_key], b"competing catalog")
 
+    def lose_map_put_response(self, after_store=None):
+        request = self.http.request
+        def lost_response(method, url, **kwargs):
+            result = request(method, url, **kwargs)
+            if method == "PUT" and url.endswith("/" + self.key):
+                if after_store:
+                    after_store()
+                raise publisher.PublishError("private lost-response fixture marker")
+            return result
+        return patch.object(self.http, "request", side_effect=lost_response)
+
+    def test_lost_map_put_response_accepts_exact_stored_bytes_without_rewriting(self):
+        self.http.objects[self.catalog_key] = b"previous"
+        with self.lose_map_put_response():
+            self.publish()
+        writes = self.writes()
+        self.assertEqual(len(writes), 2)
+        self.assertEqual(writes[0][2]["if-none-match"], "*")
+        self.assertEqual(writes[1][2]["if-match"], FakeHTTPS.etag(b"previous"))
+        self.assertEqual(self.http.objects[self.key], self.data)
+        self.assertEqual(self.http.objects[self.catalog_key], self.prepared.catalog)
+        map_write = self.http.requests.index(writes[0])
+        recovered_read, public_read = self.http.requests[map_write + 1:map_write + 3]
+        self.assertEqual(recovered_read[0], "GET")
+        self.assertTrue(recovered_read[1].endswith("/" + self.key))
+        self.assertEqual(public_read[1], self.config["public_base_url"] + self.key)
+        self.assertLess(self.http.requests.index(public_read), self.http.requests.index(writes[1]))
+
+    def test_lost_map_put_response_unverified_read_never_advances_catalog(self):
+        for failure in ("short", "wrong-hash", "http-error", "read-error"):
+            with self.subTest(failure=failure):
+                self.http.objects = {self.catalog_key: b"previous"}
+                self.http.requests.clear()
+                def change_stored_object():
+                    if failure == "short":
+                        self.http.objects[self.key] = self.data[:-1]
+                    elif failure == "wrong-hash":
+                        self.http.objects[self.key] = self.data[:-1] + b"X"
+                request = self.r2.request
+                def failed_read(method, key, **kwargs):
+                    if method == "GET" and key == self.key and self.writes():
+                        if failure == "http-error":
+                            return publisher.Response(503, {}, b"")
+                        if failure == "read-error":
+                            raise publisher.PublishError("private read-response fixture marker")
+                    return request(method, key, **kwargs)
+                with self.lose_map_put_response(change_stored_object), patch.object(self.r2, "request", side_effect=failed_read):
+                    with self.assertRaisesRegex(publisher.PublishError, "stored bytes could not be verified; catalog was not advanced") as error:
+                        self.publish()
+                self.assertNotIn("private", str(error.exception))
+                self.assertEqual(len(self.writes()), 1)
+                self.assertEqual(self.http.objects[self.catalog_key], b"previous")
+                self.assertFalse(any(url == self.config["public_base_url"] + self.key for _, url, _, _ in self.http.requests))
+
+    def test_missing_readback_retries_only_conditional_map_put_until_exact_success(self):
+        def initially_missing():
+            if len(self.writes()) < 3:
+                self.http.objects.pop(self.key)
+        with self.lose_map_put_response(initially_missing):
+            self.publish()
+        map_writes = [item for item in self.writes() if item[1].endswith("/" + self.key)]
+        self.assertEqual(len(map_writes), 3)
+        self.assertTrue(all(item[2]["if-none-match"] == "*" and item[3] == self.data for item in map_writes))
+        self.assertEqual(self.http.objects[self.catalog_key], self.prepared.catalog)
+        self.assertEqual(self.progress[:2], [
+            "Retrying immutable map downrush after missing readback (attempt 2/3)",
+            "Retrying immutable map downrush after missing readback (attempt 3/3)"])
+
+    def test_persistently_missing_lost_put_readback_is_bounded_at_three_attempts(self):
+        self.http.objects[self.catalog_key] = b"previous"
+        with self.lose_map_put_response(lambda: self.http.objects.pop(self.key)):
+            with self.assertRaisesRegex(publisher.PublishError, "catalog was not advanced") as error:
+                self.publish()
+        self.assertEqual(len(self.writes()), 3)
+        self.assertTrue(all(item[2]["if-none-match"] == "*" and item[1].endswith("/" + self.key) for item in self.writes()))
+        self.assertEqual(len(self.progress), 2)
+        self.assertNotIn("private", str(error.exception))
+        self.assertEqual(self.http.objects[self.catalog_key], b"previous")
+
+    def test_map_retry_preserves_a_racing_object_and_requires_its_exact_bytes(self):
+        for same in (False, True):
+            with self.subTest(same=same):
+                self.http.objects = {self.catalog_key: b"previous"}
+                self.http.requests.clear()
+                self.progress.clear()
+                raced = self.data if same else self.data[:-1] + b"X"
+                request = self.http.request
+                def lost_once(method, url, **kwargs):
+                    response = request(method, url, **kwargs)
+                    if method == "PUT" and url.endswith("/" + self.key) and len(self.writes()) == 1:
+                        self.http.objects.pop(self.key)
+                        self.http.race = lambda key, objects: objects.update({key: raced})
+                        raise publisher.PublishError("private lost-response fixture marker")
+                    return response
+                with patch.object(self.http, "request", side_effect=lost_once):
+                    if same:
+                        self.publish()
+                    else:
+                        with self.assertRaisesRegex(publisher.PublishError, "different bytes"):
+                            self.publish()
+                map_writes = [item for item in self.writes() if item[1].endswith("/" + self.key)]
+                self.assertEqual(len(map_writes), 2)
+                self.assertTrue(all(item[2]["if-none-match"] == "*" for item in map_writes))
+                self.assertEqual(self.http.objects[self.key], raced)
+                self.assertEqual(self.http.objects[self.catalog_key], self.prepared.catalog if same else b"previous")
+
+    def test_lost_map_put_response_still_requires_public_bytes_and_catalog_etag(self):
+        for failure in ("public", "catalog-race"):
+            with self.subTest(failure=failure):
+                self.http.objects = {self.catalog_key: b"previous"}
+                self.http.requests.clear()
+                self.http.public_bad.clear()
+                if failure == "public":
+                    self.http.public_bad[self.key] = publisher.Response(200, {}, self.data[:-1] + b"X")
+                def race():
+                    if failure == "catalog-race":
+                        self.http.objects[self.catalog_key] = b"competing catalog"
+                with self.lose_map_put_response(race), self.assertRaises(publisher.PublishError):
+                    self.publish()
+                self.assertEqual(self.http.objects[self.catalog_key], b"previous" if failure == "public" else b"competing catalog")
+                self.assertEqual(len(self.writes()), 1 if failure == "public" else 2)
+
+    def test_lost_catalog_put_response_is_never_retried_or_recovered(self):
+        request = self.http.request
+        def lost_response(method, url, **kwargs):
+            result = request(method, url, **kwargs)
+            if method == "PUT" and url.endswith("/" + self.catalog_key):
+                raise publisher.PublishError("HTTPS request failed; credentials and remote error text were suppressed")
+            return result
+        with patch.object(self.http, "request", side_effect=lost_response), self.assertRaises(publisher.PublishError):
+            self.publish()
+        self.assertEqual(len(self.writes()), 2)
+        self.assertEqual(self.http.requests[-1], self.writes()[-1])
+        self.assertEqual(self.http.objects[self.catalog_key], self.prepared.catalog)
+
     def test_public_failure_after_catalog_write_reports_partial_publication(self):
         self.http.public_bad[self.catalog_key] = publisher.Response(404, {}, b"")
         with self.assertRaisesRegex(publisher.PublishError, "R2 catalog matches.*public verification failed"):
@@ -280,6 +415,15 @@ class PublisherTests(unittest.TestCase):
         self.assertIsNone(publisher.NoRedirect().redirect_request(None, None, 302, "redirect", {}, "https://other.test/"))
         with self.assertRaises(publisher.PublishError):
             http.request("GET", "http://insecure.test/")
+
+    def test_large_put_timeout_is_bounded_and_error_remains_redacted(self):
+        http = publisher.HTTPS()
+        with patch.object(http.opener, "open", side_effect=TimeoutError("private lost-response marker")) as transport:
+            with self.assertRaises(publisher.PublishError) as error:
+                http.request("PUT", "https://example.test/map", headers={"If-None-Match": "*"}, body=b"x" * (1024 * 1024 + 1))
+        self.assertNotIn("private", str(error.exception))
+        self.assertEqual(transport.call_args.kwargs["timeout"], 60)
+        self.assertEqual(transport.call_args.args[0].get_header("If-none-match"), "*")
 
 
 if __name__ == "__main__":

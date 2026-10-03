@@ -301,14 +301,29 @@ def publish(prepared, config, r2, http, *, progress=print):
             raise PublishError("Prepared map changed after validation; catalog was not advanced")
         existing = r2.request("GET", key, limit=len(data))
         if existing.status == 404:
-            result = r2.request("PUT", key, body=data, headers={"If-None-Match": "*",
-                                "Content-Type": "application/octet-stream",
-                                "Cache-Control": "public, max-age=31536000, immutable"})
-            if result.status not in (200, 201, 204, 409, 412):
-                raise PublishError(f"Immutable map upload failed (HTTP {result.status}); catalog was not advanced")
-            # A lost PUT response is safe to retry later; an object created by a
-            # racing publisher is accepted only after verifying its actual bytes.
-            existing = r2.request("GET", key, limit=len(data))
+            for attempt in range(1, 4):
+                try:
+                    result = r2.request("PUT", key, body=data, headers={"If-None-Match": "*",
+                                        "Content-Type": "application/octet-stream",
+                                        "Cache-Control": "public, max-age=31536000, immutable"})
+                except PublishError:
+                    # R2 may have stored the object before losing its response.
+                    # Retry only after a definite 404, retaining create-only
+                    # writes so a racing publisher's object is never replaced.
+                    try:
+                        existing = r2.request("GET", key, limit=len(data))
+                        if existing.status == 404 and attempt < 3:
+                            progress(f"Retrying immutable map {entry['id']} after missing readback (attempt {attempt + 1}/3)")
+                            continue
+                        require_exact(existing, data, "Immutable map " + entry["id"])
+                    except PublishError:
+                        raise PublishError(f"Immutable map {entry['id']} upload response failed and stored bytes could not be verified; catalog was not advanced") from None
+                else:
+                    if result.status not in (200, 201, 204, 409, 412):
+                        raise PublishError(f"Immutable map upload failed (HTTP {result.status}); catalog was not advanced")
+                    # A racing publisher's object is accepted only after exact read.
+                    existing = r2.request("GET", key, limit=len(data))
+                break
         require_exact(existing, data, "Immutable map " + entry["id"])
         public = http.request("GET", config["public_base_url"] + key,
                               headers={"Accept-Encoding": "identity", "Cache-Control": "no-cache"}, limit=len(data))
