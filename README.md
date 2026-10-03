@@ -29,8 +29,8 @@ All packages in the release come from the **same source commit**. Use the same
 tag when playing together. The release includes `SHA256SUMS`, `provenance.json`,
 and Mac installation notes. These are experimental builds.
 The `dmg2` revision adds a Mac drag-to-Applications install screen; the game app
-and other platform ZIPs are unchanged from `test-v0.3.0-net11` and compatible
-with it. The original release remains available.
+and other platform ZIPs are unchanged from `test-v0.3.0-net11`; both releases
+contain identical protocol-11 game builds. The original release remains available.
 
 If the release is not available, sign in to GitHub and use successful runs of
 this repository's [macOS DMG workflow](https://github.com/pfista/halo-og/actions/workflows/macos-dmg.yml)

@@ -145,7 +145,7 @@ the game or change user data. Existing output files are never replaced.
 
 `test-v0.3.0-net11-dmg2` is an installer revision of `test-v0.3.0-net11`.
 Its Mac app and other platform ZIPs are identical to that release's
-`41c4aa82` game build; these releases can play together. `provenance.json`
+`41c4aa82` game build. `provenance.json`
 records the installer tooling commit separately from the binary source and
 original CI artifacts. The original release and its checksums remain available.
 

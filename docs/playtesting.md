@@ -6,7 +6,7 @@ If the release is unavailable, the [download table](../README.md#download)
 explains matching-commit CI artifacts.
 You do not need to compile the game.
 This revision adds the Mac installer screen. Its game app and other platform
-ZIPs match `test-v0.3.0-net11`, so players using either release can play together.
+ZIPs match `test-v0.3.0-net11`; both contain identical protocol-11 game builds.
 
 Bring your own original Xbox Halo: Combat Evolved disc image (`.iso` / `.xiso`)
 or extracted game data. Use one complete set. **USA NTSC is recommended**;
