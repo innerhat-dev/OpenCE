@@ -74,6 +74,10 @@ static const struct config_setting config_settings[] =
 	{ "display.fullscreen", _config_boolean, "true", "HALO_FULLSCREEN", _environment_value, _platform_desktop,
 		"Start fullscreen, drawing at the display's resolution and shape; false\n"
 		"starts in a window, which draws the Xbox's 640x480. F11 switches." },
+	{ "display.mode", _config_string, "\"\"", "HALO_DISPLAY_MODE", _environment_value, _platform_desktop,
+		"\"fullscreen\" takes the display at its desktop resolution, \"borderless\"\n"
+		"is a window over the whole desktop (both draw at the display's\n"
+		"resolution), \"windowed\" is a window; empty follows display.fullscreen." },
 	{ "display.window_scale", _config_integer, "2", "HALO_WINDOW_SCALE", _environment_value, _platform_desktop,
 		"The window's size as a multiple of 640x480 (it can be resized)." },
 	{ "display.screen_width", _config_integer, "0", "HALO_SCREEN_WIDTH", _environment_value, _platform_android,
@@ -100,6 +104,32 @@ static const struct config_setting config_settings[] =
 		"Draw the HUD (meters, counters, panels, motion sensor, reticles,\n"
 		"waypoints, scopes) from the high-res assets (8x the maps' bitmaps);\n"
 		"false draws the maps' own bitmaps." },
+	{ "display.high_res_text", _config_boolean, "true", "HALO_HIGH_RES_TEXT", _environment_value, _platform_all,
+		"Draw the menus' and HUD's text with the fonts in port/assets/fonts\n"
+		"(Overpass) at the display's resolution, and the menus' titles from\n"
+		"port/assets/titles; false draws the maps' bitmap fonts and titles." },
+	{ "display.menus", _config_string, "\"pc\"", "HALO_MENUS", _environment_value, _platform_all,
+		"The menus: \"pc\" for the PC version's main menu (Quit, and Join Game's\n"
+		"Server Browser), \"xbox\" for the Xbox's." },
+	{ "display.player_names", _config_string, "\"all\"", "HALO_PLAYER_NAMES", _environment_value, _platform_all,
+		"In multiplayer, whose names are drawn above their heads: \"all\",\n"
+		"\"allies\", \"enemies\" or \"none\". An enemy's shows only while in sight\n"
+		"and not camouflaged." },
+	{ "display.player_name_scale", _config_real, "1.0", "HALO_PLAYER_NAME_SCALE", _environment_value, _platform_all,
+		"How large the players' names are drawn: 1.0 three quarters of the size of\n"
+		"the HUD's text, 0.25 to 4." },
+	{ "display.scoreboard_team_layout", _config_string, "\"teams\"", "HALO_SCOREBOARD_TEAM_LAYOUT", _environment_value,
+		_platform_all,
+		"How the scoreboard lists a team game's players: \"teams\" in a column for\n"
+		"each team (red on the left, blue on the right), \"score\" all in order of\n"
+		"score." },
+	{ "display.scoreboard_background", _config_boolean, "true", "HALO_SCOREBOARD_BACKGROUND", _environment_value,
+		_platform_all,
+		"Draw a panel behind the multiplayer scoreboard, for clearer text." },
+	{ "display.scoreboard_background_color", _config_string, "\"16, 16, 16, 150\"", "HALO_SCOREBOARD_BACKGROUND_COLOR",
+		_environment_value, _platform_all,
+		"The scoreboard panel's colour: \"red, green, blue, alpha\", each 0 to 255\n"
+		"(alpha 0 is see-through, 255 solid)." },
 
 	{ "audio.enabled", _config_boolean, "true", "HALO_NO_AUDIO", _environment_set_is_false, _platform_all,
 		"Play sound." },
@@ -135,6 +165,46 @@ static const struct config_setting config_settings[] =
 		"slowed and dragged along by a target. The last of the mouse and the\n"
 		"right stick to move decides. The bullets' autoaim (bent toward the\n"
 		"target) stays either way." },
+	{ "input.mouse_vertical_sensitivity", _config_real, "0.0", "HALO_MOUSE_VERTICAL_SENSITIVITY", _environment_value,
+		_platform_desktop,
+		"How far the view turns up and down for the mouse's movement; 0 for the\n"
+		"same as input.mouse_sensitivity." },
+
+	/* the keyboard and mouse's own controls (port/linux/src/xinput_sdl.c) */
+	{ "controls.move_forward", _config_string, "\"W\"", "HALO_KEY_MOVE_FORWARD", _environment_value, _platform_all,
+		"Moving forward. Up to two keys or buttons, separated by a comma." },
+	{ "controls.move_backward", _config_string, "\"S\"", "HALO_KEY_MOVE_BACKWARD", _environment_value, _platform_all,
+		"Moving backward." },
+	{ "controls.strafe_left", _config_string, "\"A\"", "HALO_KEY_STRAFE_LEFT", _environment_value, _platform_all,
+		"Moving left." },
+	{ "controls.strafe_right", _config_string, "\"D\"", "HALO_KEY_STRAFE_RIGHT", _environment_value, _platform_all,
+		"Moving right." },
+	{ "controls.jump", _config_string, "\"Space\"", "HALO_KEY_JUMP", _environment_value, _platform_all,
+		"Jumping (and skipping cutscenes)." },
+	{ "controls.crouch", _config_string, "\"Left Ctrl, C\"", "HALO_KEY_CROUCH", _environment_value, _platform_all,
+		"Crouching." },
+	{ "controls.fire", _config_string, "\"Mouse Left\"", "HALO_KEY_FIRE", _environment_value, _platform_all,
+		"Firing." },
+	{ "controls.throw_grenade", _config_string, "\"Mouse Right, G\"", "HALO_KEY_THROW_GRENADE", _environment_value,
+		_platform_all, "Throwing a grenade." },
+	{ "controls.melee", _config_string, "\"F, Mouse 4\"", "HALO_KEY_MELEE", _environment_value, _platform_all,
+		"Melee attack." },
+	{ "controls.reload", _config_string, "\"R\"", "HALO_KEY_RELOAD", _environment_value, _platform_all,
+		"Reloading." },
+	{ "controls.zoom", _config_string, "\"Z, Mouse Middle\"", "HALO_KEY_ZOOM", _environment_value, _platform_all,
+		"Zooming the scope." },
+	{ "controls.switch_weapon", _config_string, "\"Wheel, 1\"", "HALO_KEY_SWITCH_WEAPON", _environment_value,
+		_platform_all, "Switching weapons." },
+	{ "controls.switch_grenade", _config_string, "\"X\"", "HALO_KEY_SWITCH_GRENADE", _environment_value, _platform_all,
+		"Switching grenades." },
+	{ "controls.action", _config_string, "\"E\"", "HALO_KEY_ACTION", _environment_value, _platform_all,
+		"Picking up, entering and leaving vehicles, and pressing switches." },
+	{ "controls.flashlight", _config_string, "\"Q\"", "HALO_KEY_FLASHLIGHT", _environment_value, _platform_all,
+		"The flashlight." },
+	{ "controls.scoreboard", _config_string, "\"Tab\"", "HALO_KEY_SCOREBOARD", _environment_value, _platform_all,
+		"Showing the scores." },
+	{ "controls.pause", _config_string, "\"Escape\"", "HALO_KEY_PAUSE", _environment_value, _platform_all,
+		"The pause menu." },
 
 	/* Bindings are config-only: they do not need application environment variables. */
 #if defined(HALO_MACOS) && !defined(HALO_IOS)
@@ -190,6 +260,12 @@ static const struct config_setting config_settings[] =
 		"networks whose NAT stops connections: when a player joins this\n"
 		"machine's game, and when joining a game takes too long. False never\n"
 		"asks." },
+	{ "network.public_lobby", _config_boolean, "true", "HALO_NET_PUBLIC_LOBBY", _environment_value, _platform_all,
+		"The server browser: public games are listed, and Join Game > Server\n"
+		"Browser shows them. False lists no game and shows none." },
+	{ "network.host_public", _config_boolean, "true", "HALO_NET_HOST_PUBLIC", _environment_value, _platform_all,
+		"Whether a new internet game starts as PUBLIC (listed in the server\n"
+		"browser) or, false, PRIVATE (only an invite link can join)." },
 	{ "network.signalling_brokers", _config_string,
 		"\"broker.emqx.io:1883,broker.hivemq.com:1883,test.mosquitto.org:1883\"",
 		"HALO_NET_BROKERS", _environment_value, _platform_all,
@@ -255,6 +331,12 @@ static const struct config_setting config_settings[] =
 		"\"no\" or \"never\" (do not ask again, confirmed); empty asks." },
 	{ "debug.exit_after", _config_real, "0.0", "HALO_EXIT_AFTER", _environment_value, _platform_all,
 		"Quit this many seconds after the window opens; 0 never." },
+	{ "debug.menu_open", _config_string, "\"\"", "HALO_MENU_OPEN", _environment_value, _platform_all,
+		"Start on this screen of the menus instead of the main menu; empty for\n"
+		"the main menu." },
+	{ "debug.gpu_flush_draws", _config_integer, "-1", "HALO_GPU_FLUSH_DRAWS", _environment_value, _platform_desktop,
+		"Flush the GPU's pipeline every this many draws: -1 for every 3 on Intel\n"
+		"graphics with Mesa's driver, 0 never." },
 	{ "debug.hidden_window", _config_boolean, "false", "HALO_HIDDEN_WINDOW", _environment_set_is_true, _platform_desktop,
 		"Keep the window hidden (and never fullscreen)." },
 	{ "debug.null_renderer", _config_boolean, "false", "HALO_NULL_RENDERER", _environment_set_is_true, _platform_all,
