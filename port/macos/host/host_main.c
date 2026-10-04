@@ -30,6 +30,28 @@ static int create_directories(const char *path) {
         }
     return mkdir(buffer, 0755) && errno != EEXIST ? -1 : 0;
 }
+/* Internet play reads brokers.txt beside config.toml. The app bundle is the
+source; each launch replaces the copy in the saves folder. */
+static void host_install_brokers(const char *resources, const char *saves) {
+    char source_path[4096], destination_path[4096], buffer[4096];
+    snprintf(source_path, sizeof(source_path), "%s/brokers.txt", resources);
+    snprintf(destination_path, sizeof(destination_path), "%s/brokers.txt", saves);
+    FILE *source = fopen(source_path, "rb");
+    if (!source)
+        return;
+    FILE *destination = fopen(destination_path, "wb");
+    if (!destination) {
+        fclose(source);
+        return;
+    }
+    size_t count;
+    while ((count = fread(buffer, 1, sizeof(buffer), source)) > 0) {
+        if (fwrite(buffer, 1, count, destination) != count)
+            break;
+    }
+    fclose(source);
+    fclose(destination);
+}
 void host_logf(int priority, const char *format, ...) {
     (void)priority;
     va_list a;
@@ -132,6 +154,7 @@ int main(int argc, char **argv) {
         saves = !image_argument ? default_saves : "build/macos/saves";
     if (create_directories(saves) || !realpath(saves, save_root))
         host_fatal("Cannot open saves folder: %s", saves);
+    host_install_brokers(resources, save_root);
     if (!image_argument) host_menu_initialize_application();
     SDL_SetMainReady();
     SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, "0");
