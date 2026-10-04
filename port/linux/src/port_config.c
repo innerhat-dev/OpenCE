@@ -82,6 +82,9 @@ static const struct config_setting config_settings[] =
 	{ "display.vsync", _config_boolean, "true", "HALO_NO_VSYNC", _environment_set_is_false, _platform_all,
 		"Wait for the display between frames; false draws as fast as possible." },
 	/* Original Xbox presentation is the fork's baseline; enhancements are opt-in. */
+	{ "display.max_fps", _config_integer, "0", "HALO_MAX_FPS", _environment_value, _platform_desktop,
+		"With vsync off, the most frames a second: 0 for twice the display's\n"
+		"refresh rate, -1 for no limit (which can hang some Intel graphics)." },
 	{ "display.interpolation", _config_boolean, "false", "HALO_INTERPOLATION", _environment_value, _platform_all,
 		"Draw a frame for every display refresh, blending between the game's 30\n"
 		"ticks a second; false keeps the original 30 frames a second." },
@@ -309,6 +312,7 @@ struct config_value
 
 static struct config_value config_values[NUMBER_OF_CONFIG_SETTINGS];
 static int config_loaded = 0;
+static volatile unsigned long config_change_count;
 static pthread_mutex_t config_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* ---------- the file */
@@ -1080,6 +1084,7 @@ int config_write_numbers(const char *const *names, const double *values, unsigne
 			default: break;
 			}
 		}
+		config_change_count++;
 	}
  done:
 	pthread_mutex_unlock(&config_lock);
@@ -1095,6 +1100,209 @@ int config_write_boolean(const char *name, int value)
 	if (index < 0 || config_settings[index].type != _config_boolean)
 		return 0;
 	return config_write_numbers(&name, &number, 1);
+}
+
+
+/* the line's key, if it is "key = ..." (after spaces) */
+static int config_line_key(const char *line, const char *end, const char *key)
+{
+	size_t length = strlen(key);
+
+	while (line < end && (*line == ' ' || *line == '\t'))
+		line++;
+	if ((size_t)(end - line) <= length || strncmp(line, key, length) != 0)
+		return 0;
+	line += length;
+	while (line < end && (*line == ' ' || *line == '\t'))
+		line++;
+	return line < end && *line == '=';
+}
+
+static int config_line_section(const char *line, const char *end, char *section, size_t size)
+{
+	const char *close;
+
+	while (line < end && (*line == ' ' || *line == '\t'))
+		line++;
+	if (line >= end || *line != '[')
+		return 0;
+	close = memchr(line, ']', (size_t)(end - line));
+	if (!close || (size_t)(close - line - 1) >= size)
+		return 0;
+	memcpy(section, line + 1, (size_t)(close - line - 1));
+	section[close - line - 1] = 0;
+	return 1;
+}
+
+int config_write(const char *name, const char *value)
+{
+	const char *dot = strchr(name, '.');
+	long index = config_setting_index(name);
+	char section[64], key[64], wanted[80], current[64] = "", line_text[600], path[1024];
+	struct config_text out = { 0 };
+	size_t size = 0;
+	char *file_text;
+	const char *line;
+	int written = 0, in_section = 0, succeeded;
+
+	if (index < 0 || !dot || (size_t)(dot - name) >= sizeof(section) || strlen(value) > 256)
+		return 0;
+	config_value(name, config_settings[index].type);
+	pthread_mutex_lock(&config_lock);
+	config_set_from_text(&config_values[index], config_settings[index].type, value);
+	snprintf(section, sizeof(section), "%.*s", (int)(dot - name), name);
+	snprintf(key, sizeof(key), "%s", dot + 1);
+	switch (config_settings[index].type)
+	{
+	case _config_boolean:
+		snprintf(line_text, sizeof(line_text), "%s = %s\n", key, config_values[index].boolean ? "true" : "false");
+		break;
+	case _config_integer:
+		snprintf(line_text, sizeof(line_text), "%s = %ld\n", key, config_values[index].integer);
+		break;
+	case _config_real:
+		snprintf(line_text, sizeof(line_text), "%s = %.15g", key, config_values[index].real);
+		if (!strpbrk(line_text + strlen(key) + 3, ".en"))
+			strcat(line_text, ".0");
+		strcat(line_text, "\n");
+		break;
+	case _config_string:
+	{
+		char *end = line_text + snprintf(line_text, sizeof(line_text), "%s = \"", key);
+		const char *character;
+
+		for (character = config_values[index].string; *character; character++)
+		{
+			if (*character == '"' || *character == '\\')
+				*end++ = '\\';
+			*end++ = *character;
+		}
+		strcpy(end, "\"\n");
+		break;
+	}
+	}
+	snprintf(wanted, sizeof(wanted), "%s", section);
+	config_path(path, sizeof(path));
+	file_text = config_read_file(path, &size);
+	for (line = file_text ? file_text : ""; *line;)
+	{
+		const char *end = line + strcspn(line, "\n");
+		const char *next = *end ? end + 1 : end;
+
+		if (config_line_section(line, end, current, sizeof(current)))
+		{
+			if (in_section && !written)
+			{
+				config_append(&out, line_text);
+				written = 1;
+			}
+			in_section = !strcmp(current, wanted);
+		}
+		else if (in_section && !written && config_line_key(line, end, key))
+		{
+			config_append(&out, line_text);
+			written = 1;
+			line = next;
+			continue;
+		}
+		{
+			char *copy = config_copy(line, (size_t)(next - line));
+
+			if (copy)
+			{
+				config_append(&out, copy);
+				free(copy);
+			}
+		}
+		line = next;
+	}
+	if (!written)
+	{
+		if (out.length && out.buffer[out.length - 1] != '\n')
+			config_append(&out, "\n");
+		if (!in_section)
+		{
+			char header[80];
+
+			snprintf(header, sizeof(header), "\n[%s]\n", section);
+			config_append(&out, header);
+		}
+		config_append(&out, line_text);
+	}
+	succeeded = out.buffer && config_write_file(path, out.buffer);
+	config_change_count++;
+	pthread_mutex_unlock(&config_lock);
+	free(out.buffer);
+	free(file_text);
+	return succeeded;
+}
+
+int config_text(const char *name, char *text, size_t size)
+{
+	long index = config_setting_index(name);
+	struct config_value value;
+
+	if (index < 0)
+		return 0;
+	value = config_value(name, config_settings[index].type);
+	switch (config_settings[index].type)
+	{
+	case _config_boolean:
+		snprintf(text, size, "%s", value.boolean ? "true" : "false");
+		break;
+	case _config_integer:
+		snprintf(text, size, "%ld", value.integer);
+		break;
+	case _config_real:
+		snprintf(text, size, "%.15g", value.real);
+		break;
+	case _config_string:
+		snprintf(text, size, "%s", value.string ? value.string : "");
+		break;
+	}
+	return 1;
+}
+
+void config_folder(char *path, size_t size)
+{
+	char file[1024];
+	char *separator;
+
+	config_path(file, sizeof(file));
+	separator = strrchr(file, '/');
+#ifndef HALO_ANDROID
+	if (!separator || (strrchr(file, '\\') && strrchr(file, '\\') > separator))
+		separator = strrchr(file, '\\');
+#endif
+	if (separator)
+		separator[1] = 0;
+	else
+		file[0] = 0;
+	snprintf(path, size, "%s", file);
+}
+
+unsigned long config_changes(void)
+{
+	return config_change_count;
+}
+
+int config_default(const char *name, char *text, size_t size)
+{
+	long index = config_setting_index(name);
+	const char *value;
+	size_t length;
+
+	if (index < 0)
+		return 0;
+	value = config_settings[index].default_value;
+	length = strlen(value);
+	if (config_settings[index].type == _config_string && length >= 2 && value[0] == '"')
+	{
+		value++;
+		length -= 2;
+	}
+	snprintf(text, size, "%.*s", (int)length, value);
+	return 1;
 }
 
 /* ---------- public code */

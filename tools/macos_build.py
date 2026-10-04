@@ -51,8 +51,10 @@ def build_plugin():
     require(LLVM / "llvm-config")
     flags = shlex.split(subprocess.check_output(
         [LLVM / "llvm-config", "--cxxflags", "--ldflags", "--libs", "core", "passes"], text=True))
+    sdk = os.environ.get("SDKROOT") or subprocess.check_output(
+        ["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True).strip()
     run(LLVM / "clang++", "-shared", "-fPIC", "port/macos/compiler/guest_rebase.cpp",
-        "-o", BUILD / "guest_rebase.dylib", *flags)
+        "-o", BUILD / "guest_rebase.dylib", "-isysroot", sdk, *flags)
 
 
 def build_host():

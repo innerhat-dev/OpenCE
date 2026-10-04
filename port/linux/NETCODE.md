@@ -98,13 +98,10 @@ adds the 28-byte PC gametype-options record to reliable game settings and marks
 loading/playing/postgame advertisements as in progress. The distributed movement,
 hit, object and ping message formats are unchanged from version 10.
 
-This fork hosts the original-rule defaults for that new record and refuses active
-PC settings it does not implement before applying settings or precaching a map.
-It also recognizes upstream's action-only input bit while preserving its local
-controls. PB capability uses advertisement flag `0x04`, distinct from the new
-in-progress flag `0x02`; an enabled PB session advertises version `0x800B`.
-See [the v11 selective review](../../docs/upstream-review-2026-10-03.md) for exact
-settings, rule and mixed-build compatibility limits.
+This Mac build plays that options record (time limit, loadout, friendly fire,
+vehicle respawn, team balance, radar, vehicle sets, and no-map-weapons) and
+keeps PB capability on advertisement flag `0x04`, distinct from the in-progress
+flag `0x02`. An enabled PB session advertises version `0x800B`.
 
 A client plays by its host's rules: in another's game (searching for it,
 in its lobby, or playing it) the developer console, the telnet console

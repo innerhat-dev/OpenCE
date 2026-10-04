@@ -46,7 +46,7 @@ machines, 16 players) are 0x226 and 0x434. */
 #define HALO_PORT_NETWORK_GAME_PLAYERS_END \
 	(HALO_PORT_NETWORK_GAME_PLAYERS_OFFSET + HALO_PORT_MAXIMUM_NETWORK_PLAYERS * HALO_PORT_NETWORK_PLAYER_SIZE)
 #define HALO_PORT_NETWORK_GAME_RANDOM_SEED_OFFSET (HALO_PORT_NETWORK_GAME_PLAYERS_END + 2)
-/* v11 gametype options, before this machine's local-only load state. */
+/* (then the gametype's PC options, struct game_variant_options: 0x1C bytes) */
 #define HALO_PORT_NETWORK_GAME_VARIANT_OPTIONS_OFFSET (HALO_PORT_NETWORK_GAME_PLAYERS_END + 0xA)
 #define HALO_PORT_NETWORK_GAME_LOCAL_DATA_OFFSET (HALO_PORT_NETWORK_GAME_PLAYERS_END + 0x26)
 #define HALO_PORT_NETWORK_GAME_SIZE (HALO_PORT_NETWORK_GAME_PLAYERS_END + 0x2A)
@@ -74,7 +74,8 @@ then flags */
 /* ... the host plays the distributed netcode (always, since the lockstep
 netcode was removed; hosts of version 4 built before then may not) */
 #define HALO_PORT_ADVERTISED_DISTRIBUTED_FLAG 0x01
-/* loading, playing or postgame, rather than an idle lobby */
+/* ... the game is under way (loading, playing or over), not in its lobby:
+the menus show it before joining it (hosts built before then never set it) */
 #define HALO_PORT_ADVERTISED_IN_PROGRESS_FLAG 0x02
 
 /* a message header's 12-bit length allows messages of up to 0xFFF bytes,
