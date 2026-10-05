@@ -436,6 +436,7 @@ void first_person_weapons_initialize_for_new_map(
 			0,
 			sizeof(first_person_weapons[local_player_index]));
 		first_person_weapons[local_player_index].unit_index= NONE;
+		first_person_weapons[local_player_index].weapon_index= NONE;
 		first_person_weapons[local_player_index].current_sound_index= NONE;
 		first_person_weapons[local_player_index].current_sound_state= NONE;
 	}

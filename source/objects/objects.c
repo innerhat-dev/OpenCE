@@ -4207,8 +4207,13 @@ void objects_update(
 			{
 				if (TEST_FLAG(object_header->flags, _object_header_active_bit))
 				{
-					match_assert("c:\\halo\\SOURCE\\objects\\objects.c", 369, object_header->cluster_index!=NONE);
-					if (!BIT_VECTOR_TEST_FLAG(active_cluster_bits, object_header->cluster_index))
+					/* A carried weapon put back in the world, or an object
+					whose position is outside the map, can be active with no
+					cluster. Indexing the visible-cluster bits with that
+					halts a machine joining a game in progress. */
+					if (object_header->cluster_index<0 ||
+						object_header->cluster_index>=cluster_count ||
+						!BIT_VECTOR_TEST_FLAG(active_cluster_bits, object_header->cluster_index))
 					{
 						if (TEST_FLAG(object_header->datum->object.flags, _object_deleted_when_deactivated_bit))
 						{

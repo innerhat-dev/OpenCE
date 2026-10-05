@@ -3003,8 +3003,8 @@ scenario's path or name */
 static void map_display_name(char const *map_name, wchar_t *text)
 {
 	char const *const *names;
-	short last, index;
-	short count = ui_widget_port_multiplayer_maps(&names, &last);
+	short index;
+	short count = ui_widget_port_multiplayer_maps(&names, NULL);
 
 	for (index = 0; index < count; index++)
 	{
@@ -3799,7 +3799,7 @@ static void lobby_row_text(short row, wchar_t *text)
 static void lobby_map_show(struct widget_instance *description, char const *map_name)
 {
 	char const *const *names;
-	short last, count = ui_widget_port_multiplayer_maps(&names, &last), map = 19, index;
+	short count = ui_widget_port_multiplayer_maps(&names, NULL), map = 19, index;
 	short level = campaign_level_of(map_name);
 	struct widget_instance *widget;
 

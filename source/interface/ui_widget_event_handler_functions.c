@@ -5914,6 +5914,8 @@ short ui_widget_port_multiplayer_maps(
 	short level_index;
 
 	*names = (char const *const *)event_handler_functions.multiplayer_levels;
+	if (!last_used)
+		return 13;
 	*last_used = 0;
 	if (saved_game_file_retrieve_last_used_multiplayer_map(map_name))
 	{
