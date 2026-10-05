@@ -3677,8 +3677,8 @@ static void setup_streams(unsigned long first, unsigned long count)
 		{
 			unsigned long offset = macos_attribute_upload(element, first, count);
 			BOOL packed = element->type == D3DVSDT_NORMPACKED3;
-			state_attribute_pointer(element->reg, device.stream_buffer, packed ? 1 : 4,
-				packed ? GL_UNSIGNED_INT : GL_FLOAT, GL_FALSE, packed, 4 * sizeof(float), offset);
+			state_attribute_stream(element->reg, element->reg, device.stream_buffer, packed ? 1 : 4,
+				packed ? GL_UNSIGNED_INT : GL_FLOAT, GL_FALSE, packed, 4 * sizeof(float), offset, 0);
 			enabled[element->reg] = TRUE;
 			stats.streamed_bytes += count * 4 * sizeof(float);
 			continue;
