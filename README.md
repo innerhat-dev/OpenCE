@@ -78,7 +78,7 @@ the host chooses the match's options. Use **Stock** for original-rule play.
 Timer announcements need a separate audio pack, not bundled with these builds.
 [PB Options](docs/performance-options.md) explains settings and compatibility.
 
-The current network protocol is **16**. Older builds, including protocol 15, cannot join it.
+The current network protocol is **17**. Older builds, including protocol 16, cannot join it.
 Enabled PB Options require compatible peers. For the first cross-platform
 tests, use matching Halo OG packages with PB Options off.
 

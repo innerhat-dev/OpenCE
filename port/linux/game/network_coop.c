@@ -29,6 +29,8 @@ that clients need to see is sent from this file:
   every tick in rotation, those that have moved since the map loaded more
   often. A scenario group is identified by its index, which is the same on
   every machine; a device's own group by the device.
+- Breakable surfaces (glass) the host breaks, each once as it breaks and
+  a few at a time again in rotation (for a late joiner or a lost message).
 - Named objects (scenery and devices) the scripts create or destroy.
   network_objects.c already handles units, vehicles, weapons and equipment.
   Twice a second the host sends which object names currently exist. A
@@ -53,7 +55,9 @@ host skips once more than half the machines have voted. The skip itself is
 the campaign's: the host reverts to the state saved when the cutscene began
 and the script carries on past it. Clients catch up through the object,
 device and name syncs. The host keeps its clock running through the revert,
-because the netcode needs it to only go forward (network_coop_skip_reverted).
+because the netcode needs it to only go forward (network_coop_reverted).
+A failed mission (game_lost, or the scripts' game_revert) reverts the same
+way, rather than leaving the players stuck in the failure's cutscene.
 
 Objects (scenery and devices) that aren't synced by network_objects.c are
 found on a client by their scenario name, or, unnamed, by their object
@@ -93,6 +97,8 @@ index and tag, since the map placed them at the same index everywhere.
 #include "objects/object_types.h"
 #include "objects/damage.h"
 #include "objects/scenery.h"
+#include "physics/breakable_surfaces.h"
+#include "structures/structure_bsp_definitions.h"
 #include "physics/collisions.h"
 #include "rasterizer/rasterizer_cinematics.h"
 #include "saved games/game_state.h"
@@ -184,9 +190,13 @@ enum
 	_coop_event_effect,
 	_coop_event_attach,
 	/* the host skipped the cutscene: a client stops its dialogue */
-	_coop_event_cutscene_skipped,
+	/* the host reverted to its last saved state */
+	_coop_event_reverted,
 	/* a unit opened (value TRUE) or closed: a dropship's doors */
 	_coop_event_unit_open,
+	/* a breakable surface broke: value its index, frame its BSP, reals the
+	damage's epicenter */
+	_coop_event_surface_broken,
 };
 
 /* distributed_coop_event.type of an effect: at a cutscene flag (value), or on
@@ -270,7 +280,11 @@ struct distributed_coop_presentation
 	/* whether the scripts have set the players' maximum vitality, and to
 	what (network_coop_set_players_vitality) */
 	byte players_vitality_set;
-	byte pad[2];
+	/* the cluster the scripts keep active (object_pvs_activate) plus one,
+	0 for none: a cutscene filmed far from every player (b30's Elite at the
+	shaft door) is active on the clients too. Plus one so the zeroed padding
+	of a host without it reads as none. */
+	short activating_cluster;
 	real players_maximum_body_vitality;
 	real players_maximum_shield_vitality;
 	/* which teams are allies and friends (game_allegiance.c): the scripts
@@ -1429,6 +1443,7 @@ static void host_presentation(
 	presentation->input_disabled = (byte)!player_input_enabled();
 	presentation->scripted_shake = (byte)player_effect_port_scripted_active();
 	presentation->players_vitality_set = (byte)players_vitality.set;
+	presentation->activating_cluster = (short)(objects_get_activating_cluster_index() + 1);
 	presentation->players_maximum_body_vitality = players_vitality.maximum_body;
 	presentation->players_maximum_shield_vitality = players_vitality.maximum_shield;
 	game_allegiance_get_teams(presentation->ally_teams, presentation->friendly_teams);
@@ -1802,8 +1817,16 @@ static void client_apply_event(
 	case _coop_event_attach:
 		client_apply_attach(event);
 		break;
-	case _coop_event_cutscene_skipped:
+	case _coop_event_reverted:
 		client_stop_script_sounds();
+		break;
+	case _coop_event_surface_broken:
+		if (event->frame == global_structure_bsp_index)
+		{
+			real_point3d epicenter = { event->reals[0], event->reals[1], event->reals[2] };
+
+			breakable_surface_port_break(event->value, &epicenter);
+		}
 		break;
 	case _coop_event_unit_open:
 		if (distributed_object_index_valid(event->object_index) && network_objects_client_has(event->object_index) &&
@@ -2430,6 +2453,51 @@ void network_coop_note_effect(
 	event->value = cutscene_flag_index;
 }
 
+void network_coop_note_surface_broken(
+	short breakable_surface_index,
+	real_point3d const *epicenter)
+{
+	struct distributed_coop_event *event = event_new(_coop_event_surface_broken);
+
+	if (!event)
+		return;
+	event->value = breakable_surface_index;
+	event->frame = global_structure_bsp_index;
+	event->reals[0] = epicenter->x;
+	event->reals[1] = epicenter->y;
+	event->reals[2] = epicenter->z;
+}
+
+/* host: a few broken surfaces again each refresh, round them all, for a
+machine that joined since or lost the message (broken from their middle) */
+static void host_send_broken_surfaces(
+	void)
+{
+	enum { SURFACES_PER_REFRESH = 8 };
+	static short cursor;
+	struct structure_bsp *structure_bsp = global_structure_bsp_get();
+	short count = (short)structure_bsp->breakable_surfaces.count;
+	short sent = 0;
+	short step;
+
+	if (!host_resend.refresh || count <= 0)
+		return;
+	for (step = 0; step < count && sent < SURFACES_PER_REFRESH; step++)
+	{
+		short index = (short)((cursor + step) % count);
+
+		if (!breakable_surface_extant(index))
+		{
+			struct structure_breakable_surface *surface = TAG_BLOCK_GET_ELEMENT(&structure_bsp->breakable_surfaces,
+				index, struct structure_breakable_surface);
+
+			network_coop_note_surface_broken(index, &surface->centroid);
+			sent++;
+		}
+	}
+	cursor = (short)((cursor + step) % count);
+}
+
 void network_coop_note_object_effect(
 	long effect_definition_index,
 	long object_index,
@@ -2465,7 +2533,7 @@ boolean network_coop_vote_skip(
 	return TRUE;
 }
 
-/* The skip reverted the host's game state, clock included. The clock is
+/* The host reverted its game state, clock included. The clock is
 put back, since clients and the netcode expect it to only go forward, and
 the script threads' wake times move by the same amount so they still wake
 when they would have. The revert also renumbered the input queues from the
@@ -2474,7 +2542,7 @@ from the restored one, or no tick would run until they caught up. And the
 revert is stamped with the restored time, since the script's game_reverted
 compares the stamp with the clock: otherwise it would play the cinematic
 it was meant to skip. */
-void network_coop_skip_reverted(
+void network_coop_reverted(
 	long now)
 {
 	long ticks;
@@ -2491,8 +2559,15 @@ void network_coop_skip_reverted(
 	}
 	/* (the dropships' riders kept are of the game state reverted from) */
 	coop_enemies_reset();
-	error(_error_silent, "co-op: cutscene skipped; reverted %ld ticks, clock kept at %ld", ticks, now);
-	event_new(_coop_event_cutscene_skipped);
+	error(_error_silent, "co-op: reverted %ld ticks, clock kept at %ld", ticks, now);
+	event_new(_coop_event_reverted);
+}
+
+void network_coop_skip_done(
+	void)
+{
+	if (!coop_host())
+		return;
 	skip_vote_clear();
 	skip_vote.requested = FALSE;
 	skip_vote.cooldown_until = game_time_get() + SKIP_COOLDOWN_TICKS;
@@ -2537,6 +2612,7 @@ void network_coop_host_tick(
 	host_send_attachments();
 	host_send_looping_sounds();
 	host_send_hud_state();
+	host_send_broken_surfaces();
 	host_send_events();
 }
 
@@ -2904,6 +2980,7 @@ static void client_presentation_apply(
 		!coop_spectate_watching_rider(0)) || coop_spectate_nothing_to_watch(0));
 	if (coop_presentation.cinematic_started)
 		cinematic_show_letterbox(TEST_FLAG(presentation->flags, _presentation_letterbox_bit));
+	objects_port_set_activating_cluster((short)(presentation->activating_cluster - 1));
 	if (coop_presentation.host_camera)
 	{
 		real_vector3d forward, up;
