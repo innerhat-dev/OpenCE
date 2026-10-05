@@ -19,6 +19,7 @@ port/android/app, which ``ninja android_apk`` then assembles.
 """
 
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -229,8 +230,22 @@ def generate_android_build(n: Writer, sln: Any) -> None:
         n.comment("Android build: no NDK found (set ANDROID_NDK_HOME or pass --android-ndk)")
         return
     else:
-        host_tag = "darwin-x86_64" if sys.platform == "darwin" else "linux-x86_64"
-        toolchain = ndk / "toolchains" / "llvm" / "prebuilt" / host_tag
+        prebuilt = ndk / "toolchains" / "llvm" / "prebuilt"
+        host_tag = os.environ.get("ANDROID_NDK_HOST_TAG", "")
+        if not host_tag:
+            if sys.platform == "darwin":
+                host_tag = "darwin-arm64" if platform.machine() == "arm64" else "darwin-x86_64"
+            elif os.name == "nt":
+                host_tag = "windows-x86_64"
+            else:
+                host_tag = "linux-x86_64"
+        if not (prebuilt / host_tag).is_dir():
+            tags = sorted(entry.name for entry in prebuilt.iterdir() if entry.is_dir()) if prebuilt.is_dir() else []
+            if not tags:
+                n.comment("Android build: the NDK has no LLVM toolchain")
+                return
+            host_tag = tags[0]
+        toolchain = prebuilt / host_tag
         sysroot_include = toolchain / "sysroot" / "usr" / "include"
         ndk_bin = toolchain / "bin"
         host_cc = ndk_bin / f"aarch64-linux-android{ANDROID_API}-clang"
@@ -422,7 +437,11 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     game_cflags = " ".join([
         guest_abi, guest_code, " ".join(game_flags), profile_flags,
         f"-include {prefix_header}", f"-include {semantics_header}",
-        f"-I{LINUX_DIR}/include", game_defines_and_includes(config), *libc_includes, f"-idirafter {XDK_INCLUDE}",
+        f"-I{LINUX_DIR}/include",
+        # the headers of the port's own game units (port/linux/game), for the
+        # game sources that call them
+        f"-iquote {Path(config['game_sources'])}",
+        game_defines_and_includes(config), *libc_includes, f"-idirafter {XDK_INCLUDE}",
     ])
     for source in game_sources(config):
         cflags = game_cflags

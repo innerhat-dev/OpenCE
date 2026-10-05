@@ -21,9 +21,9 @@ Choose your platform:
 | Platform | Testing package | Requirements |
 | --- | --- | --- |
 | Mac | [Halo-OG-macos-arm64.dmg](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11-dmg2/Halo-OG-macos-arm64.dmg) | Apple Silicon, macOS 26+ |
-| Windows | [halo-windows-release.zip](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11-dmg2/halo-windows-release.zip) | x86/x86-64 PC, OpenGL 4.5 |
-| Linux | [halo-linux-release.zip](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11-dmg2/halo-linux-release.zip) | x86, OpenGL 4.5, [32-bit runtime libraries](port/linux/README.md#requirements) |
-| Android | [halo-android-release.zip](https://github.com/pfista/halo-og/releases/download/test-v0.3.0-net11-dmg2/halo-android-release.zip) | ARM64, Android 9+, OpenGL ES 3; controller or keyboard |
+| Linux | [halo-linux-release.zip](https://github.com/OpenCommunityEdition/OpenCE/releases/latest/download/halo-linux-release.zip) | [halo-linux-debug.zip](https://github.com/OpenCommunityEdition/OpenCE/releases/latest/download/halo-linux-debug.zip) |
+| Windows | [halo-windows-release.zip](https://github.com/OpenCommunityEdition/OpenCE/releases/latest/download/halo-windows-release.zip) | [halo-windows-debug.zip](https://github.com/OpenCommunityEdition/OpenCE/releases/latest/download/halo-windows-debug.zip) |
+| Android | [halo-android-release.zip](https://github.com/OpenCommunityEdition/OpenCE/releases/latest/download/halo-android-release.zip) | [halo-android-debug.zip](https://github.com/OpenCommunityEdition/OpenCE/releases/latest/download/halo-android-debug.zip) |
 
 All packages in the release come from the **same source commit**. Use the same
 tag when playing together. The release includes `SHA256SUMS`, `provenance.json`,
@@ -42,6 +42,11 @@ The Mac test build is ad-hoc signed and unnotarized. Install **Halo OG.app** int
 Applications; no Homebrew or developer tools are needed. Testing packages have
 automatic updates disabled. [Installation steps](docs/playtesting.md) explain
 first launch, platform dependencies, and updating.
+
+Each build of upstream `main` that passes on Linux, Windows, and Android is a new
+OpenCE release. The [Releases](https://github.com/OpenCommunityEdition/OpenCE/releases)
+page keeps the last five of those. Linux, Windows, and Android players should use
+that page. This Mac tree is built from that source and has to be rebuilt here.
 
 ## Get running
 
@@ -73,7 +78,7 @@ the host chooses the match's options. Use **Stock** for original-rule play.
 Timer announcements need a separate audio pack, not bundled with these builds.
 [PB Options](docs/performance-options.md) explains settings and compatibility.
 
-The current network protocol is **11**; protocol-10 builds need updating.
+The current network protocol is **14**. Older builds, including protocol 11, cannot join it.
 Enabled PB Options require compatible peers. For the first cross-platform
 tests, use matching Halo OG packages with PB Options off.
 

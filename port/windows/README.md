@@ -52,6 +52,7 @@ The game finds the game data as on Linux. Refer to "Start the game" in
 | Settings | `config.toml` next to `halo.exe` |
 | Saved games | `%APPDATA%\Halo OG`, or `paths.saves` in `config.toml` |
 | Log | `debug.txt` in the data root (the folder that contains `maps\`) |
+| Log of the port | The console. The release build has no console: `halo.log` next to `halo.exe` |
 
 The first launch copies regular files and folders from `%APPDATA%\halo` into
 `%APPDATA%\Halo OG`, preserving the original files and any files already in
