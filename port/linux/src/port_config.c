@@ -55,6 +55,8 @@ enum
 	_platform_desktop = 1,
 	_platform_android = 2,
 	_platform_all = _platform_desktop | _platform_android,
+	/* (of the desktop builds, only Windows) */
+	_platform_windows = 4,
 };
 
 struct config_setting
@@ -103,6 +105,12 @@ static const struct config_setting config_settings[] =
 	{ "display.max_fps", _config_integer, "0", "HALO_MAX_FPS", _environment_value, _platform_desktop,
 		"With vsync off, the most frames a second: 0 for twice the display's\n"
 		"refresh rate, -1 for no limit (which can hang some Intel graphics)." },
+	{ "display.anti_aliasing", _config_string, "\"off\"", "HALO_ANTI_ALIASING", _environment_value, _platform_all,
+		"Smoothing of jagged edges, which the Xbox did not have: \"off\"; \"fxaa\"\n"
+		"or \"smaa\" smooth the 3D view once it is drawn (the HUD and menus stay\n"
+		"sharp); \"ssaa2x\" draws at twice the resolution each way (four times\n"
+		"the work); \"msaa2x\", \"msaa4x\" or \"msaa8x\" draw with that many samples\n"
+		"a pixel. Android has \"fxaa\" for \"smaa\", and no \"ssaa2x\"." },
 	{ "display.interpolation", _config_boolean, "false", "HALO_INTERPOLATION", _environment_value, _platform_all,
 		"Draw a frame for every display refresh, blending between the game's 30\n"
 		"ticks a second; false keeps the original 30 frames a second." },
@@ -122,6 +130,10 @@ static const struct config_setting config_settings[] =
 		"Draw the menus' and HUD's text with the fonts in port/assets/fonts\n"
 		"(Overpass) at the resolution the game draws at, and the menus' titles\n"
 		"from port/assets/titles; false draws the maps' bitmap fonts and titles." },
+	{ "display.shadow_resolution", _config_integer, "128", "HALO_SHADOW_RESOLUTION", _environment_value,
+		_platform_all,
+		"The size the objects' shadows are drawn at, in pixels each way: 128 as\n"
+		"on the Xbox, or 256, 512 or 1024 for smoother edges, as soft." },
 	{ "display.menus", _config_string, "\"pc\"", "HALO_MENUS", _environment_value, _platform_all,
 		"The menus: \"pc\" for the PC version's main menu (Quit, and Join Game's\n"
 		"Server Browser), \"xbox\" for the Xbox's." },
@@ -146,15 +158,21 @@ static const struct config_setting config_settings[] =
 		_environment_value, _platform_all,
 		"The scoreboard panel's colour: \"red, green, blue, alpha\", each 0 to 255\n"
 		"(alpha 0 is see-through, 255 solid)." },
+	{ "display.per_pixel_lighting", _config_boolean, "false", "HALO_PER_PIXEL_LIGHTING", _environment_value,
+		_platform_all,
+		"Light the models (characters, weapons, vehicles, scenery) for each\n"
+		"pixel by the lights the game gives them, without the facets the light\n"
+		"of each vertex shows across curved surfaces; false lights each vertex,\n"
+		"as the Xbox does." },
 
 	{ "audio.enabled", _config_boolean, "true", "HALO_NO_AUDIO", _environment_set_is_false, _platform_all,
 		"Play sound." },
 	{ "audio.volume", _config_real, "1.0", "HALO_VOLUME", _environment_value, _platform_all,
 		"The volume of everything, 0.0 to 1.0." },
-	{ "audio.music_volume", _config_real, "1.0", NULL, _environment_value, _platform_all,
-		"Music volume, 0.0 to 1.0, in addition to the master volume." },
-	{ "audio.effects_volume", _config_real, "1.0", NULL, _environment_value, _platform_all,
-		"Sound effects and multiplayer announcer volume, 0.0 to 1.0." },
+	{ "audio.music_volume", _config_real, "1.0", "HALO_MUSIC_VOLUME", _environment_value, _platform_all,
+		"The music's volume, 0.0 to 1.0 (of audio.volume)." },
+	{ "audio.effects_volume", _config_real, "1.0", "HALO_EFFECTS_VOLUME", _environment_value, _platform_all,
+		"Sound effects and multiplayer announcer volume, 0.0 to 1.0 (of audio.volume)." },
 	{ "audio.dialogue_volume", _config_real, "1.0", NULL, _environment_value, _platform_all,
 		"Unit and scripted dialogue volume, 0.0 to 1.0." },
 	{ "audio.timer_volume", _config_real, "1.0", NULL, _environment_value, _platform_all,
@@ -171,6 +189,10 @@ static const struct config_setting config_settings[] =
 	{ "audio.menu_music", _config_boolean, "true", NULL, _environment_value, _platform_all,
 		"Play the main menu title music. False keeps menu effects and gameplay\n"
 		"audio enabled. In-game audio settings apply immediately when accepted." },
+	{ "audio.reverb", _config_boolean, "true", "HALO_REVERB", _environment_value, _platform_all,
+		"Reverberate the world's sounds as the place the player is in does (the\n"
+		"maps' sound environments, as the Xbox's I3DL2 reverb did); false keeps\n"
+		"them dry." },
 
 	{ "input.mouse_sensitivity", _config_real, "1.0", "HALO_MOUSE_SENSITIVITY", _environment_value, _platform_desktop,
 		"How far the view turns for the mouse's movement." },
@@ -294,6 +316,12 @@ static const struct config_setting config_settings[] =
 		"\"on\", \"shields_only\" or \"explosives_only\" (Server Setup's FRIENDLY\n"
 		"FIRE in co-op, which writes its choice here). Their AI allies they\n"
 		"always can, as in the campaign." },
+	{ "network.coop_player_collisions", _config_boolean, "true", "HALO_NET_COOP_PLAYER_COLLISIONS", _environment_value,
+		_platform_all,
+		"Whether the players of an online co-op game bump into each other;\n"
+		"false, they walk through each other (the AI's characters they still\n"
+		"bump into). Server Setup's PLAYER COLLISIONS in co-op writes its\n"
+		"choice here." },
 	{ "network.coop_enemies_mode", _config_string, "\"per_player\"", "HALO_NET_COOP_ENEMIES_MODE", _environment_value,
 		_platform_all,
 		"Online co-op's extra enemies: \"none\", \"per_player\" (each squad of\n"
@@ -329,6 +357,10 @@ static const struct config_setting config_settings[] =
 	{ "update.auto", _config_boolean, "true", "HALO_UPDATE_AUTO", _environment_value, _platform_all,
 		"Look for a new version when the game starts, and offer to update to it;\n"
 		"false never looks (the game's \"Do not ask again\" writes false here)." },
+	{ "crash_reports.upload", _config_string, "\"ask\"", "HALO_CRASH_REPORTS", _environment_value, _platform_windows,
+		"Send a report of each crash (a minidump and halo.log) to the developers'\n"
+		"Sentry project (port/windows/src/win32_crash.c): \"yes\" sends them, \"no\"\n"
+		"never does, \"ask\" asks at the next crash and writes the answer here." },
 
 	{ "debug.network_test", _config_string, "\"\"", "HALO_NETWORK_TEST", _environment_value, _platform_all,
 		"Automated system link sessions for testing (port/linux/game/network_test.c):\n"
@@ -426,6 +458,8 @@ static const struct config_setting config_settings[] =
 #define CONFIG_PLATFORM _platform_desktop
 #elif defined(HALO_ANDROID)
 #define CONFIG_PLATFORM _platform_android
+#elif defined(_WIN32)
+#define CONFIG_PLATFORM (_platform_desktop | _platform_windows)
 #else
 #define CONFIG_PLATFORM _platform_desktop
 #endif

@@ -64,6 +64,7 @@ char const *pc_menus_root_name(void);
 char const *pc_menu_function_name(long function_index);
 char const *pc_menu_game_data_input_name(long function_index);
 boolean pc_menu_tag(long tag_index);
+boolean pc_menu_frame_placement(struct bitmap_data const *bitmap, short *x, short *y, short *width, short *height);
 
 /* ---------- constants */
 
@@ -239,6 +240,15 @@ typedef char verify_ui_widget_definition_conditional_widgets_offset[
 typedef char verify_ui_widget_definition_size[
 	sizeof(struct ui_widget_definition) == 0x3EC ? 1 : -1];
 
+/* a frame of ui.map's that a menu file scales: where in its widget, and at
+what size, it is drawn (pc_menu_frame_placement) */
+struct menu_frame_placement
+{
+	struct bitmap_data const *bitmap;
+	short x, y;
+	short width, height;
+};
+
 /* a spinner bound to a setting (menu_functions.c) */
 struct pc_menu_setting
 {
@@ -360,6 +370,8 @@ static char const *const port_function_names[] =
 	/* (Settings' OK: the Xbox's fails when the profile has no changes, the
 	settings' screens having written theirs to config.toml) */
 	"player profile save changes",
+	/* (the server browser's password screen) */
+	"port password init", "port password edit", "port password join", "port password back",
 };
 
 /* the PC version's game data functions that the Xbox's have not, from
@@ -377,6 +389,10 @@ static char const *const port_game_data_input_names[] =
 	/* (the gametype editor's: the Xbox's stops the game on the buttons'
 	row; the Xbox's read only player_ui's gametype, not Server Setup's) */
 	"game settings lists text update", "get edit game settings name", "mp edit profile set rule text",
+	"port password update",
+	/* (the profile settings' picture: the Xbox's of the button settings,
+	on Gamepad Setup's row) */
+	"port gamepad layout preview",
 };
 
 static struct
@@ -386,6 +402,8 @@ static struct
 	long block_count;
 	struct bitmap_data **bitmaps;
 	long bitmap_count;
+	struct menu_frame_placement *placements;
+	long placement_count;
 	struct cache_file_tag_instance *original_instances;
 	long original_count;
 	struct pc_menu_setting *settings;
@@ -789,6 +807,24 @@ static void *bitmap_build(struct halo_menu_bitmap const *source, long tag_index)
 			memcpy(bitmap, (struct bitmap_data *)group_source->bitmaps.address + data->index, sizeof(*bitmap));
 			bitmap->cache_block_index = NONE;
 			bitmap->base_address = NULL;
+			/* (scaled to a size of the file's: the texture stays the map's,
+			drawn smaller or larger, ui_widget.c) */
+			if (data->width > 0 && data->height > 0 && data->width <= 2048 && data->height <= 2048)
+			{
+				struct menu_frame_placement *placements = realloc(menu_tags.placements,
+					(menu_tags.placement_count + 1) * sizeof(*menu_tags.placements));
+
+				if (placements)
+				{
+					menu_tags.placements = placements;
+					placements[menu_tags.placement_count].bitmap = bitmap;
+					placements[menu_tags.placement_count].x = (short)PIN(data->x, -2048, 2048);
+					placements[menu_tags.placement_count].y = (short)PIN(data->y, -2048, 2048);
+					placements[menu_tags.placement_count].width = (short)data->width;
+					placements[menu_tags.placement_count].height = (short)data->height;
+					menu_tags.placement_count++;
+				}
+			}
 			continue;
 		}
 
@@ -1245,6 +1281,14 @@ static struct cache_file_tag_instance *instances_grow(long count, long *first_in
 
 	if (!instances)
 		return NULL;
+	/* (every tag's absolute index fits a tag index's 16 bits, short of
+	NONE's, and the table's size cannot wrap: the map's count was checked
+	as it loaded, cache_files.c, and is again) */
+	if (existing < 0 || count < 0 || existing > UNSIGNED_SHORT_MAX - count)
+	{
+		platform_log("menus: %ld tags and the map's %ld are too many for a tag table", count, existing);
+		return NULL;
+	}
 	grown = allocate((existing + count) * sizeof(*grown));
 	if (!grown)
 		return NULL;
@@ -1318,6 +1362,8 @@ static void menu_tags_release(void)
 		free(menu_tags.blocks);
 	if (menu_tags.bitmaps)
 		free(menu_tags.bitmaps);
+	if (menu_tags.placements)
+		free(menu_tags.placements);
 	if (menu_tags.settings)
 		free(menu_tags.settings);
 	memset(&menu_tags, 0, sizeof(menu_tags));
@@ -1779,6 +1825,32 @@ boolean pc_menu_tag(
 {
 	return menu_tags.loaded && tag_index != NONE &&
 		DATUM_INDEX_TO_ABSOLUTE_INDEX(tag_index) >= menu_tags.original_count;
+}
+
+/* where in its widget, and how large, a frame of ui.map's that a menu file
+scales is drawn (<frame map=... width= height= x= y=>); FALSE for any other
+bitmap, drawn as it is (ui_widget.c) */
+boolean pc_menu_frame_placement(
+	struct bitmap_data const *bitmap,
+	short *x,
+	short *y,
+	short *width,
+	short *height)
+{
+	long index;
+
+	for (index = 0; index < menu_tags.placement_count; index++)
+	{
+		if (menu_tags.placements[index].bitmap == bitmap)
+		{
+			*x = menu_tags.placements[index].x;
+			*y = menu_tags.placements[index].y;
+			*width = menu_tags.placements[index].width;
+			*height = menu_tags.placements[index].height;
+			return TRUE;
+		}
+	}
+	return FALSE;
 }
 
 char const *pc_menu_function_name(

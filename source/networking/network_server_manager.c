@@ -535,6 +535,14 @@ enum
 	NETWORK_GAME_SERVER_CLIENT_TIMEOUT = 15 * MILLISECONDS_PER_SECOND,
 	/* a machine joining the game in progress, silent while it loads */
 	NETWORK_GAME_SERVER_LATE_JOINER_TIMEOUT = 120 * MILLISECONDS_PER_SECOND,
+	/* port: how long a frame the host spends on the messages its machines'
+	streams brought, all machines' and each one's (machines that flood it with
+	them would hold each frame for as long as they took): those left wait in
+	the queue, in order, for the next frame's. Each machine always has one
+	handled (network_game_server_handle_client_machines; the client's is
+	network_client_manager.c's) */
+	MAXIMUM_MESSAGE_MILLISECONDS_PER_IDLE = 50,
+	MAXIMUM_MESSAGE_MILLISECONDS_PER_MACHINE = 10,
 };
 
 enum
@@ -1242,9 +1250,12 @@ unsigned long network_game_server_machine_address(
 
 /* port: the distributed netcode asks that a client machine be dropped (its
 game ran faster than this one's: network_distributed.c); it is, once this
-server next looks at its machines, not while its messages are read */
+server next looks at its machines, not while its messages are read. Its
+address kept out of this server's games (kept_out), else it may join
+again, as a kick's */
 void network_game_server_kick_machine(
-	long machine_index)
+	long machine_index,
+	boolean kept_out)
 {
 	struct network_game_server *server = global_network_game_server_get();
 
@@ -1254,7 +1265,7 @@ void network_game_server_kick_machine(
 	{
 		return;
 	}
-	network_game_server_kick_pending[machine_index] = _kick_kept_out;
+	network_game_server_kick_pending[machine_index] = kept_out ? _kick_kept_out : _kick_rejoinable;
 }
 
 /* (a client machine's player queued to add in game: one refused is as one
@@ -3225,6 +3236,11 @@ struct network_machine *network_game_server_get_client_machine(
 	if (machine_index)
 		*machine_index = NONE;
 
+	/* port: none for a connection without a slot (NONE: the assert is not
+	checked in release builds) */
+	if (client_machine->machine_index < 0 || client_machine->machine_index >= MAXIMUM_NETWORK_MACHINE_COUNT)
+		return NULL;
+
 	machine = &server->game.machines[client_machine->machine_index];
 	if (machine_index)
 		*machine_index = machine->machine_index;
@@ -3260,6 +3276,10 @@ struct network_game_server_client_machine *network_game_server_get_client_machin
 {
 	match_assert(NETWORK_SERVER_MANAGER_FILE, 0x741,
 		server && (index<MAXIMUM_NETWORK_MACHINE_COUNT));
+
+	/* (port: and in release builds) */
+	if (index < 0 || index >= MAXIMUM_NETWORK_MACHINE_COUNT)
+		return NULL;
 
 	return &server->client_machines[index];
 }
@@ -4118,6 +4138,18 @@ void network_game_server_port_set_cooperative_friendly_fire(
 		network_event("network_game_server_port_set_cooperative_friendly_fire() failed to send updated game settings to clients");
 }
 
+void network_game_server_port_set_cooperative_player_collisions(
+	boolean player_collisions)
+{
+	struct network_game_server *server = global_network_game_server_get();
+
+	if (!server)
+		return;
+	SET_FLAG(server->game.cooperative_flags, _network_game_cooperative_no_player_collisions_bit, !player_collisions);
+	if (server->state == _network_game_server_state_pregame && !network_game_server_send_game_data_pregame(server))
+		network_event("network_game_server_port_set_cooperative_player_collisions() failed to send updated game settings to clients");
+}
+
 /* port: a gametype's PC options: the menus' (player_ui_set_game_variant_options)
 when it is the menus' gametype, else its defaults */
 static void network_game_server_variant_options(
@@ -4332,6 +4364,7 @@ static boolean network_game_server_handle_client_machines(
 {
 	boolean success = TRUE;
 	int i;
+	unsigned long start_time = system_milliseconds();
 
 	match_assert(NETWORK_SERVER_MANAGER_FILE, 0x827, server);
 
@@ -4370,6 +4403,7 @@ static boolean network_game_server_handle_client_machines(
 			word message_buffer[MAXIMUM_NETWORK_MESSAGE_SIZE / sizeof(word)];
 			word *message = message_buffer;
 			word message_buffer_size = sizeof(message_buffer);
+			unsigned long machine_start_time = system_milliseconds();
 
 			while (success && network_connection_read(
 				client_machine->connection,
@@ -4392,6 +4426,12 @@ static boolean network_game_server_handle_client_machines(
 					if (network_game_server_client_machine_is_joined_to_game(server, client_machine))
 						network_game_server_client_machine_heard(server, client_machine);
 					message_buffer_size = sizeof(message_buffer);
+					/* port: the rest next frame (MAXIMUM_MESSAGE_MILLISECONDS_PER_IDLE) */
+					if (system_milliseconds() - machine_start_time >= MAXIMUM_MESSAGE_MILLISECONDS_PER_MACHINE ||
+						system_milliseconds() - start_time >= MAXIMUM_MESSAGE_MILLISECONDS_PER_IDLE)
+					{
+						break;
+					}
 				}
 				else
 				{

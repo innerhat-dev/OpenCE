@@ -330,6 +330,11 @@ enum
 		_object_mask_control
 };
 
+/* port: network_distributed.c's arrays of MAXIMUM_TRACKED_PLAYERS are indexed
+by a player's datum index */
+typedef char player_data_maximum_count_assert[
+	NETWORK_GAME_MAXIMUM_PLAYER_COUNT == HALO_PORT_MAXIMUM_NETWORK_PLAYERS ? 1 : -1];
+
 /* ---------- macros */
 
 /* ---------- structures */
@@ -1309,6 +1314,16 @@ long find_best_starting_location_index(
 			best_starting_location_rating = starting_location_rating;
 			best_starting_location_index = starting_location_index;
 		}
+	}
+
+	/* port: a multiplayer map played alone (New Game's MULTIPLAYER maps:
+	no game engine) has no starting location for no game type, every one
+	being for its game types: the player starts at any of them, not at none
+	(outside the map, with no pause menu) */
+	if (best_starting_location_index == NONE && !game_engine_running() && starting_location_count > 0)
+	{
+		best_starting_location_index = (short)PIN(
+			(short)(real_random_range(0.0f, 1.0f) * starting_location_count), 0, starting_location_count - 1);
 	}
 
 	return best_starting_location_index;

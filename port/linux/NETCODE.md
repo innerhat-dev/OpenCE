@@ -167,7 +167,13 @@ its presentation, a message of another size; version 16 has a client's input
 say which structure BSP it has loaded (co-op); version 17 breaks the host's
 glass and destructible scenery on every machine (and takes a client's hits on
 scenery), sends the cluster a co-op cutscene keeps active, and leaves a
-failed co-op mission's revert to the host.
+failed co-op mission's revert to the host; version 18 sends with an object
+the bitmap of its shaders it draws with when its actor variant set one (co-op:
+the Elite major's and commander's armor); version 19 sends with the game's
+settings whether co-op's players collide with each other (Server Setup's PLAYER
+COLLISIONS: each machine's players then pass through the others'); version 20
+lists a public game with a password with its invite's token sealed with the
+password's key (`p2p_lobby.c`), a listing of another layout.
 
 This Mac build plays that options record (time limit, loadout, friendly fire,
 vehicle respawn, team balance, radar, vehicle sets, and no-map-weapons) and
@@ -194,14 +200,20 @@ only ever jumps forward to it when behind, so an honest one is never ahead
 while going faster (one that caught up, or a host that stalled, is one or
 the other, not both). One more than a tenth faster and half a second ahead
 has its players' predictions refused at once (the host's copies go as its
-own ticks have them), and after ten seconds of it is dropped, its address
-kept out of the host's games while the host runs, and every machine is
-told who, in red on its console and in its `debug.txt`
+own ticks have them). After ten seconds of it, if a message that came over
+its connection's stream was that far ahead too, it is dropped, every
+machine is told who, in red on its console and in its `debug.txt`, and its
+address is kept out of the host's games while the host runs. A datagram is
+known to be the machine's only by the address it came from, which another
+machine can send one as, so on its datagrams alone it is not dropped: its
+players' predictions stay refused while it goes on, and it is logged once,
+as unverified (dropped as above if its stream says so later)
 (`distributed_note_client_clock`, `network_game_server_kick_machine`,
 `_distributed_message_notice`). The host also adds a line to
 `cheaters.txt` beside its `debug.txt`: when, the player's address (an
 internet play peer's real one), their Discord user and their players'
-names, and why. A client tells the host its Discord user as the Discord
+names, and why (an unverified one says so). The Discord user is marked
+`(self-reported)` there and in `bans.txt`. A client tells the host its Discord user as the Discord
 client signed in on its machine says (its id and name, none without one:
 not running, or internet play off), once it is in the game and again
 when it changes; it says what it likes, so the host keeps of it only digits
@@ -211,7 +223,8 @@ A joining machine tells the host its hardware id: a keyed hash (HMAC-SHA-256,
 16 bytes as hex) of what its machine is known by (Windows' SMBIOS UUID, else
 its MachineGuid; Linux's `/etc/machine-id`; Android's `ANDROID_ID`, which the
 launcher writes to `hardware_id.txt`: `p2p_hardware_id`), kept by the host
-as hex only. A player dropped for cheating, and one the host bans with the
+as hex only. A player dropped for cheating (on its stream's word, as
+above), and one the host bans with the
 console's `ban <player name>` (Tab completes the name; the host's alone), is
 added to `bans.txt` beside `debug.txt` (a line each, as in `cheaters.txt`,
 with `ip=` and `hwid=`): the host refuses a machine joining whose address or
