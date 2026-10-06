@@ -159,7 +159,8 @@ int main(int argc, char **argv) {
     SDL_SetMainReady();
     SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, "0");
     SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_MENU_VISIBILITY, "1");
-    /* Keep native settings/file panels and the menu bar above borderless video. */
+    /* Stay on the normal desktop. Full screen hides the Dock and menu bar
+       itself, and settings or file panels bring that desktop chrome back. */
     SDL_SetHint(SDL_HINT_WINDOW_ALLOW_TOPMOST, "0");
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO))
         host_fatal("Cannot initialize display: %s", SDL_GetError());

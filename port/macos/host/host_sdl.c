@@ -155,6 +155,7 @@ uint32_t host_sdl_create_window(const char *title, int width, int height, int64_
 #ifndef HALO_IOS
         host_menu_style_window(metal_window);
         SDL_SetWindowHitTest(metal_window, window_hit_test, NULL);
+        host_menu_window_changed();
 #endif
 #if defined(HALO_IOS) && !defined(HALO_IOS_MAC_CHECK)
         const SDL_DisplayMode *display = SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(metal_window));

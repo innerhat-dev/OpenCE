@@ -34,6 +34,7 @@
 @property(nonatomic, copy) NSString *launchDataPath;
 - (void)refreshSettings;
 - (void)refreshFullscreen;
+- (void)updateSystemChrome;
 - (BOOL)chooseFolder;
 - (BOOL)chooseImage;
 - (void)showSettings:(id)sender;
@@ -235,9 +236,42 @@ static void migrationProgress(void *context, const char *file, unsigned long lon
     if (entry.action == @selector(checkUpdates:)) return self.updater.updater.canCheckForUpdates && !self.pendingInstall;
     return YES;
 }
+- (void)updateSystemChrome {
+    /* Borderless full screen stays on the normal desktop so settings and file
+       panels can sit above the game. Hide the Dock and menu bar only for that
+       full screen game, including when the pointer touches the screen edge.
+       Settings and file panels, and a windowed game, use the normal desktop. */
+    BOOL hide = self.gameRunning && !self.settingsVisible && !self.quitting && host_sdl_is_fullscreen();
+    NSApplicationPresentationOptions options = hide
+        ? (NSApplicationPresentationHideDock | NSApplicationPresentationHideMenuBar)
+        : NSApplicationPresentationDefault;
+    if (NSApp.presentationOptions != options) {
+        @try {
+            [NSApp setPresentationOptions:options];
+        } @catch (NSException *exception) {
+            (void)exception;
+        }
+    }
+    if (!hide) return;
+    int count = 0;
+    SDL_Window **windows = SDL_GetWindows(&count);
+    for (int index = 0; windows && index < count; index++) {
+        NSWindow *native = (__bridge NSWindow *)SDL_GetPointerProperty(SDL_GetWindowProperties(windows[index]),
+            SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, NULL);
+        NSScreen *screen = native.screen ?: NSScreen.mainScreen;
+        if (native && screen && !NSEqualRects(native.frame, screen.frame))
+            [native setFrame:screen.frame display:YES];
+    }
+    SDL_free(windows);
+}
+- (void)applicationDidBecomeActive:(NSNotification *)notification {
+    (void)notification;
+    [self updateSystemChrome];
+}
 - (void)refreshFullscreen {
     self.fullscreenButton.state = (self.gameRunning ? host_sdl_is_fullscreen() : !self.preferences.windowed)
         ? NSControlStateValueOn : NSControlStateValueOff;
+    [self updateSystemChrome];
 }
 - (void)toggleFullscreen:(id)sender {
     (void)sender;
@@ -346,6 +380,7 @@ static void migrationProgress(void *context, const char *file, unsigned long lon
     /* Return to SDL immediately: the guest must keep servicing its network
        connections while native settings are open. */
     self.settingsVisible = YES;
+    [self updateSystemChrome];
 }
 - (void)closeSettings:(id)sender {
     (void)sender;
@@ -353,6 +388,7 @@ static void migrationProgress(void *context, const char *file, unsigned long lon
         [self.settingsWindow endSheet:self.settingsWindow.attachedSheet returnCode:NSModalResponseCancel];
     self.settingsVisible = NO;
     [self.settingsWindow orderOut:self];
+    [self updateSystemChrome];
     if (self.gameRunning && !self.quitting) host_sdl_show_game();
 }
 - (void)automaticUpdates:(NSButton *)sender {
@@ -746,6 +782,7 @@ void host_menu_finish_game(int exit_code) {
         [menu.mapDownloads cancelDownloads];
         [menu closeSettings:nil];
         menu.gameRunning = NO;
+        [menu updateSystemChrome];
         if (!exit_code && menu.pendingInstall) {
             menu.waitingForUpdate = YES;
             menu.pendingInstall();
