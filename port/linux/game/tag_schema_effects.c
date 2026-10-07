@@ -2492,9 +2492,13 @@ static boolean hud_message_text_check(
 			long index = message->element_start_index + element_index;
 			struct hud_state_message_element *element;
 
-			/* (an element past the block is the empty one: text of none) */
 			if (index >= definition->elements.count)
+			{
+				tag_validate_correct(validation, "has message %ld with elements past its %ld: cut to %d elements",
+					message_index, definition->elements.count, element_index);
+				message->element_count = (byte)element_index;
 				break;
+			}
 			element = (struct hud_state_message_element *)definition->elements.address + index;
 			if (element->type == _hud_message_type_icon && element->data >= NUMBER_OF_HUD_ICON_TYPES)
 			{
@@ -2503,14 +2507,14 @@ static boolean hud_message_text_check(
 			}
 			if (element->type != _hud_message_type_text)
 				continue;
-			if (!element->data && position >= length)
+			if ((!element->data && position >= length) || (element->data && position + element->data > length))
 			{
 				tag_validate_correct(validation, "has message %ld with text past its text: cut to %d elements",
 					message_index, element_index);
 				message->element_count = (byte)element_index;
 				break;
 			}
-			if (element->data && position + element->data <= length && text[position + element->data - 1])
+			if (element->data && text[position + element->data - 1])
 			{
 				tag_validate_correct(validation, "has message %ld with text %d not terminated: terminated",
 					message_index, element_index);

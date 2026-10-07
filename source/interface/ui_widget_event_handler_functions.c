@@ -927,6 +927,7 @@ symbols in this file:
 #include "saved games/game_state.h"
 #include "saved games/player_profile.h"
 #include "interface/ui_widget_definitions.h"
+#include "custom_edition_maps.h" /* port: port/linux/game/custom_edition_maps.c */
 #include "saved games/saved_game_files.h"
 #include "text/unicode.h"
 #ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
@@ -2999,9 +3000,7 @@ static boolean multiplayer_level_list_initialize(
 	char map_name[256];
 	struct ui_widget_definition *definition = ui_widget_definition_get(widget->definition_tag_index);
 	short level_count = 13;
-#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
-	char **levels = event_handler_functions.multiplayer_levels;
-#endif
+	char **levels;
 
 	match_vassert("c:\\halo\\SOURCE\\interface\\ui_widget_event_handler_functions.c", 1228,
 		definition->type == 2,
@@ -3009,23 +3008,23 @@ static boolean multiplayer_level_list_initialize(
 	match_vassert("c:\\halo\\SOURCE\\interface\\ui_widget_event_handler_functions.c", 1229,
 		definition->child_count == 3,
 		"expected 3 list items for 'multiplayer level list' widget");
+	/* Community maps follow the Xbox levels. Custom Edition maps follow those
+	when the combined list still fits the Custom Edition list's leading slots. */
 #ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
-	levels = native_multiplayer_map_list(levels, level_count, &level_count);
-	widget->generated_list = levels;
+	levels = native_multiplayer_map_list(event_handler_functions.multiplayer_levels, level_count, &level_count);
 #else
-	widget->generated_list = event_handler_functions.multiplayer_levels;
+	levels = event_handler_functions.multiplayer_levels;
 #endif
+	custom_edition_maps_look_again();
+	if (level_count <= 16)
+		levels = custom_edition_maps_level_list(levels, level_count, &level_count);
+	widget->generated_list = levels;
 	widget->generated_count = level_count;
 	if (saved_game_file_retrieve_last_used_multiplayer_map(map_name))
 	{
 		widget->data3C.selected_index = 0;
 		while (widget->data3C.selected_index < level_count &&
-			_stricmp(map_name,
-#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
-				levels[widget->data3C.selected_index]))
-#else
-				event_handler_functions.multiplayer_levels[widget->data3C.selected_index]))
-#endif
+			_stricmp(map_name, levels[widget->data3C.selected_index]))
 		{
 			widget->data3C.selected_index++;
 		}
@@ -5664,18 +5663,17 @@ static boolean multiplayer_level_select(
 		definition->child_count == 3,
 		"expected 3 list items for 'multiplayer level list' widget");
 	level_list = widget->child->child;
+	/* port: the levels the list offers, the Xbox levels then the Custom
+	Edition maps (multiplayer_level_list_initialize) */
 	match_vassert("c:\\halo\\SOURCE\\interface\\ui_widget_event_handler_functions.c", 1298,
-#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
 		level_list->data3C.selected_index >= 0 && level_list->data3C.selected_index < level_list->generated_count,
-#else
-		level_list->data3C.selected_index >= 0 && level_list->data3C.selected_index < 13,
-#endif
 		"invalid multiplayer level specified from 'multiplayer level list' list widget");
-#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
+	if (level_list->data3C.selected_index < 0 || level_list->data3C.selected_index >= level_list->generated_count ||
+		!level_list->generated_list)
+	{
+		return FALSE;
+	}
 	map_name = ((char **)level_list->generated_list)[level_list->data3C.selected_index];
-#else
-	map_name = event_handler_functions.multiplayer_levels[level_list->data3C.selected_index];
-#endif
 	file = fopen("d:\\map_automation.txt", "r");
 	if (file)
 	{
@@ -5704,20 +5702,11 @@ static boolean multiplayer_level_select(
 		if (server)
 			network_game_server_change_map_name(server, map_name);
 	}
-#ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
 	for (level_index = 0; level_index < level_list->generated_count; level_index++)
 	{
-		char *listed_map = ((char **)level_list->generated_list)[level_index];
-		if (!_stricmp(map_name, listed_map))
+		if (!_stricmp(map_name, ((char **)level_list->generated_list)[level_index]))
 		{
-			saved_game_file_remember_last_used_multiplayer_map(listed_map);
-#else
-	for (level_index = 0; level_index < 13; level_index++)
-	{
-		if (!_stricmp(map_name, event_handler_functions.multiplayer_levels[level_index]))
-		{
-			saved_game_file_remember_last_used_multiplayer_map(event_handler_functions.multiplayer_levels[level_index]);
-#endif
+			saved_game_file_remember_last_used_multiplayer_map(((char **)level_list->generated_list)[level_index]);
 			break;
 		}
 	}
@@ -5919,21 +5908,25 @@ short ui_widget_port_multiplayer_maps(
 	short *last_used)
 {
 	char map_name[256];
+	short level_count;
 	short level_index;
+	/* (the Xbox levels, then the Custom Edition maps:
+	port/linux/game/custom_edition_maps.c) */
+	char **levels = custom_edition_maps_level_list(event_handler_functions.multiplayer_levels, 13, &level_count);
 
-	*names = (char const *const *)event_handler_functions.multiplayer_levels;
+	*names = (char const *const *)levels;
 	if (!last_used)
-		return 13;
+		return level_count;
 	*last_used = 0;
 	if (saved_game_file_retrieve_last_used_multiplayer_map(map_name))
 	{
-		for (level_index = 0; level_index < 13; level_index++)
+		for (level_index = 0; level_index < level_count; level_index++)
 		{
-			if (!_stricmp(map_name, event_handler_functions.multiplayer_levels[level_index]))
+			if (!_stricmp(map_name, levels[level_index]))
 				*last_used = level_index;
 		}
 	}
-	return 13;
+	return level_count;
 }
 
 /* the map chosen (as multiplayer_level_select), the server's if there is
@@ -5943,10 +5936,13 @@ boolean ui_widget_port_multiplayer_map_choose(
 {
 	char const *map_name;
 	void *server = global_network_game_server_get();
+	char const *const *levels;
+	short last_used;
+	short level_count = ui_widget_port_multiplayer_maps(&levels, &last_used);
 
-	if (level_index < 0 || level_index >= 13)
+	if (level_index < 0 || level_index >= level_count)
 		return FALSE;
-	map_name = event_handler_functions.multiplayer_levels[level_index];
+	map_name = levels[level_index];
 	{
 		char build[0x20];
 
@@ -5961,7 +5957,7 @@ boolean ui_widget_port_multiplayer_map_choose(
 	game_engine_override_map_name(map_name);
 	if (server)
 		network_game_server_change_map_name(server, map_name);
-	saved_game_file_remember_last_used_multiplayer_map(event_handler_functions.multiplayer_levels[level_index]);
+	saved_game_file_remember_last_used_multiplayer_map(map_name);
 	return TRUE;
 }
 
@@ -6002,7 +5998,9 @@ boolean ui_widget_port_cooperative_level_choose(
 	struct network_game_server *server = global_network_game_server_get();
 	struct game_variant variant;
 
-	if (!server || !map_name || main_get_solo_level_from_name(map_name) == NONE)
+	/* (a campaign level, or a Custom Edition campaign map's:
+	port/linux/game/custom_edition_maps.c) */
+	if (!server || !map_name || !custom_edition_maps_level_campaign(map_name))
 		return FALSE;
 	csmemset(&variant, 0, sizeof(variant));
 	ustrncpy(variant.human_readable_game_description, L"Co-op",
