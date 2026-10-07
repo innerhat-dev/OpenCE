@@ -529,7 +529,7 @@ def generate_android_build(n: Writer, sln: Any) -> None:
 
     # ---------- the guest image
 
-    linker_script = PORT_DIR / "guest" / "guest.ld"
+    linker_script = PORT_DIR / "guest" / ("guest_macos.ld" if macos and not ios else "guest.ld")
     builtins = getattr(sln, "android_guest_builtins", None) if guest_only else None
     compiler_runtime = (_quote(builtins) if builtins else "") if guest_only else "$$($android_host_cc -print-libgcc-file-name)"
     n.rule(
