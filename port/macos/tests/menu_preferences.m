@@ -150,6 +150,9 @@ int main(int argc, const char **argv) {
             assert(!HaloValidateGameData([test URLByAppendingPathComponent:name], &error));
             assert(error.localizedDescription.length);
         }
+        error = nil;
+        assert([HaloValidateGameData([test URLByAppendingPathComponent:@"withcustom"], &error).path
+            isEqualToString:[test URLByAppendingPathComponent:@"withcustom"].path]);
         if (argc == 3) assert(HaloValidateGameData([NSURL fileURLWithPath:@(argv[2])], &error));
         HaloPreferences *preferences = [[HaloPreferences alloc] initWithSupportDirectory:support];
         assert([preferences selectDataRoot:valid iso:nil error:&error]);

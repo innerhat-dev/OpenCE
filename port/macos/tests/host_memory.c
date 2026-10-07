@@ -89,6 +89,19 @@ int main(void) {
     assert(host_memory_watch_generation(a, 4096) > before);
     assert(host_guest_mmap(0x1000, 4096, PROT_READ, 0x32, -1, 0) == -22);
 
+    /* Custom Edition tags are linked to this address, below the Xbox window. */
+    const uint32_t ce = 0x40440000u;
+    const uint32_t ce_bytes = 0x01700000u;
+    assert(host_guest_mmap(ce, ce_bytes, PROT_READ | PROT_WRITE, 0x100022, -1, 0) == ce);
+    memset(guest_pointer(ce), 0x5a, 64);
+    assert(((unsigned char *)guest_pointer(ce))[63] == 0x5a);
+    assert(host_guest_mmap(ce, ce_bytes, PROT_READ | PROT_WRITE, 0x100022, -1, 0) == -17);
+    assert(host_guest_mmap(0x7FF00000u, 0x200000u, PROT_READ | PROT_WRITE, 0x100022, -1, 0) == -22);
+    assert(host_guest_munmap(ce, ce_bytes) == 0);
+    assert(host_guest_mmap(ce, ce_bytes, PROT_READ | PROT_WRITE, 0x100022, -1, 0) == ce);
+    assert(((unsigned char *)guest_pointer(ce))[0] == 0);
+    assert(host_guest_munmap(ce, ce_bytes) == 0);
+
     futex_word = (uint32_t *)reused;
     pthread_t thread;
     assert(pthread_create(&thread, NULL, wake_thread, NULL) == 0);

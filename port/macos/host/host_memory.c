@@ -142,20 +142,52 @@ void host_low_unmap(void *p, size_t n) {
 int host_low_owns(uintptr_t a, size_t n) {
     return a >= HALO_MACOS_BIAS && a + n >= a && a + n <= HALO_MACOS_BIAS + HALO_ARENA_SIZE;
 }
+/* A fixed anonymous map in the free span below the Xbox window. Custom
+   Edition tag data is linked to 0x40440000, so that address has to be the
+   one the guest asked for. */
+static long low_fixed_map(uint64_t a, uint64_t n, int prot, int noreplace) {
+    if (a < 0x1000000 || (a & (PAGE - 1)) || a >= HALO_GUEST_WINDOW_BASE)
+        return -22;
+    size_t bytes = rounded(n);
+    if (!bytes || a + bytes > HALO_GUEST_WINDOW_BASE)
+        return -22;
+    unsigned start = (unsigned)(a / PAGE);
+    unsigned count = (unsigned)(bytes / PAGE);
+    pthread_mutex_lock(&memory_lock);
+    if (noreplace) {
+        for (unsigned i = 0; i < count; i++) {
+            if (used[start + i]) {
+                pthread_mutex_unlock(&memory_lock);
+                return -17;
+            }
+        }
+    }
+    void *p = guest_pointer(a);
+    if (mmap(p, bytes, prot ? prot : PROT_NONE, MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0) ==
+        MAP_FAILED) {
+        int error = errno;
+        pthread_mutex_unlock(&memory_lock);
+        return -host_linux_errno(error);
+    }
+    memset(used + start, 1, count);
+    pthread_mutex_unlock(&memory_lock);
+    return (long)(uint32_t)a;
+}
 long host_guest_mmap(uint64_t a, uint64_t n, int prot, int flags, int fd, int64_t offset) {
     if (!n || n > 0x40000000)
         return -22;
     if (!(flags & 0x20) || fd != -1 || offset)
         return -38;
     if (flags & (0x10 | 0x100000)) {
-        if (a < HALO_GUEST_WINDOW_BASE || a + n > HALO_GUEST_WINDOW_BASE + HALO_GUEST_WINDOW_SIZE)
-            return -22;
-        if (!(flags & 0x100000)) {
-            int result = xbox_protect((uint32_t)a, n, prot, 1);
-            if (result)
-                return result;
+        if (a >= HALO_GUEST_WINDOW_BASE && a + n <= HALO_GUEST_WINDOW_BASE + HALO_GUEST_WINDOW_SIZE) {
+            if (!(flags & 0x100000)) {
+                int result = xbox_protect((uint32_t)a, n, prot, 1);
+                if (result)
+                    return result;
+            }
+            return (uint32_t)a;
         }
-        return (uint32_t)a;
+        return low_fixed_map(a, n, prot, flags & 0x100000);
     }
     void *p = host_low_map(n, prot);
     return p ? (long)(uint32_t)(uintptr_t)p : -12;

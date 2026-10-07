@@ -70,12 +70,15 @@ def native_preferences():
         ui, opening = map_header("ui"), map_header("a10")
         for name, ui_data, opening_data in (("valid", ui, opening), ("pc", map_header("ui", version=7), opening),
                 ("mixed", ui, map_header("a10", build="01.10.12.2276")),
-                ("missing", ui, None), ("truncated", ui[:100], opening)):
+                ("missing", ui, None), ("truncated", ui[:100], opening),
+                ("withcustom", ui, opening)):
             maps = directory / name / "maps"
             maps.mkdir(parents=True)
             (maps / "ui.map").write_bytes(ui_data)
             if opening_data:
                 (maps / "a10.map").write_bytes(opening_data)
+        (directory / "withcustom" / "maps" / "coldsnap.map").write_bytes(
+            map_header("coldsnap", version=609, build="01.00.00.0609"))
         (directory / "disc.iso").write_bytes(disc_image(ui, opening))
         (directory / "pc.iso").write_bytes(disc_image(map_header("ui", version=7), opening))
         (directory / "broken.iso").write_bytes(b"invalid disc image")

@@ -91,6 +91,7 @@ NSURL *HaloValidateGameData(NSURL *selection, NSError **error) {
     NSDictionary<NSString *, NSURL *> *files = entries(maps, error);
     if (!files) return nil;
     NSString *discBuild = nil;
+    NSString *unsupported = nil;
     BOOL hasUI = NO, hasOpeningLevel = NO;
     for (NSString *name in files) {
         if (![name.pathExtension isEqualToString:@"map"]) continue;
@@ -116,9 +117,11 @@ NSURL *HaloValidateGameData(NSURL *selection, NSError **error) {
                 [cacheName.lowercaseString isEqualToString:name.stringByDeletingPathExtension] &&
                 ([@"01.01.14.2342" isEqualToString:build] || [@"01.10.12.2276" isEqualToString:build]);
         }
+        /* A Custom Edition map beside the Xbox maps must not make the Xbox
+           set unusable. The game reads those from custom_maps, not from maps. */
         if (!valid) {
-            if (error) *error = failure([NSString stringWithFormat:@"%@ is not a supported original Xbox Halo map. PC, Custom Edition, Anniversary and MCC maps cannot be used.", file.lastPathComponent]);
-            return nil;
+            if (!unsupported) unsupported = file.lastPathComponent;
+            continue;
         }
         if (discBuild && ![discBuild isEqualToString:build]) {
             if (error) *error = failure(@"The maps mix different Xbox releases. Choose one complete set from one disc.");
@@ -129,7 +132,11 @@ NSURL *HaloValidateGameData(NSURL *selection, NSError **error) {
         hasOpeningLevel |= [name isEqualToString:@"a10.map"];
     }
     if (!hasUI || !hasOpeningLevel) {
-        if (error) *error = failure(@"This folder needs ui.map and a10.map from the same Xbox Halo disc. Use a complete maps folder.");
+        if (error && !discBuild && unsupported) {
+            *error = failure([NSString stringWithFormat:@"%@ is not a supported original Xbox Halo map. PC, Custom Edition, Anniversary and MCC maps cannot be used.", unsupported]);
+        } else if (error) {
+            *error = failure(@"This folder needs ui.map and a10.map from the same Xbox Halo disc. Use a complete maps folder.");
+        }
         return nil;
     }
     return root;
