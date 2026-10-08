@@ -1702,7 +1702,10 @@ static void main_native_build_label(char *label, size_t capacity)
 {
 	char const *platform;
 
-	#ifdef HALO_ANDROID
+	/* The Mac guest is built as the Android guest, so it is named first. */
+	#if defined(HALO_MACOS) && !defined(HALO_IOS)
+	platform = "Mac";
+	#elif defined(HALO_ANDROID)
 	platform = "Android";
 	#elif defined(HALO_WINDOWS)
 	platform = "Windows";
