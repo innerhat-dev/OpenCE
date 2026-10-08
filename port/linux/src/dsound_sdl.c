@@ -1197,7 +1197,15 @@ static void audio_start(void)
 		spec.format = SDL_AUDIO_F32;
 		spec.channels = OUTPUT_CHANNELS;
 		spec.freq = OUTPUT_RATE;
+#ifdef HALO_ANDROID
+		/* frames per callback: on Android each callback is handed to a thread
+		that can run the guest (host_sdl.c): 512 left it too little time and
+		the menus' music broke up, which 1024 does not (about 21 ms at 48 kHz,
+		11 ms more than 512) */
+		SDL_SetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES, "1024");
+#else
 		SDL_SetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES, "512");
+#endif
 		audio_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, audio_callback, NULL);
 		if (audio_stream)
 		{
