@@ -79,6 +79,35 @@ int host_errno(void) { return host_linux_errno(errno); }
 void host_android_path(int which, char *buffer, uint32_t size) {
     snprintf(buffer, size, "%s", which ? save_root : data_root);
 }
+/* The Mac guest is built with the Android touch path. There is no overlay
+here, so these report no fingers and ignore the phone's vibration. */
+void host_gesture_insets(int *insets) {
+    if (!insets)
+        return;
+    insets[0] = insets[1] = insets[2] = insets[3] = 0;
+}
+void host_touch_read(int *state) {
+    int i;
+
+    if (!state)
+        return;
+    for (i = 0; i < 7; i++)
+        state[i] = 0;
+}
+void host_touch_look_read(float *delta) {
+    int i;
+
+    if (!delta)
+        return;
+    for (i = 0; i < 4; i++)
+        delta[i] = 0.0f;
+}
+void host_touch_rumble(unsigned int low, unsigned int high) {
+    (void)low;
+    (void)high;
+}
+void host_touch_scene(int scene) { (void)scene; }
+void host_touch_bindings(const int *controls) { (void)controls; }
 extern char **environ;
 static uint32_t make_boot(void) {
     size_t size = 0x20000;

@@ -40,6 +40,7 @@ drive the controller.
 #include "platform.h"
 #include "sdl_platform.h"
 #include "port_config.h"
+#include "touch_input.h"
 #include "halo_keyboard.h"
 
 #include <SDL3/SDL.h>
@@ -90,10 +91,14 @@ static Uint64 wheel_press_until_ms = 0;
 static BOOL wheel_scrolling = FALSE;
 /* the way the scroll under way turns: 1 up (away), -1 down */
 static int wheel_direction = 0;
-/* when port 0's aim last moved, by the mouse and by the right stick
-(halo_linux_mouse_aiming) */
+/* when port 0's aim last moved, by the mouse, by the right stick, and by
+the touch controls (their swipe, gyroscope or stick: halo_linux_mouse_aiming,
+halo_linux_touch_aiming) */
 static Uint64 mouse_aimed_ms = 0;
 static Uint64 stick_aimed_ms = 0;
+#ifdef HALO_ANDROID
+static Uint64 touch_aimed_ms = 0;
+#endif
 
 /* the right stick's deflection that counts as aiming with it, clear of a
 worn stick's drift */
@@ -151,6 +156,79 @@ int halo_linux_mouse_look(short gamepad_index, float *yaw, float *pitch)
 	*yaw = -x * scale * mouse_sensitivity();
 	*pitch = (invert ? y : -y) * scale * vertical_sensitivity;
 	return TRUE;
+}
+
+#ifdef HALO_ANDROID
+/* the touch controls moved the player or the aim (halo_linux_touch_aiming) */
+static void touch_used(void)
+{
+	pthread_mutex_lock(&mouse_lock);
+	touch_aimed_ms = SDL_GetTicks();
+	pthread_mutex_unlock(&mouse_lock);
+}
+#endif
+
+/* the touch controls' stick as the player's movement (input_abstraction.c's
+keyboard_controls_update), forward and strafe -1..1, whatever the
+profile's sticks do; nonzero while it is pushed. Nothing but on Android. */
+int halo_linux_touch_move(short controller_index, float *forward, float *strafe)
+{
+	*forward = 0.0f;
+	*strafe = 0.0f;
+	if (controller_index != 0)
+		return FALSE;
+#ifdef HALO_ANDROID
+	if (!touch_input_move(forward, strafe))
+		return FALSE;
+	touch_used();
+	return TRUE;
+#else
+	return FALSE;
+#endif
+}
+
+/* the touch controls' swipe and gyroscope since the last call, in radians at
+the mouse's rate per pixel (the view applies its own sensitivity), each
+apart: player_control.c inverts the swipe as the profile inverts the stick,
+not the gyroscope, which turns as the phone does, and makes them the
+stick's rate before the magnetism. Nothing but on Android. */
+int halo_linux_touch_look(short gamepad_index, float *yaw, float *pitch, float *gyro_yaw, float *gyro_pitch)
+{
+	*yaw = 0.0f;
+	*pitch = 0.0f;
+	*gyro_yaw = 0.0f;
+	*gyro_pitch = 0.0f;
+	if (gamepad_index != 0)
+		return FALSE;
+#ifdef HALO_ANDROID
+	touch_input_look(0.0022f, yaw, pitch, gyro_yaw, gyro_pitch);
+	if (*yaw == 0.0f && *pitch == 0.0f && *gyro_yaw == 0.0f && *gyro_pitch == 0.0f)
+		return FALSE;
+	touch_used();
+	return TRUE;
+#else
+	return FALSE;
+#endif
+}
+
+/* whether port 0's player aims with the touch controls without their aim
+assist (input.touch_aim_assist false): no magnetism, as for the mouse
+(player_control.c), until a stick moves the aim again */
+int halo_linux_touch_aiming(short gamepad_index)
+{
+#ifdef HALO_ANDROID
+	int aiming;
+
+	if (gamepad_index != 0 || touch_input_aim_assist())
+		return FALSE;
+	pthread_mutex_lock(&mouse_lock);
+	aiming = touch_aimed_ms != 0 && touch_aimed_ms >= stick_aimed_ms;
+	pthread_mutex_unlock(&mouse_lock);
+	return aiming;
+#else
+	(void)gamepad_index;
+	return FALSE;
+#endif
 }
 
 /* whether the player on the gamepad aims with the mouse (it moved after the
@@ -896,6 +974,10 @@ static int controller_port(HANDLE device)
 	return -1;
 }
 
+/* reads a controller's state; for port 0 the keyboard, mouse, debug input
+and touchscreen are merged into the first gamepad's; runs on the game's main
+thread (touch_input_gamepad relies on it); returns ERROR_SUCCESS or
+ERROR_DEVICE_NOT_CONNECTED for an unknown port */
 DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 {
 	int port = controller_port(device);
@@ -941,6 +1023,10 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		if (port_gamepad(gamepads, count, 0))
 			sdl_gamepad_state(gamepads[0], &state->Gamepad);
 		test_input_gamepad(&state->Gamepad);
+		touch_input_gamepad(&state->Gamepad);
+#ifdef HALO_ANDROID
+		touch_input_controls(&state->Gamepad, input.menus);
+#endif
 		if (abs(state->Gamepad.sThumbRX) > STICK_AIMING_DEFLECTION ||
 			abs(state->Gamepad.sThumbRY) > STICK_AIMING_DEFLECTION)
 		{
@@ -974,6 +1060,11 @@ DWORD WINAPI XInputSetState(HANDLE device, PXINPUT_FEEDBACK feedback)
 	feedback->Header.dwStatus = ERROR_SUCCESS;
 	if (port < 0)
 		return ERROR_DEVICE_NOT_CONNECTED;
+#ifdef HALO_ANDROID
+	/* the phone vibrates for the touch controls' player */
+	if (port == 0)
+		touch_input_rumble(feedback->Rumble.wLeftMotorSpeed, feedback->Rumble.wRightMotorSpeed);
+#endif
 	count = sdl_gamepads(gamepads);
 	if (port_gamepad(gamepads, count, port))
 	{

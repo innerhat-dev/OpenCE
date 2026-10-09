@@ -79,7 +79,7 @@ jobs:
 
       - name: Test
         run: |
-          python -m pytest -q tools/test_linux_port.py tools/test_host_watch_hash.py tools/harness
+          python -m pytest -q tools/test_linux_port.py tools/test_host_watch_hash.py tools/test_touch_menu.py tools/harness
           python tools/test_light_storage.py
 
       - name: Native settings and shared interfaces
@@ -163,6 +163,10 @@ jobs:
         env:
           HALO_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: python3 tools/ci_build.py android release
+
+      # the touch controls' layout and gyroscope maths (the runner's JDK)
+      - name: Test the touch layout
+        run: python3 tools/test_touch_layout.py
 
       - name: Compile cache
         run: ccache --show-stats
