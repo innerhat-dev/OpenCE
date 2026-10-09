@@ -3379,7 +3379,7 @@ typedef void (*hs_token_enumerator)(
 
 struct hs_function_table_storage
 {
-	struct hs_function_definition const *functions[418 + 4];
+	struct hs_function_definition const *functions[418 + 7];
 	struct profile_section profile;
 	hs_token_enumerator token_enumerators[18];
 };
@@ -11626,10 +11626,12 @@ static struct hs_function_definition_with_1_parameter const xbox_set_machine_nam
 	},
 };
 
-/* port: Halo PC's sv_say and sv_end_game, which Custom Edition maps' scripts
-call (lookout_classic's and the Halo Kart maps' sv_say). They go at the end
-of the table: Xbox maps call functions by their place in it, Custom Edition
-maps by name (custom_edition_scripts.c). Every machine runs the scripts */
+/* port: Halo PC's sv_say, sv_end_game, sv_kick, sv_map_next and
+sound_impulse_predict, which Custom Edition maps' scripts call. They go at
+the end of the table: Xbox maps call functions by their place in it, Custom
+Edition maps by name (custom_edition_scripts.c). Every machine runs the
+scripts. The host alone kicks and ends a match. There is no map cycle, so
+sv_map_next ends the match the way sv_end_game does */
 
 /* (each machine shows the message to its own players) */
 static void hs_sv_say(
@@ -11669,8 +11671,31 @@ static void hs_sv_end_game(
 	return;
 }
 
+/* (the host kicks that player, as its kick command does) */
+static void hs_sv_kick(
+	char const *name)
+{
+	if (global_network_game_server_get() && name && name[0])
+		network_game_server_kick_player(name);
+
+	return;
+}
+
+/* (the host ends the match. the next map is chosen in the lobby) */
+static void hs_sv_map_next(
+	void)
+{
+	if (global_network_game_server_get() && game_engine_running())
+		game_engine_end_game();
+
+	return;
+}
+
 HS_EVALUATE_VOID_STRING(hs_sv_say_evaluate, hs_sv_say)
 HS_EVALUATE_NO_ARGUMENTS(hs_sv_end_game_evaluate, hs_sv_end_game)
+HS_EVALUATE_VOID_STRING(hs_sv_kick_evaluate, hs_sv_kick)
+HS_EVALUATE_NO_ARGUMENTS(hs_sv_map_next_evaluate, hs_sv_map_next)
+HS_EVALUATE_VOID_LONG_BOOLEAN(hs_sound_impulse_predict_evaluate, scripted_sound_predict)
 
 static struct hs_function_definition_with_1_parameter const sv_say_definition=
 {
@@ -11697,6 +11722,49 @@ static struct hs_function_definition const sv_end_game_definition=
 	"Halo PC's: the host ends the game.",
 	NULL,
 	0,
+};
+
+static struct hs_function_definition_with_1_parameter const sv_kick_definition=
+{
+	{
+		_hs_type_void,
+		0,
+		"sv_kick",
+		hs_macro_function_parse,
+		hs_sv_kick_evaluate,
+		"Halo PC's: the host kicks the named player.",
+		NULL,
+		1,
+		{ _hs_type_string },
+	},
+};
+
+static struct hs_function_definition const sv_map_next_definition=
+{
+	_hs_type_void,
+	0,
+	"sv_map_next",
+	hs_macro_function_parse,
+	hs_sv_map_next_evaluate,
+	"Halo PC's: the host ends the match.",
+	NULL,
+	0,
+};
+
+static struct hs_function_definition_with_2_parameters const sound_impulse_predict_definition=
+{
+	{
+		_hs_type_void,
+		0,
+		"sound_impulse_predict",
+		hs_macro_function_parse,
+		hs_sound_impulse_predict_evaluate,
+		"loads an impulse sound before it is played. true waits until it is loaded.",
+		NULL,
+		2,
+		{ _hs_type_sound },
+	},
+	{ _hs_type_boolean },
 };
 
 /* port: the sounds of tag files played over the map's, for those making
@@ -11734,7 +11802,7 @@ static struct hs_function_definition_with_1_parameter const loose_sounds_definit
 	},
 };
 
-long const hs_function_table_count= 418 + 4;
+long const hs_function_table_count= 418 + 7;
 
 struct hs_enum_definition const hs_enum_table[]=
 {
@@ -12168,6 +12236,9 @@ struct hs_function_table_storage hs_function_table=
 		&xbox_set_machine_name_definition.definition,
 		&sv_say_definition.definition,
 		&sv_end_game_definition,
+		&sv_kick_definition.definition,
+		&sv_map_next_definition,
+		&sound_impulse_predict_definition.definition,
 		&loose_sounds_reload_definition,
 		&loose_sounds_definition.definition,
 	},
@@ -12671,6 +12742,9 @@ static boolean const hs_function_allowed_in_maps[]=
 	/* Halo PC's, for Custom Edition maps */
 	TRUE, /* sv_say */
 	TRUE, /* sv_end_game: the host's */
+	TRUE, /* sv_kick: the host's */
+	TRUE, /* sv_map_next: the host ends the match */
+	TRUE, /* sound_impulse_predict */
 
 	/* the port's, for those making sounds */
 	FALSE, /* loose_sounds_reload */
