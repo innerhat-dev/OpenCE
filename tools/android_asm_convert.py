@@ -88,6 +88,17 @@ class Converter:
         return name
 
     def operands(self, text: str) -> str:
+        # Clang emits constant bytes as .ascii strings. An underscore in that
+        # data is a real 0x5F, and a quote is written as \". Hide the literals
+        # before identifier rewriting: a broken string match otherwise treats
+        # the underscore as a Mach-O symbol prefix and deletes it.
+        literals = []
+
+        def hide(match):
+            literals.append(match.group(0))
+            return f"<<<{len(literals) - 1}>>>"
+
+        text = re.sub(r'"(?:\\.|[^"\\])*"', hide, text)
         # relocation operators first
         text = re.sub(r'([\w.$"]+)@GOTPAGE\b', r"\1", text)
         text = re.sub(r'([\w.$"]+)@PAGE\b', r"\1", text)
@@ -104,7 +115,8 @@ class Converter:
             return self.sym(tok)
         # rename identifiers outside :lo12: markers
         parts = re.split(r'(:lo12:)', text)
-        return "".join(p if p == ":lo12:" else IDENT.sub(repl, p) for p in parts)
+        text = "".join(p if p == ":lo12:" else IDENT.sub(repl, p) for p in parts)
+        return re.sub(r"<<<(\d+)>>>", lambda m: literals[int(m.group(1))], text)
 
     def emit(self, s: str):
         self.out.append(s)
