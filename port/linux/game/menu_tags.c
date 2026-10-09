@@ -1698,6 +1698,53 @@ static void pause_patch(struct cache_file_tag_instance *instances)
 		platform_log("menus: the pause menu has SETTINGS%s", host ? " and END GAME" : "");
 }
 
+/* a campaign map, and a map that keeps the game's menus, do not get the
+menus. the speaker beside a name (network_voice.c) is one of their bitmaps,
+so it is added on its own */
+static void voice_speaker_bitmap(void)
+{
+	struct halo_menus const *menus = halo_menus_load();
+	struct cache_file_tag_instance *instances;
+	long index, bitmap_index = NONE;
+
+	if (!menus)
+		return;
+	for (index = 0; index < menus->bitmap_count; index++)
+	{
+		if (menus->bitmaps[index].name && !strcmp(menus->bitmaps[index].name, "voice/speaker"))
+		{
+			bitmap_index = index;
+			break;
+		}
+	}
+	if (bitmap_index == NONE)
+		return;
+	memset(&build, 0, sizeof(build));
+	build.menus = menus;
+	build.game_map = TRUE;
+	instances = instances_grow(1, &build.first_index, &build.first_salt);
+	if (!instances || build.failed)
+		goto failed;
+	{
+		long tag_index = next_tag();
+
+		instance_set(instances, BITMAP_GROUP_TAG, tag_index, menus->bitmaps[bitmap_index].name, "",
+			bitmap_build(&menus->bitmaps[bitmap_index], tag_index));
+	}
+	if (build.failed)
+		goto failed;
+	cache_files_set_tag_instances(instances, build.first_index + build.next);
+	platform_log("menus: the voice speaker picture was added");
+	goto done;
+
+failed:
+	platform_log("menus: the voice speaker picture was not added");
+	menu_tags_release();
+
+done:
+	memset(&build, 0, sizeof(build));
+}
+
 void menu_tags_loaded(
 	char const *map_name)
 {
@@ -1711,6 +1758,7 @@ void menu_tags_loaded(
 	if ((game_map && tag_loaded('Soul', MULTIPLAYER_COLLECTION) == NONE) ||
 		strcmp(config_string("display.menus"), "pc"))
 	{
+		voice_speaker_bitmap();
 		return;
 	}
 	menus = halo_menus_load();

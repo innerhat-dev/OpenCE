@@ -223,6 +223,14 @@ failed:
 	return NULL;
 }
 
+/* a size the mip chain can cover. 96 is not one: the speaker icons are the
+only menu pictures of such a size, and a mipmapped sample of them comes out
+blank, so they stay on the one sharp level */
+static int power_of_two_size(unsigned long value)
+{
+	return value && (value & (value - 1)) == 0;
+}
+
 unsigned int hud_hires_png_texture(const void *png, unsigned long size, unsigned long *levels)
 {
 	unsigned long width = 0, height = 0, largest;
@@ -232,8 +240,11 @@ unsigned int hud_hires_png_texture(const void *png, unsigned long size, unsigned
 	if (!pixels)
 		return 0;
 	*levels = 1;
-	for (largest = width > height ? width : height; largest > 1; largest >>= 1)
-		(*levels)++;
+	if (power_of_two_size(width) && power_of_two_size(height))
+	{
+		for (largest = width > height ? width : height; largest > 1; largest >>= 1)
+			(*levels)++;
+	}
 	glGenTextures(1, &texture);
 	glBindTexture(GL_TEXTURE_2D, texture);
 	xgpu_gl_state_invalidate();
@@ -241,7 +252,8 @@ unsigned int hud_hires_png_texture(const void *png, unsigned long size, unsigned
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, (GLint)*levels - 1);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)width, (GLsizei)height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-	glGenerateMipmap(GL_TEXTURE_2D);
+	if (*levels > 1)
+		glGenerateMipmap(GL_TEXTURE_2D);
 	xgpu_gl_state_invalidate();
 	free(pixels);
 	return texture;

@@ -2920,7 +2920,8 @@ static GLuint sampler_get(int stage, const DWORD *inputs)
 }
 
 /* hires: a high-res HUD texture (hud_hires.h), drawn smaller than it is, so
-filtered and from its mip levels whatever the game asks: the HUD's meters are
+filtered and, when it has mip levels, from those whatever the game asks. A
+picture with one level is sampled from that level. The HUD's meters are
 point sampled for one player, to keep the Xbox bitmaps' texels sharp */
 static void configure_sampler(int stage, BOOL mipmapped, BOOL hires)
 {
@@ -2931,7 +2932,9 @@ static void configure_sampler(int stage, BOOL mipmapped, BOOL hires)
 	DWORD inputs[SAMPLER_STATE_WORDS];
 
 	inputs[0] = hires ? D3DTEXF_LINEAR : state[D3DTSS_MINFILTER];
-	inputs[1] = hires ? D3DTEXF_LINEAR : mipmapped ? state[D3DTSS_MIPFILTER] : D3DTEXF_NONE;
+	/* one level (a speaker icon: its picture is not a power of two on a
+	side) is sampled from that level. A mip filter of it is blank */
+	inputs[1] = mipmapped ? (hires ? D3DTEXF_LINEAR : state[D3DTSS_MIPFILTER]) : D3DTEXF_NONE;
 	inputs[2] = hires ? D3DTEXF_LINEAR : state[D3DTSS_MAGFILTER];
 	inputs[3] = state[D3DTSS_ADDRESSU];
 	inputs[4] = state[D3DTSS_ADDRESSV];

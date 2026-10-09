@@ -68,6 +68,7 @@ boolean network_distributed_server_send_to_machine(long machine_index, void *mes
 boolean network_distributed_server_send_to_machine_reliably(long machine_index, void *message, word size);
 short network_distributed_server_machines(long *machine_indices, short maximum);
 int halo_push_to_talk_held(void);
+void platform_log(char const *format, ...);
 void posix_random_bytes(void *buffer, unsigned int size);
 unsigned long system_milliseconds(void);
 
@@ -204,6 +205,11 @@ static boolean voice_settings_heard;
 static unsigned long voice_settings_heard_at;
 static word voice_sequence;
 static unsigned long voice_hello_at;
+/* one line each, so a game log shows whether a voice arrived and whether
+this map has the speaker picture */
+static int voice_remote_reported;
+static int voice_icon_reported_found;
+static int voice_icon_reported_missing;
 static unsigned long voice_talked_at;
 static boolean voice_talked;
 static unsigned long voice_open_mic_until;
@@ -559,6 +565,12 @@ static void voice_play(
 
 	if (!voice_machine_valid(machine_index) || length <= 0)
 		return;
+	if (!voice_remote_reported)
+	{
+		voice_remote_reported = 1;
+		platform_log("voice chat: another player's voice arrived%s",
+			voice_audible(machine_index) ? "" : " (muted here)");
+	}
 	voice_heard_at[machine_index] = system_milliseconds();
 	voice_heard[machine_index] = TRUE;
 	if (!voice_audible(machine_index))
@@ -869,6 +881,7 @@ static void voice_end_session(
 	voice_audio_forget_all();
 	voice_settings_heard = FALSE;
 	voice_talked = FALSE;
+	voice_remote_reported = 0;
 	csmemset(voice_heard, 0, sizeof(voice_heard));
 }
 
@@ -1009,7 +1022,21 @@ void network_voice_draw_icon(
 	pixel32 a = (pixel32)(PIN(alpha, 0.0f, 1.0f) * 255.0f + 0.5f) << 24;
 	rectangle2d square = *bounds;
 
-	if (!bitmap || bounds->y1 - bounds->y0 < 4)
+	if (!bitmap)
+	{
+		if (!voice_icon_reported_missing)
+		{
+			voice_icon_reported_missing = 1;
+			platform_log("voice chat: the speaker picture is not in this map");
+		}
+		return;
+	}
+	if (!voice_icon_reported_found)
+	{
+		voice_icon_reported_found = 1;
+		platform_log("voice chat: the speaker picture is in this map");
+	}
+	if (bounds->y1 - bounds->y0 < 4)
 		return;
 	square.x1 = (short)(square.x0 + (square.y1 - square.y0));
 	draw_bitmap_in_rect(bitmap, &square, NULL, NULL, a | (muted ? 0x00E05A5A : 0x0050E050), NULL, TRUE);
