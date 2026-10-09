@@ -665,45 +665,6 @@ void scripted_foley_predict(
 	return;
 }
 
-void scripted_sound_predict(
-	long definition_index,
-	boolean block)
-{
-	struct sound_definition *definition;
-	long pitch_range_index;
-
-	if (definition_index == NONE)
-		return;
-	definition = sound_definition_get(definition_index);
-	for (pitch_range_index = 0;
-		pitch_range_index < definition->pitch_ranges.count;
-		pitch_range_index++)
-	{
-		struct sound_pitch_range *pitch_range = TAG_BLOCK_GET_ELEMENT(
-			&definition->pitch_ranges,
-			pitch_range_index,
-			struct sound_pitch_range);
-		short permutation_index;
-
-		for (permutation_index = 0;
-			permutation_index < pitch_range->actual_permutation_count &&
-				permutation_index < pitch_range->permutations.count;
-			permutation_index++)
-		{
-			_sound_cache_sound_request(
-				TAG_BLOCK_GET_ELEMENT(
-					&pitch_range->permutations,
-					permutation_index,
-					struct sound_permutation),
-				block,
-				TRUE,
-				FALSE);
-		}
-	}
-
-	return;
-}
-
 void scripted_looping_sound_set_scale(
 	long sound_index,
 	real scale)

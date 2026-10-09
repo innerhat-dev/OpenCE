@@ -81,11 +81,6 @@ long scripted_sound_time(
 	long sound_index);
 void scripted_foley_predict(
 	long definition_index);
-/* Halo PC's sound_impulse_predict: load an impulse sound's samples.
-`block` waits until they are in. */
-void scripted_sound_predict(
-	long definition_index,
-	boolean block);
 void scripted_looping_sound_start(
 	long sound_index,
 	long source_object_index,
