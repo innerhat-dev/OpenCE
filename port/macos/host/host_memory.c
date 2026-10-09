@@ -252,6 +252,8 @@ void host_memory_watch_forget(uint32_t a, uint32_t n) {
                          __ATOMIC_RELEASE);
     }
 }
+/* Page protection reports each write as it happens, so a frame start has nothing to reset. */
+void host_memory_watch_begin_frame(void) {}
 static void fault(int signal, siginfo_t *info, void *context) {
     uintptr_t address = (uintptr_t)info->si_addr;
     if (address >= HALO_MACOS_BIAS && address < HALO_MACOS_BIAS + UINT64_C(0x100000000)) {

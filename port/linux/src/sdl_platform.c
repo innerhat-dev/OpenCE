@@ -1881,7 +1881,9 @@ void platform_video_window_size(int *width, int *height)
 {
 	SDL_GetWindowSize(platform_window, width, height);
 }
+#endif
 
+#ifndef HALO_ANDROID
 /* ---------- the system's on-screen keyboard */
 
 /* A menu's text field is typed into (platform_text_field, xinput_sdl.c).

@@ -70,6 +70,7 @@ void host_memory_watch_protect(uint32_t address, uint32_t size);
 uint32_t host_memory_watch_generation(uint32_t address, uint32_t size);
 void host_memory_watch_prepare_write(uint32_t address, uint32_t size);
 void host_memory_watch_forget(uint32_t address, uint32_t size);
+void host_memory_watch_begin_frame(void);
 
 /* ---------- the guest image (host_loader.c) */
 
