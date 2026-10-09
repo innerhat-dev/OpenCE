@@ -1152,7 +1152,7 @@ static void game_engine_generate_title_string(
 			usnprintf(
 				life_string,
 				NUMBEROF(life_string),
-				format_string,
+				ustring_format_checked(format_string, "d"),
 				remaining_lives);
 			life_string[NUMBEROF(life_string) - 1] = 0;
 			secondary_string = life_string;
@@ -1294,7 +1294,7 @@ static void game_engine_generate_title_string(
 			usnprintf(
 				title_string,
 				80,
-				format_string,
+				ustring_format_checked(format_string, "sss"),
 				team0_name,
 				team1_name,
 				secondary_string);
@@ -1314,7 +1314,7 @@ static void game_engine_generate_title_string(
 			usnprintf(
 				title_string,
 				80,
-				format_string,
+				ustring_format_checked(format_string, "sss"),
 				team1_name,
 				team0_name,
 				secondary_string);
@@ -1334,7 +1334,7 @@ static void game_engine_generate_title_string(
 			usnprintf(
 				title_string,
 				80,
-				format_string,
+				ustring_format_checked(format_string, "ss"),
 				team1_name,
 				secondary_string);
 		}
@@ -1362,7 +1362,7 @@ static void game_engine_generate_title_string(
 			usnprintf(
 				title_string,
 				80,
-				format_string,
+				ustring_format_checked(format_string, "sss"),
 				get_place_string(&entry),
 				score_string,
 				secondary_string);
@@ -1383,7 +1383,7 @@ static void game_engine_generate_title_string(
 			usnprintf(
 				title_string,
 				80,
-				format_string,
+				ustring_format_checked(format_string, "sss"),
 				get_place_string(&entry),
 				score_string,
 				secondary_string);
@@ -2270,7 +2270,10 @@ static void game_engine_rasterize_scoreboard(
 	score_string[0] = 0;
 	if (!campaign)
 		game_engine->format_score_name(score_string);
-	usprintf(row_string, L"\t%s\t%s\t%s\t%s", column_name, score_name, score_string, network ? L"Ping" : L"");
+	/* port: bounded (the map's column names) */
+	usnprintf(row_string, NUMBEROF(row_string), L"\t%s\t%s\t%s\t%s", column_name, score_name, score_string,
+		network ? L"Ping" : L"");
+	row_string[NUMBEROF(row_string) - 1] = 0;
 	{
 		long column;
 
@@ -2337,26 +2340,49 @@ static void game_engine_rasterize_scoreboard(
 			else
 				usprintf(ping_string, L"%ld", ping);
 		}
-		usprintf(
+		usnprintf(
 			row_string,
+			NUMBEROF(row_string),
 			L"\t%s\t%s\t%s\t%s",
 			campaign ? L"" : get_place_string(entry),
 			player->name,
 			status_string,
 			ping_string);
+		row_string[NUMBEROF(row_string) - 1] = 0;
 		row_color = has_teams ? &team_colors[PIN(player->team_index, 0, 1)] : &color;
-		/* port: a player talking (or muted) in voice chat, its speaker at the
-		right of the place column */
+		/* port: a player talking (or muted) in voice chat, its speaker just
+		right of the name */
 		if (network && (network_voice_machine_speaking(player->network_player_data.machine_index) ||
 			network_voice_machine_muted(player->network_player_data.machine_index)))
 		{
 			rectangle2d icon;
+			rectangle2d text;
 			short row_left = (short)(left + column * (SCOREBOARD_COLUMN_WIDTH + SCOREBOARD_COLUMN_GAP));
+			short size;
+			short middle;
 
-			scoreboard_rectangle(&icon, bounds.x0, top, line_height, (short)(row_left + SCOREBOARD_PLACE_WIDTH - 24),
-				20, 2 + row, 1);
-			icon.y0 = (short)(icon.y0 + (icon.y1 - icon.y0) / 6);
-			icon.y1 = (short)(icon.y1 - (icon.y1 - icon.y0) / 6);
+			rectangle2d ink;
+			rectangle2d cursor;
+			short name_end;
+
+			/* (after the name's last letter, centred on its capitals: both
+			measured as the row is laid out, the name at its column's tab
+			stop, then scaled as it is drawn, as scoreboard_rectangle has it;
+			within the name's column) */
+			text.x0 = (short)(row_left + SCOREBOARD_PLACE_WIDTH);
+			text.x1 = (short)(text.x0 + SCOREBOARD_NAME_WIDTH);
+			text.y0 = (short)(top + (2 + row) * line_height);
+			text.y1 = (short)(text.y0 + line_height);
+			draw_string_set_draw_mode(font_index, NONE, 0, 0, row_color);
+			draw_unicode_string_compute_bounds(&text, player->name, &ink, &cursor);
+			middle = (short)(top + (draw_unicode_string_capital_middle(&text, player->name) - top) * SCOREBOARD_SCALE);
+			scoreboard_rectangle(&icon, bounds.x0, top, line_height, text.x0, SCOREBOARD_NAME_WIDTH, 2 + row, 1);
+			size = (short)((icon.y1 - icon.y0) * 2 / 3);
+			name_end = (short)(bounds.x0 + (MAX(ink.x1, text.x0) - bounds.x0) * SCOREBOARD_SCALE);
+			icon.x0 = (short)MIN(name_end + 4, icon.x1 - size);
+			icon.x1 = (short)(icon.x0 + size);
+			icon.y0 = (short)(middle - size / 2);
+			icon.y1 = (short)(icon.y0 + size);
 			network_voice_draw_icon(&icon, network_voice_machine_muted(player->network_player_data.machine_index),
 				alpha);
 		}
@@ -2538,7 +2564,8 @@ static void game_engine_rasterize_in_game_score(
 		score_name = L"";
 
 	game_engine->format_score_name(score_string);
-	usprintf(row_string, L"\t%s\t%s\t%s", column_name, score_name, score_string);
+	usnprintf(row_string, NUMBEROF(row_string), L"\t%s\t%s\t%s", column_name, score_name, score_string);
+	row_string[NUMBEROF(row_string) - 1] = 0;
 	rasterize_in_game_score_draw_line(row_string, FALSE, &color, 1);
 
 	for (entry_index = 0; entry_index < entry_count; entry_index++)
@@ -2595,12 +2622,14 @@ static void game_engine_rasterize_in_game_score(
 
 			place_string = get_place_string(&entries[entry_index]);
 
-			usprintf(
+			usnprintf(
 				row_string,
+				NUMBEROF(row_string),
 				L"\t%s\t%s\t%s",
 				place_string,
 				player->name,
 				status_string);
+			row_string[NUMBEROF(row_string) - 1] = 0;
 
 			if (has_teams)
 				row_color = &team_colors[PIN(player->team_index, 0, 1)];
@@ -2739,7 +2768,7 @@ void game_engine_post_rasterize_post_game(
 			usnprintf(
 				row_string,
 				NUMBEROF(row_string),
-				team_formats[team_index],
+				ustring_format_checked(team_formats[team_index], "s"),
 				score_string);
 			row_string[NUMBEROF(row_string) - 1] = 0;
 			drawline(row_string, team_row + 4, 0);
@@ -3862,7 +3891,12 @@ void game_engine_rasterize_message(
 
 /* port: who is talking in voice chat (network_voice.c), down the view's
 left from below its middle: each machine's first player's name after its
-speaker (this machine's own too, as it talks); while the scores are hidden */
+speaker (this machine's own too, as it talks), VOICE_SPEAKERS_SCALE times
+the HUD's text, in the colours of the names above players' heads (an ally's
+or an enemy's: hud_player_name_color; in co-op every player an ally), this
+machine's own white; while the scores are hidden */
+#define VOICE_SPEAKERS_SCALE 0.8f
+
 static void game_engine_rasterize_voice_speakers(
 	void)
 {
@@ -3879,6 +3913,9 @@ static void game_engine_rasterize_voice_speakers(
 	struct font_header *font;
 	short line_height;
 	short row = 0;
+	short left;
+	short top;
+	struct player_datum *viewer;
 
 	if (font_index == NONE || !network_voice_available())
 		return;
@@ -3887,6 +3924,13 @@ static void game_engine_rasterize_voice_speakers(
 	line_height = (short)(font->leading_height + font->descending_height + font->ascending_height);
 	if (line_height <= 0)
 		return;
+	/* (laid out at full size, from the list's top left, and drawn scaled
+	about it) */
+	left = (short)(bounds.x0 + 16);
+	top = (short)(bounds.y0 + (bounds.y1 - bounds.y0) * 55 / 100);
+	rasterizer_text_set_scale(VOICE_SPEAKERS_SCALE, (real)left, (real)top);
+	viewer = local_player_get_next(NONE) != NONE ?
+		player_try_and_get(local_player_get_player_index(local_player_get_next(NONE))) : NULL;
 	data_iterator_new(&iterator, player_data);
 	while ((player = (struct player_datum *)data_iterator_next(&iterator)) != NULL && row < MAXIMUM_SPEAKER_ROWS)
 	{
@@ -3905,21 +3949,33 @@ static void game_engine_rasterize_voice_speakers(
 		machines_listed[listed_count++] = machine_index;
 		if (!network_voice_machine_speaking(machine_index))
 			continue;
-		icon.x0 = (short)(bounds.x0 + 16);
-		icon.y0 = (short)(bounds.y0 + (bounds.y1 - bounds.y0) * 55 / 100 + row * line_height);
-		icon.x1 = (short)(icon.x0 + line_height);
-		icon.y1 = (short)(icon.y0 + line_height - 2);
-		network_voice_draw_icon(&icon, FALSE, 1.0f);
-		text = icon;
-		text.x0 = (short)(icon.x1 + 4);
-		text.x1 = bounds.x1;
-		text.y1 = (short)(icon.y0 + line_height);
-		color.alpha = 1.0f;
-		color.red = color.green = color.blue = 0.9f;
+		/* (the name after the speaker, which is centred on its capitals:
+		where they are drawn, scaled) */
+		text.x0 = (short)(left + line_height + 4);
+		text.x1 = (short)(left + (bounds.x1 - left) / VOICE_SPEAKERS_SCALE);
+		text.y0 = (short)(top + row * line_height);
+		text.y1 = (short)(text.y0 + line_height);
+		/* (allies as the names above heads have them: the same team) */
+		if (player->local_player_index != NONE)
+		{
+			color.alpha = 1.0f;
+			color.red = color.green = color.blue = 1.0f;
+		}
+		else
+		{
+			hud_player_name_color(!game_engine || (viewer && player->team_index == viewer->team_index), &color);
+		}
 		draw_string_set_draw_mode(font_index, NONE, 0, 0, &color);
+		icon.x0 = left;
+		icon.x1 = (short)(left + line_height * VOICE_SPEAKERS_SCALE);
+		icon.y0 = (short)(top + (draw_unicode_string_capital_middle(&text, player->name) - top) * VOICE_SPEAKERS_SCALE -
+			line_height * VOICE_SPEAKERS_SCALE / 2);
+		icon.y1 = (short)(icon.y0 + line_height * VOICE_SPEAKERS_SCALE);
+		network_voice_draw_icon(&icon, FALSE, 1.0f);
 		rasterizer_draw_unicode_string(&text, NULL, NULL, 0, player->name);
 		row++;
 	}
+	rasterizer_text_set_scale(1.0f, 0.0f, 0.0f);
 }
 
 static void game_engine_post_rasterize_in_game(
@@ -8335,7 +8391,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "s"),
 			player->name);
 		break;
 	case _game_engine_message_killed_by_unknown:
@@ -8347,7 +8403,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "s"),
 			player->name);
 		break;
 	case _game_engine_message_killed_by_biped:
@@ -8359,7 +8415,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "s"),
 			player->name);
 		break;
 	case _game_engine_message_killed_by_vehicle:
@@ -8371,7 +8427,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "s"),
 			player->name);
 		break;
 	case _game_engine_message_killed_by_player:
@@ -8384,7 +8440,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "ss"),
 			player->name,
 			other_player->name);
 		break;
@@ -8398,7 +8454,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "ss"),
 			player->name,
 			other_player->name);
 		break;
@@ -8412,7 +8468,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "s"),
 			other_player->name);
 		break;
 	case _game_engine_message_killed_by_self:
@@ -8424,7 +8480,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "s"),
 			player->name);
 		break;
 	case _game_engine_message_killed_friendly:
@@ -8437,7 +8493,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "s"),
 			other_player->name);
 		break;
 	case _game_engine_message_multi_kill:
@@ -8510,7 +8566,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "s"),
 			other_player->name);
 		break;
 	case _game_engine_message_multi_kill_with_score:
@@ -8522,7 +8578,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "d"),
 			score);
 		game_engine_play_multiplayer_sound(_multiplayer_sound_killtacular_kill);
 		break;
@@ -8535,7 +8591,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "d"),
 			score);
 		game_engine_play_multiplayer_sound(_multiplayer_sound_triple_kill);
 		break;
@@ -8548,7 +8604,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "d"),
 			score);
 		game_engine_play_multiplayer_sound(_multiplayer_sound_double_kill);
 		break;
@@ -8561,7 +8617,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "d"),
 			score);
 		game_engine_play_multiplayer_sound(_multiplayer_sound_running_riot);
 		break;
@@ -8574,7 +8630,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "d"),
 			score);
 		game_engine_play_multiplayer_sound(_multiplayer_sound_killing_spree);
 		break;
@@ -8588,7 +8644,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "sd"),
 			other_player->name,
 			score);
 		break;
@@ -8623,7 +8679,7 @@ static boolean internal_rasterize_score(
 		usnprintf(
 			buffer,
 			buffer_size,
-			format,
+			ustring_format_checked(format, "d"),
 			message_data);
 		break;
 	case _game_engine_message_waiting_for_space_to_clear:

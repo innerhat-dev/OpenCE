@@ -481,6 +481,10 @@ boolean console_update(
 			match_assert("c:\\halo\\SOURCE\\main\\console.c", 184, key->key_code!=NONE);
 			switch (key->key_code)
 			{
+			/* port: escape closes it too */
+			case _key_escape:
+				console_close();
+				return FALSE;
 			case _key_backquote:
 				console_close();
 				break;
