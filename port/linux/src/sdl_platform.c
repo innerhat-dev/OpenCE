@@ -1499,6 +1499,9 @@ void platform_pump_events(void)
 #if !defined(HALO_ANDROID) || (defined(HALO_MACOS) && !defined(HALO_IOS))
 	/* (Settings > Audio's output device, as it changes: dsound_sdl.c) */
 	dsound_sdl_output_device_check();
+#endif
+#ifndef HALO_ANDROID
+	/* (Steam Deck's on-screen keyboard; the Mac guest has no Steam keyboard) */
 	screen_keyboard_update();
 #endif
 	pthread_mutex_lock(&input_lock);
