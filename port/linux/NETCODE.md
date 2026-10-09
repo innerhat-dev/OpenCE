@@ -236,6 +236,45 @@ machine tells them: anyone with administrator or root access can change
 them, and players behind one address share it. The console's `kick <player
 name>` drops a player as `ban` does (every machine told), but adds no line
 and keeps no address out: the player may join again at once.
+
+The players' votes to kick a player (`network_votekick.c`): a client sends
+`_distributed_message_votekick` (the player's absolute index) reliably, and
+the host takes it only from the client's stream. The host alone counts:
+one vote per real address (an internet play peer's endpoint, not its
+stand-in), and votes again deduplicated by hardware id, which only ever
+removes votes (the players who may vote are counted by address alone, so a
+copied hardware id cannot lower the votes needed). A vote needs more than
+half of the players who may vote, the target counted, and at least two;
+starting one needs `network.votekick_minutes` played on this host in its
+own ticks, voting two minutes; one vote runs at a time, and a failed vote
+cools its starter down and protects its target. A vote that passes kicks as
+the `kick` command does, and the host refuses the address and hardware id
+for `network.votekick_ban_minutes`. The host sends each client
+`_distributed_message_votekick_status` every second while a vote runs (and
+as it changes), for the scoreboard, whose right click frees the mouse to
+pick a player; the host's own scoreboard adds Kick and Ban. Builds without
+votes drop both kinds as unknown, so the network version is unchanged.
+
+Voice chat (`network_voice.c`, the sound in `port/linux/src/voice_audio.c`)
+travels as distributed messages too, but in the lobby as well as in a game:
+`network_voice_handles_message` takes them before the netcode's checks that
+a game is running (`network_distributed_handle_message`, and the host's
+stream and datagram paths in `network_server_message_handler.c`). A client
+sends its 20 ms Opus frames to the host unreliably
+(`_distributed_message_voice_up`), each with the key the host gave it over
+its stream (`_distributed_message_voice_config`, with the host's settings,
+again every ten seconds and when they change), so a datagram sent as from
+another machine is dropped; an empty one every two seconds says it hears
+voices. The host checks the key, the frame's size against its quality, a
+rate of 50 frames a second (a burst of 10), and at most 8 machines talking,
+then sends the frame to each machine that may hear it
+(`_distributed_message_voice_down`, with that machine's key) by its
+`network.voice_mode`, `network.voice_lobby` and `network.voice_proximity`,
+or plays it itself. The host never decodes a frame it only relays, and
+never sends a machine its own. A listener sets the gain and pan of a voice
+heard for being near by its own view of the speaker's unit. Mutes are each
+machine's own. Builds without voice chat never say they hear voices, so the
+host sends them none, and drop the kinds as unknown.
 A speed hack of less than a tenth is let be: the host's bounds on how far
 and how fast a client's player moves and fires hold it to the host's time
 anyway.

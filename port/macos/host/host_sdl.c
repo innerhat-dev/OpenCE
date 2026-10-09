@@ -469,6 +469,9 @@ struct audio_binding {
     unsigned char *staging;
     size_t staging_length;
     size_t staging_capacity;
+    int stop;
+    int exited;
+    pthread_cond_t finished;
 };
 static struct audio_binding *audio_bindings[HANDLE_COUNT];
 
@@ -479,8 +482,16 @@ static void *audio_thread(void *context) {
     for (;;) {
         int additional, total;
 
-        while (!binding->pending)
+        while (!binding->pending && !binding->stop)
             pthread_cond_wait(&binding->requested, &binding->lock);
+        if (binding->stop) {
+            binding->pending = 0;
+            binding->exited = 1;
+            pthread_cond_signal(&binding->done);
+            pthread_cond_signal(&binding->finished);
+            pthread_mutex_unlock(&binding->lock);
+            return NULL;
+        }
         additional = binding->additional;
         total = binding->total;
         pthread_mutex_unlock(&binding->lock);
@@ -519,8 +530,16 @@ static void SDLCALL audio_callback(void *userdata, SDL_AudioStream *stream, int 
 
 uint32_t host_sdl_open_audio_stream(uint32_t device, const void *spec, uint32_t callback,
                                     uint32_t userdata) {
-    struct audio_binding *binding = SDL_calloc(1, sizeof(*binding));
+    struct audio_binding *binding;
     SDL_AudioStream *stream;
+
+    /* A stream without a callback is the microphone. The guest reads it, so
+       there is no mixer thread to bind. */
+    if (!callback) {
+        stream = SDL_OpenAudioDeviceStream((SDL_AudioDeviceID)device, spec, NULL, NULL);
+        return stream ? handle_new(_handle_audio, stream) : 0;
+    }
+    binding = SDL_calloc(1, sizeof(*binding));
     if (!binding)
         return 0;
 
@@ -529,6 +548,7 @@ uint32_t host_sdl_open_audio_stream(uint32_t device, const void *spec, uint32_t 
     pthread_mutex_init(&binding->lock, NULL);
     pthread_cond_init(&binding->requested, NULL);
     pthread_cond_init(&binding->done, NULL);
+    pthread_cond_init(&binding->finished, NULL);
     stream = SDL_OpenAudioDeviceStream((SDL_AudioDeviceID)device, spec,
                                        callback ? audio_callback : NULL, binding);
     if (!stream) {
@@ -571,4 +591,87 @@ int host_sdl_resume_audio_stream_device(uint32_t stream) {
     SDL_AudioStream *object = handle_get(stream, _handle_audio);
 
     return object ? SDL_ResumeAudioStreamDevice(object) : 0;
+}
+
+int host_sdl_get_audio_stream_data(uint32_t stream, void *data, int length) {
+    SDL_AudioStream *object = handle_get(stream, _handle_audio);
+
+    return object ? SDL_GetAudioStreamData(object, data, length) : -1;
+}
+
+int host_sdl_get_audio_stream_available(uint32_t stream) {
+    SDL_AudioStream *object = handle_get(stream, _handle_audio);
+
+    return object ? SDL_GetAudioStreamAvailable(object) : -1;
+}
+
+/* The microphone has no mixer thread. A playback stream does: stop that
+thread before the stream goes, or it keeps mixing into a stream SDL has
+destroyed. */
+void host_sdl_destroy_audio_stream(uint32_t stream) {
+    SDL_AudioStream *object = handle_get(stream, _handle_audio);
+    struct audio_binding *binding = stream < HANDLE_COUNT ? audio_bindings[stream] : NULL;
+
+    if (!object)
+        return;
+    if (binding) {
+        pthread_mutex_lock(&binding->lock);
+        binding->stop = 1;
+        pthread_cond_signal(&binding->requested);
+        while (!binding->exited)
+            pthread_cond_wait(&binding->finished, &binding->lock);
+        pthread_mutex_unlock(&binding->lock);
+        audio_bindings[stream] = NULL;
+    }
+    pthread_mutex_lock(&handle_lock);
+    handles[stream].type = _handle_free;
+    handles[stream].object = NULL;
+    pthread_mutex_unlock(&handle_lock);
+    SDL_DestroyAudioStream(object);
+    if (binding) {
+        pthread_cond_destroy(&binding->finished);
+        pthread_cond_destroy(&binding->done);
+        pthread_cond_destroy(&binding->requested);
+        pthread_mutex_destroy(&binding->lock);
+        SDL_free(binding->staging);
+        SDL_free(binding);
+    }
+}
+
+static SDL_AudioDeviceID *audio_device_list(int recording, int *count) {
+    return recording ? SDL_GetAudioRecordingDevices(count) : SDL_GetAudioPlaybackDevices(count);
+}
+
+int host_sdl_audio_device_count(int recording) {
+    int count = 0;
+    SDL_AudioDeviceID *devices = audio_device_list(recording, &count);
+
+    SDL_free(devices);
+    return devices ? count : 0;
+}
+
+void host_sdl_audio_device_name(int recording, int index, char *name, uint32_t size) {
+    int count = 0;
+    SDL_AudioDeviceID *devices = audio_device_list(recording, &count);
+    const char *found = devices && index >= 0 && index < count ? SDL_GetAudioDeviceName(devices[index]) : "";
+
+    SDL_strlcpy(name, found ? found : "", size);
+    SDL_free(devices);
+}
+
+uint32_t host_sdl_audio_device_id(int recording, const char *name) {
+    int count = 0, index;
+    SDL_AudioDeviceID *devices = audio_device_list(recording, &count);
+    uint32_t found = recording ? SDL_AUDIO_DEVICE_DEFAULT_RECORDING : SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK;
+
+    for (index = 0; devices && index < count; index++) {
+        const char *device_name = SDL_GetAudioDeviceName(devices[index]);
+
+        if (device_name && name && SDL_strcmp(device_name, name) == 0) {
+            found = devices[index];
+            break;
+        }
+    }
+    SDL_free(devices);
+    return found;
 }

@@ -242,6 +242,7 @@ def package_into(app, data_root, *, sign_identity, release, version, build, cont
                               "CFBundleURLSchemes": ["halo", "discord-1553978809840050229"],
                               "CFBundleTypeRole": "Viewer"}],
         "NSLocalNetworkUsageDescription": "Connect to players hosting Halo multiplayer games.",
+        "NSMicrophoneUsageDescription": "Voice chat uses the microphone in network games.",
         "NSHighResolutionCapable": True,
         "NSHumanReadableCopyright": "Local experimental Apple Silicon port",
     }

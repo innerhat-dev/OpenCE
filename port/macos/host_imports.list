@@ -1,3 +1,7 @@
 # macOS-only managed community-map services. Other hosts keep their existing ABI.
 halo_map_download_directory
 halo_map_download_request
+# Voice chat's device list. The guest cannot hold the host's device array.
+host_sdl_audio_device_count
+host_sdl_audio_device_name
+host_sdl_audio_device_id
