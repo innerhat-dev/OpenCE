@@ -112,6 +112,10 @@ static void *thread_main(void *context) {
     free(context);
     host_debug_thread_started();
     start.function(start.argument);
+    /* a thread the guest made has let its struct pthread go by now; one
+    of the host's that ran guest code, the audio thread, has it still */
+    if (guest_tp)
+        ((guest_function)guest_code_pointer(host_image.header->thread_detach))(0, 0, 0, 0);
     host_debug_thread_exited();
     guest_tp = 0;
 

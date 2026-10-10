@@ -901,7 +901,18 @@ static void *bitmap_build(struct halo_menu_bitmap const *source, long tag_index)
 		}
 		bitmap->width = (short)width;
 		bitmap->height = (short)height;
-		menu_tags.bitmaps = realloc(menu_tags.bitmaps, (menu_tags.bitmap_count + 1) * sizeof(*menu_tags.bitmaps));
+		{
+			struct bitmap_data **bitmaps = realloc(menu_tags.bitmaps,
+				(menu_tags.bitmap_count + 1) * sizeof(*menu_tags.bitmaps));
+
+			if (!bitmaps)
+			{
+				rasterizer_bitmap_delete(bitmap);
+				problem(source->file, source->line, "out of memory for the bitmaps of", source->name);
+				return group;
+			}
+			menu_tags.bitmaps = bitmaps;
+		}
 		menu_tags.bitmaps[menu_tags.bitmap_count++] = bitmap;
 		/* (none without a renderer: debug.null_renderer) */
 		if (bitmap->hardware_format)
@@ -1031,8 +1042,15 @@ static void handler_build(struct ui_widget_event_handler_reference *handler, str
 static void setting_add(struct halo_menu_widget const *source, long definition_index)
 {
 	struct pc_menu_setting *setting;
+	struct pc_menu_setting *settings = realloc(menu_tags.settings,
+		(menu_tags.setting_count + 1) * sizeof(*menu_tags.settings));
 
-	menu_tags.settings = realloc(menu_tags.settings, (menu_tags.setting_count + 1) * sizeof(*menu_tags.settings));
+	if (!settings)
+	{
+		problem(source->file, source->line, "out of memory for the settings of", source->name);
+		return;
+	}
+	menu_tags.settings = settings;
 	setting = &menu_tags.settings[menu_tags.setting_count++];
 	memset(setting, 0, sizeof(*setting));
 	setting->definition_index = definition_index;
@@ -1531,9 +1549,10 @@ static void *pause_button(struct cache_file_tag_instance *instances, struct ui_w
 }
 
 /* the list's buttons: SETTINGS (and the host's END GAME) put before LEAVE
-GAME (quit); returns how many were added */
+GAME (quit); returns how many were added, and how much taller the list
+grew for them (growth) */
 static long pause_list_patch(struct cache_file_tag_instance *instances, struct ui_widget_definition *list, long quit,
-	boolean host)
+	boolean host, short *growth)
 {
 	struct ui_widget_child_reference *children = list->child_widgets.address;
 	long count = list->child_widgets.count, added = host ? 2 : 1, child;
@@ -1575,8 +1594,25 @@ static long pause_list_patch(struct cache_file_tag_instance *instances, struct u
 	}
 	list->child_widgets.address = grown;
 	list->child_widgets.count = count + added;
-	/* (the list draws within its bounds) */
-	list->bounds.y1 = (short)(list->bounds.y1 + added * spacing);
+	/* (a list with room for them, Halo PC's of five rows that Custom Edition
+	maps keep two of: the buttons centred in it; else it grows, as the
+	Xbox's of two rows does, and draws within its bounds) */
+	{
+		short room = (short)(list->bounds.y1 - list->bounds.y0);
+		short column = (short)((count + added - 1) * spacing + model->bounds.y1 - model->bounds.y0);
+
+		*growth = 0;
+		if (column <= room)
+		{
+			for (child = 0; child < count + added; child++)
+				grown[child].vertical_offset = (short)((room - column) / 2 + child * spacing);
+		}
+		else
+		{
+			*growth = (short)(added * PAUSE_BUTTON_SPACING);
+			list->bounds.y1 = (short)(list->bounds.y1 + added * spacing);
+		}
+	}
 	return added;
 }
 
@@ -1624,6 +1660,7 @@ static void pause_patch(struct cache_file_tag_instance *instances)
 	boolean host = global_network_game_server_get() != NULL;
 	struct tag_block const *screens;
 	long patched_list = NONE, added = 0, buttons = 0, screen;
+	short grow = 0;
 	boolean box_redrawn = FALSE;
 
 	if (collection == NONE || quit_function == NONE)
@@ -1635,7 +1672,7 @@ static void pause_patch(struct cache_file_tag_instance *instances)
 		struct ui_widget_definition *definition;
 		struct ui_widget_child_reference *children;
 		long child, list_child = NONE, box_child = NONE;
-		short grow, list_top;
+		short list_top;
 
 		if (screen_tag == NONE)
 			continue;
@@ -1660,7 +1697,7 @@ static void pause_patch(struct cache_file_tag_instance *instances)
 			quit = pause_quit_button(list, quit_function);
 			if (quit == NONE || patched_list != NONE)
 				continue;
-			added = pause_list_patch(instances, list, quit, host);
+			added = pause_list_patch(instances, list, quit, host, &grow);
 			if (!added)
 				return;
 			buttons = list->child_widgets.count;
@@ -1678,8 +1715,8 @@ static void pause_patch(struct cache_file_tag_instance *instances)
 			}
 		}
 		/* the stock box: taller, centred where it was, the list with it, and
-		what is below it moved down; else only what is below the list */
-		grow = (short)(added * PAUSE_BUTTON_SPACING);
+		what is below it moved down; else only what is below the list (as far
+		as the list grew) */
 		list_top = children[list_child].vertical_offset;
 		for (child = 0; child < definition->child_widgets.count; child++)
 		{
@@ -1745,6 +1782,23 @@ done:
 	memset(&build, 0, sizeof(build));
 }
 
+/* whether display.menus asks for the PC version's menus: "pc" in any case
+(a value neither "pc" nor "xbox" is said once in the log, and is the Xbox's) */
+static boolean menus_pc_chosen(void)
+{
+	static boolean said;
+	char const *value = config_string("display.menus");
+
+	if (!csstrcasecmp(value, "pc"))
+		return TRUE;
+	if (csstrcasecmp(value, "xbox") && !said)
+	{
+		platform_log("menus: display.menus \"%s\" is not \"xbox\" or \"pc\": the Xbox's", value);
+		said = TRUE;
+	}
+	return FALSE;
+}
+
 void menu_tags_loaded(
 	char const *map_name)
 {
@@ -1756,7 +1810,7 @@ void menu_tags_loaded(
 
 	/* (ui.map, and a multiplayer map: its pause menu's SETTINGS) */
 	if ((game_map && tag_loaded('Soul', MULTIPLAYER_COLLECTION) == NONE) ||
-		strcmp(config_string("display.menus"), "pc"))
+		!menus_pc_chosen())
 	{
 		voice_speaker_bitmap();
 		return;

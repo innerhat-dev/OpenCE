@@ -48,7 +48,7 @@ for Custom Edition textures and geometry. */
 /* Rebased guest pointers; cannot be loaded by the Android host. */
 #define HALO_GUEST_ABI_VERSION 0x10001
 #else
-#define HALO_GUEST_ABI_VERSION 1
+#define HALO_GUEST_ABI_VERSION 2
 #endif
 
 /* at HALO_GUEST_IMAGE_BASE */
@@ -63,6 +63,7 @@ struct halo_guest_header
 	uint32_t start;              /* void __guest_start(struct halo_guest_boot *) */
 	uint32_t thread_start;       /* void __guest_thread_start(uint32_t thread) */
 	uint32_t thread_attach;      /* uint32_t __guest_thread_attach(void) */
+	uint32_t thread_detach;      /* void __guest_thread_detach(void) */
 	uint32_t init_array_start;   /* void (*)(void) entries, 4 bytes each */
 	uint32_t init_array_end;
 };

@@ -65,7 +65,9 @@ client does not join a host of another version, but tells the player which
 is newer (network_client_manager.c). A host advertises it, with its netcode,
 in its game's advertisement's reserved bytes (network_server_message_handler.c),
 which hosts built before there was a version send as zeros: version 0.
-Raise it with any change to what the machines send each other. */
+Raise it with any change to what the machines send each other.
+This fork stays at 24. The unit light bits are read only when a host says it
+sent them, so a version 24 peer still plays. */
 #define HALO_PORT_NETWORK_VERSION 24
 /* ... the advertisement's reserved bytes: the version (a little-endian word),
 then flags */

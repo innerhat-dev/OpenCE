@@ -78,6 +78,22 @@ static void *handle_get(uint32_t handle, int type) {
     return object;
 }
 
+/* the object of a handle, which the handle no longer refers to */
+static void *handle_release(uint32_t handle, int type) {
+    void *object = NULL;
+
+    if (handle == 0 || handle >= HANDLE_COUNT)
+        return NULL;
+    pthread_mutex_lock(&handle_lock);
+    if (handles[handle].type == type) {
+        object = handles[handle].object;
+        handles[handle].type = _handle_free;
+        handles[handle].object = NULL;
+    }
+    pthread_mutex_unlock(&handle_lock);
+    return object;
+}
+
 static EGLDisplay metal_display;
 static EGLContext metal_context;
 static EGLSurface metal_surface;
@@ -425,6 +441,14 @@ uint32_t host_sdl_open_gamepad(uint32_t id) {
 
 uint32_t host_sdl_gamepad_from_id(uint32_t id) {
     return handle_new(_handle_gamepad, SDL_GetGamepadFromID((SDL_JoystickID)id));
+}
+
+/* the event thread, when the controller goes (sdl_platform.c) */
+void host_sdl_close_gamepad(uint32_t gamepad) {
+    SDL_Gamepad *object = handle_release(gamepad, _handle_gamepad);
+
+    if (object)
+        SDL_CloseGamepad(object);
 }
 
 int host_sdl_gamepad_axis(uint32_t gamepad, int axis) {

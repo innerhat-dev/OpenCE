@@ -2167,6 +2167,18 @@ boolean network_game_server_game_is_valid(
 	return game_is_valid;
 }
 
+/* port: why network_game_server_accept_client_machine_into_game last
+refused a machine: a banned one's, one dropped for cheating, or one kicked
+by a vote, is told it is kept out (_rejection_code_blacklisted_machine); any
+other, that the game is not open */
+static short network_game_server_refusal_code = _rejection_code_game_is_closed;
+
+short network_game_server_last_refusal_code(
+	void)
+{
+	return network_game_server_refusal_code;
+}
+
 boolean network_game_server_accept_client_machine_into_game(
 	struct network_game_server *server,
 	struct network_game_server_client_machine *machine)
@@ -2181,6 +2193,7 @@ boolean network_game_server_accept_client_machine_into_game(
 	it by it), not the first free one: another connection's slot gave two
 	machines one index */
 	machine_index = machine->machine_index;
+	network_game_server_refusal_code = _rejection_code_game_is_closed;
 	/* port: not a machine of an address dropped for cheating */
 	{
 		struct transport_address address = { { { 0 } } };
@@ -2193,6 +2206,7 @@ boolean network_game_server_accept_client_machine_into_game(
 			{
 				network_event("refusing a machine @ %s: dropped from this game for cheating",
 					transport_address_to_string(&address));
+				network_game_server_refusal_code = _rejection_code_blacklisted_machine;
 				return FALSE;
 			}
 		}
@@ -2206,6 +2220,7 @@ boolean network_game_server_accept_client_machine_into_game(
 					network_game_server_hardware_ids[machine_index] : ""))
 		{
 			network_event("refusing a machine @ %s: banned (bans.txt)", transport_address_to_string(&address));
+			network_game_server_refusal_code = _rejection_code_blacklisted_machine;
 			return FALSE;
 		}
 		/* (nor one kicked by a vote, for a while: network_votekick.c) */
@@ -2215,6 +2230,7 @@ boolean network_game_server_accept_client_machine_into_game(
 					network_game_server_hardware_ids[machine_index] : ""))
 		{
 			network_event("refusing a machine @ %s: kicked by a vote", transport_address_to_string(&address));
+			network_game_server_refusal_code = _rejection_code_blacklisted_machine;
 			return FALSE;
 		}
 	}
