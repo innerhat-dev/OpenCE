@@ -36,6 +36,8 @@ for Custom Edition textures and geometry. */
 #else
 #define HALO_GUEST_IMAGE_BASE 0x88000000u
 #define HALO_GUEST_WINDOW_SIZE 0x08000000u
+/* the room the host reserves for the image there (port/android/host/host_memory.c) */
+#define HALO_GUEST_IMAGE_RESERVE 0x04000000u
 #endif
 
 /* the Xbox contiguous memory window (port/linux/src/platform.h) */
