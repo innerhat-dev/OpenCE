@@ -100,7 +100,6 @@ symbols in this file:
 #define REAL_MATH_EXTERNAL_REAL_LOCAL_RANDOM
 #define REAL_MATH_EXTERNAL_REAL_LOCAL_RANDOM_RANGE
 #include "interface/first_person_weapons.h"
-#include "viewmodel_visibility.h"
 
 #include "cache/predicted_resources.h"
 #include "camera/director.h"

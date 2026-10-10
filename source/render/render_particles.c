@@ -22,7 +22,6 @@ symbols in this file:
 #include "effects/particles.h"
 #include "game/players.h"
 #include "interface/first_person_weapons.h"
-#include "viewmodel_visibility.h"
 #include "render.h"
 #include "render_cameras_internal.h"
 #include "render_particles.h"
