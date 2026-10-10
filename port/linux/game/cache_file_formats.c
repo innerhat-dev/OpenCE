@@ -2647,9 +2647,9 @@ static struct shader_group_type const *shader_group_type_get(
 }
 
 /* Makes the chicago extended shader `shader` a chicago shader: it keeps its
-two-stage maps, or its four-stage maps when it has no two-stage ones, and
-its extra flags move to where a chicago shader has them. The two-stage maps
-are the ones Halo PC draws for this shader. */
+four-stage maps, or its two-stage maps when it has no four-stage ones (this
+build's renderer draws four stages), and its extra flags move to where a
+chicago shader has them. The two-stage maps are left unreferenced. */
 static void transparent_chicago_extended_convert(
 	uint8_t *shader)
 {
@@ -2657,7 +2657,7 @@ static void transparent_chicago_extended_convert(
 	uint32_t extra_flags = read_u32(shader + TRANSPARENT_CHICAGO_EXTENDED_EXTRA_FLAGS_OFFSET);
 
 	memcpy(two_stage_maps, shader + TRANSPARENT_CHICAGO_EXTENDED_TWO_STAGE_MAPS_OFFSET, TAG_BLOCK_BYTES);
-	if (read_s32(two_stage_maps + TAG_BLOCK_COUNT_OFFSET) > 0)
+	if (!read_s32(shader + TRANSPARENT_CHICAGO_MAPS_OFFSET + TAG_BLOCK_COUNT_OFFSET))
 	{
 		memcpy(shader + TRANSPARENT_CHICAGO_MAPS_OFFSET, two_stage_maps, TAG_BLOCK_BYTES);
 	}

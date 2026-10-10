@@ -200,9 +200,9 @@ changed:
   leaves them) is counted and given the group's.
 - **Transparent chicago extended shaders** (`scex`) become transparent
   chicago shaders (`schi`): the two layouts agree up to the maps, of which
-  `scex` has two sets, for four and for two texture stages; the two-stage
-  maps are kept (the ones Halo PC draws), or the four-stage ones when there
-  are no others, and the extra flags move to where `schi` has them.
+  `scex` has two sets, for four and for two texture stages; the four-stage
+  maps are kept (this build draws four stages), or the two-stage ones when
+  there are no others, and the extra flags move to where `schi` has them.
 - **Bitmaps and sound permutations** get the state of ones not yet drawn or
   played, and name their own tags: `bitmaps.map` and `sounds.map` hold the
   tag handles of whatever map they were built with.
@@ -520,9 +520,10 @@ every layout used was then checked against the sample maps.
   aligned to 4 bytes, as OpenSauce's unimplemented loader outlines
   (`s_cache_file_data_load_state`); how Custom Edition itself places them is
   not known, and nothing found depends on it.
-- **Which chicago extended maps.** The two-stage maps are kept, because that
-  is the set Halo PC draws for this shader. The four-stage maps are kept
-  only when the shader has no two-stage maps.
+- **Which chicago extended maps.** The four-stage maps are kept, as the
+  renderer draws four stages; that Custom Edition's two-stage maps are a
+  fallback for older hardware is an inference (BlamLib's exporter makes the
+  same choice).
 - **Centroid nodes of local-node parts** are taken to be the model's nodes:
   they are within the model's node count in every map, and they are only
   used to sort transparent parts.

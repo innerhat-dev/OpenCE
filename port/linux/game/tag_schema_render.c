@@ -311,8 +311,8 @@ struct shader_transparent_chicago_definition
 };
 
 /* a chicago shader with two-stage maps (Custom Edition's scex): the game
-has no such type. The loader copies the two-stage maps into the maps a
-chicago shader reads, when the shader has them */
+has no such type, and reads it as a chicago shader, whose maps are its
+four-stage maps */
 struct shader_transparent_chicago_extended_definition
 {
 	struct shader shader;
