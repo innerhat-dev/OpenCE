@@ -138,6 +138,7 @@ void console_open(
 		/* port: not in the profiling build (as in console_update) */
 #ifndef HALO_PROFILE
 		profile_global_enable = FALSE;
+#endif
 #ifdef HALO_PORT_MAXIMUM_NETWORK_PLAYERS
 		if (console_globals.active)
 			console_printf(FALSE, "PB Options: type pb for controls (timer, markers, audio).");
