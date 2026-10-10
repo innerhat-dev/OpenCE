@@ -202,6 +202,8 @@ SCREENS["video_settings/fov_viewmodels"] = {
          "Weapon and hands horizontal FOV at 16:9, in degrees.\nA number sets that FOV. Default keeps the original weapon view.", None),
         ("VIEWMODELS:", "display.viewmodel_visible", ON_OFF,
          "Draw first-person weapons, hands and attached\nvisuals. Gameplay and sound continue when off.", None),
+        ("ARM SHIELDS:", "display.viewmodel_shield", ON_OFF,
+         "The energy shield's flare on your first-person\narms too, as on your body.", None),
     ],
 }
 
