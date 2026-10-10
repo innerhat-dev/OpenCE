@@ -51,7 +51,7 @@ window (port/linux/src/platform.h), whose pages are backed as they are used.
 The Mac guest uses that same cache. Android's window is 128 MB, and its
 cache the Xbox's. */
 
-#if defined(HALO_ANDROID) && !(defined(HALO_MACOS) && !defined(HALO_IOS))
+#if defined(HALO_ARM64_GUEST) && !(defined(HALO_MACOS) && !defined(HALO_IOS))
 #define HALO_PORT_TEXTURE_CACHE_PAGE_COUNT 0x580 /* (0x580) */
 #else
 #define HALO_PORT_TEXTURE_CACHE_PAGE_COUNT 0x4000 /* (0x580) */
@@ -68,7 +68,7 @@ campaign map's dialogue and music did, "SOUND CACHE BLOWN" in debug.txt).
 The desktop builds' cache is 16 MB. The Mac guest uses that cache.
 Android's window keeps the Xbox's. */
 
-#if defined(HALO_ANDROID) && !(defined(HALO_MACOS) && !defined(HALO_IOS))
+#if defined(HALO_ARM64_GUEST) && !(defined(HALO_MACOS) && !defined(HALO_IOS))
 #define HALO_PORT_SOUND_CACHE_SIZE 0x400000 /* (0x400000) */
 #else
 #define HALO_PORT_SOUND_CACHE_SIZE 0x1000000 /* (0x400000) */

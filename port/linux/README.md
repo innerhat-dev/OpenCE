@@ -311,6 +311,12 @@ stay. The Xbox's pause box is drawn taller to hold them (a redraw,
 what is below its list moves down. The few pictures of the settings that
 come from the main menu's map are not drawn there.
 
+In a single-player campaign, the pause menu has SETTINGS too, before REVERT
+TO SAVED, in the same box: a list with room for it centres its rows, and
+one without keeps its size, its rows closer. It opens the same settings,
+while the game stays paused, with only Controls, Gamepads, Mouse, Audio and
+Video Setup; Gamepads' OK saves the profile at once.
+
 The menus are XML files in `port/assets/menus` (`tools/ce_menus.py` writes
 them from the PC version's tags), which the game contains. To change them,
 put files in a `menus` folder next to `config.toml`: a file with the same
@@ -436,6 +442,8 @@ display. Firing, animation, sound and world lights continue.
 | `debug.network_latency`, `debug.network_loss`, `debug.network_corrupt`, `debug.network_corrupt_stream`, `debug.network_corrupt_after` | `0` | `HALO_NETWORK_LATENCY`, `HALO_NETWORK_LOSS`, `HALO_NETWORK_CORRUPT`, `HALO_NETWORK_CORRUPT_STREAM`, `HALO_NETWORK_CORRUPT_AFTER` | The game holds all the data that it receives for this number of milliseconds, ignores this percentage of the datagrams, and damages this percentage of the datagrams it receives, and this percentage of its reads of streams, at random (bytes changed, cut short, stretched or replaced), from this many seconds after the start. Use the first two to test the netcode as on the internet, and the others to test that nothing another machine sends can crash the game (a damaged stream is closed, so a little goes a long way; a host's messages to its own client are damaged too, so start damaging once the game has started). |
 | `debug.voice_test` | `false` | `HALO_VOICE_TEST` | Automatic tests of voice chat: a tone replaces the microphone, and each voice that the game hears is written to the log once each second. |
 | `debug.telnet_console`, `debug.telnet_console_port` | `false`, `2323` | `HALO_TELNET_CONSOLE`, `HALO_TELNET_CONSOLE_PORT` | The game listens on 127.0.0.1, on this port, for a script console (connect with telnet). The console has no password, so only this computer can reach it. |
+| `debug.profile_record`, `debug.profile_record_when`, `debug.profile_memory` | `false`, `"start"`, `256` | `HALO_PROFILE_RECORD`, `HALO_PROFILE_RECORD_WHEN`, `HALO_PROFILE_MEMORY` | Profiling builds only (`configure.py --profile`). Record without a command; `"start"` records from the first frame until the first map change, `"game"` records each game outside the main menu. Memory is 4–1024 MB. Numbered `profile_<stamp>_<role>.part<n>.json` files remain in `profiles/` after recording. Refer to "Profiling builds" in the main README. |
+
 
 With Mesa drivers, the game sends its GL calls through the GL thread of
 Mesa. To stop this, set the environment variable `mesa_glthread=false`.
@@ -509,6 +517,29 @@ the world (such as `rasterizer_wireframe`). Refer to `NETCODE.md`.
 
 The frame rate shows at the bottom right of the screen. It is the mean over
 half a second.
+
+## Field of view
+
+Video Setup's FOV AND VIEWMODELS screen sets the field of view of the
+first-person view (`display.fov`) and of the weapon and hands
+(`display.viewmodel_fov`), from 80 to 150 degrees in steps of 5, and can
+hide the weapon (`display.viewmodel_visible`). DEFAULT, the setting's `0`,
+keeps the stock view. `config.toml` takes any angle from 20 to 150.
+
+- An angle is across the screen at 16:9. Another shape keeps the same
+  angle up and down, as the stock view does.
+- The field of view applies on foot in first person only. Vehicles, death,
+  cinematics and scripted cameras keep their own view.
+- A scope's zoom levels keep their stock view: the extra width fades out as
+  the zoom comes in. A view narrower than the stock one narrows the zoom
+  too.
+- The reticles scale with the view, so that they stay on the aim. The
+  scopes' pictures keep their place.
+- By default the weapon keeps its stock view when the world is wider:
+  arms and a gun right against the camera stretch at a wide angle.
+
+Only this machine's view changes. Nothing the machines send each other
+changes, so players with different settings play together.
 
 ## System link
 

@@ -1375,7 +1375,7 @@ static void audio_start(void)
 		spec.format = SDL_AUDIO_F32;
 		spec.channels = OUTPUT_CHANNELS;
 		spec.freq = OUTPUT_RATE;
-#if defined(HALO_ANDROID) && !(defined(HALO_MACOS) && !defined(HALO_IOS))
+#if defined(HALO_ARM64_GUEST) && !(defined(HALO_MACOS) && !defined(HALO_IOS))
 		/* frames per callback: on Android each callback is handed to a thread
 		that can run the guest (host_sdl.c): 512 left it too little time and
 		the menus' music broke up, which 1024 does not (about 21 ms at 48 kHz,

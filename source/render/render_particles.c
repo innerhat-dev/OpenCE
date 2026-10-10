@@ -30,6 +30,7 @@ symbols in this file:
 #include "tag_files/tag_groups.h"
 #include "units/unit_definitions.h"
 #include "units/units.h"
+#include "view_fov.h" /* port: port/linux/game/view_fov.c */
 
 /* ---------- constants */
 
@@ -160,6 +161,7 @@ void render_particles(
 			boolean owned_by_local_player =
 				particle->local_player_index == local_player_index;
 
+			/* port: not the first-person weapon's with it hidden (view_fov.c) */
 			if (render_location_visible(&particle->location) &&
 				viewmodel_draws_geometry(owned_by_local_player &&
 					TEST_FLAG(particle->flags, _particle_datum_dont_draw_third_person_bit)) &&

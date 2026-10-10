@@ -114,7 +114,7 @@ that window at start-up and hands out page-granular blocks from it, so the
 physical/virtual arithmetic the game and Direct3D rely on keeps working. */
 
 #define PLATFORM_CONTIGUOUS_BASE 0x80000000UL
-#if defined(HALO_ANDROID) && !(defined(HALO_MACOS) && !defined(HALO_IOS))
+#if defined(HALO_ARM64_GUEST) && !(defined(HALO_MACOS) && !defined(HALO_IOS))
 /* 128 MB, a development kit's: Android's guest image is linked just above
 the window (port/android/include/halo_android_abi.h). The Mac guest uses
 the desktop size below, and its image is linked at 0xA0000000. */

@@ -369,6 +369,13 @@ struct player_profile *player_ui_get_edit_player_profile(
 	return result;
 }
 
+/* port: the saved game file being edited (NONE for none) */
+long player_ui_get_edit_profile_index(
+	void)
+{
+	return player_ui_globals.edit_profile_index;
+}
+
 struct game_variant *player_ui_get_edit_playlist_profile(
 	void)
 {
@@ -819,6 +826,24 @@ boolean player_ui_save_profile(
 			player_profile_save(
 				player_ui_globals.edit_profile_index,
 				&player_ui_globals.edit_profile.current.player);
+			/* port: a local player playing with the profile gets its
+			changes now (its button and stick layouts, sensitivity,
+			inversion), not when the profile is next chosen */
+			{
+				short local_player_index;
+
+				for (local_player_index = 0; local_player_index < MAXIMUM_NUMBER_OF_LOCAL_PLAYERS; local_player_index++)
+				{
+					if (player_ui_globals.local_players[local_player_index].active_profile_index ==
+						player_ui_globals.edit_profile_index)
+					{
+						player_ui_set_active_player_profile(
+							local_player_index,
+							player_ui_globals.edit_profile_index,
+							&player_ui_globals.edit_profile.current.player);
+					}
+				}
+			}
 			result = TRUE;
 			break;
 

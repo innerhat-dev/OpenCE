@@ -3952,6 +3952,27 @@ static boolean profile_save_changes(struct widget_instance *widget, boolean *wid
 	return TRUE;
 }
 
+/* "port profile settings save" (Gamepads' OK in a single-player campaign:
+menu_tags.c's pause_settings_patch): the profile saved at once, not on
+Settings' OK, so that the campaign's next save of the player's profile
+keeps it; saving makes it the player's own (player_ui_save_profile), and it
+is edited again from what was saved, for Settings to go on with */
+static boolean profile_settings_save(struct widget_instance *widget)
+{
+	long index = player_ui_get_edit_profile_index();
+
+	settings_each(screen_of(widget), setting_changed_save);
+	if (!player_ui_get_edit_player_profile() || !player_ui_edit_profile_is_dirty())
+		return TRUE;
+	if (!player_ui_save_profile())
+	{
+		platform_log("menus: could not save the profile's changes");
+		return campaign_fail();
+	}
+	player_ui_begin_editing_profile(index);
+	return TRUE;
+}
+
 /* "port pause end game" (the in-game pause menu's END GAME, the host's:
 menu_tags.c's pause_patch): the game ends as its time limit would, its
 players staying for the next (the carnage report, then the host's PICK GAME) */
@@ -5436,6 +5457,10 @@ boolean pc_menu_event_function_invoke(
 		else if (!strcmp(name, "player profile save changes"))
 		{
 			return profile_save_changes(widget, widget_deleted);
+		}
+		else if (!strcmp(name, "port profile settings save"))
+		{
+			return profile_settings_save(widget);
 		}
 		else if (!strcmp(name, "direct ip connect go"))
 		{
