@@ -873,16 +873,17 @@ def test_shaders_are_renumbered_as_this_build_numbers_them(report_tool, tmp_path
 
 def test_chicago_extended_shaders_become_chicago_shaders(report_tool, tmp_path):
     cache = Map(shaders=[("scex", {"four_stage": 2, "two_stage": 1, "extra_flags": 0x5}),
-                         ("scex", {"four_stage": 0, "two_stage": 1, "extra_flags": 0x2})])
+                         ("scex", {"four_stage": 0, "two_stage": 1, "extra_flags": 0x2}),
+                         ("scex", {"four_stage": 2, "two_stage": 0, "extra_flags": 0x3})])
     returncode, report, tags = converted(report_tool, cache, tmp_path)
     assert returncode == 0
-    assert report["chicago_extended_shaders_converted"] == "2"
-    for index, (maps_count, extra_flags) in enumerate([(2, 0x5), (1, 0x2)]):
+    assert report["chicago_extended_shaders_converted"] == "3"
+    for index, (maps_count, extra_flags) in enumerate([(1, 0x5), (1, 0x2), (2, 0x3)]):
         shader = cache.addresses[f"test\\shader {index}"]
         instance = cache.addresses["instances"] + cache.tag_indices[f"test\\shader {index}"] * 0x20
         assert u32_at(tags, instance) == code("schi")
         assert u32_at(tags, instance + 0x04) == NONE  # the parent groups stay
-        # the four-stage maps, or the two-stage ones when there are no others
+        # the two-stage maps, or the four-stage ones when there are no others
         assert u32_at(tags, shader + 0x54) == maps_count
         assert u32_at(tags, shader + 0x60) == extra_flags
         assert tags[shader - BASE + 0x64:shader - BASE + 0x6C] == bytes(8)
