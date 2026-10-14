@@ -1,0 +1,5 @@
+# Shared custom-map cache hooks on iOS.
+halo_map_download_directory
+halo_map_download_request
+
+host_ios_metalfx_present

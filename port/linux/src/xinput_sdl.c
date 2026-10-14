@@ -105,7 +105,7 @@ worn stick's drift */
 #define STICK_AIMING_DEFLECTION 8000
 
 /* (input.mouse_vertical_sensitivity, read with it) */
-static float vertical_sensitivity = 1.0f;
+static float vertical_sensitivity = 0.1f;
 
 static float mouse_sensitivity(void)
 {
@@ -117,7 +117,7 @@ static float mouse_sensitivity(void)
 		read_at = config_changes();
 		sensitivity = (float)config_real("input.mouse_sensitivity");
 		if (sensitivity <= 0.0f)
-			sensitivity = 1.0f;
+			sensitivity = 0.1f;
 		vertical_sensitivity = (float)config_real("input.mouse_vertical_sensitivity");
 		if (vertical_sensitivity <= 0.0f)
 			vertical_sensitivity = sensitivity;
@@ -807,6 +807,7 @@ a button held across the change would be pressed again on the other port
 (the B that leaves a profile screen leaving the game as player 1's) */
 static SDL_Gamepad *port_gamepad(SDL_Gamepad *gamepads[PORT_COUNT], int count, int port)
 {
+#ifndef HALO_IOS
 	if (count == 1)
 	{
 		BOOL split = pc_menu_split_players() != 0;
@@ -816,6 +817,9 @@ static SDL_Gamepad *port_gamepad(SDL_Gamepad *gamepads[PORT_COUNT], int count, i
 		if (lone_gamepad_split)
 			return port == 1 ? gamepads[0] : NULL;
 	}
+#endif
+    /* iOS always has a touch controller in port 0, even without hardware.
+       It has no keyboard-only player to leave behind on this port. */
 	return port < count ? gamepads[port] : NULL;
 }
 

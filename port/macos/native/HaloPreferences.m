@@ -142,6 +142,8 @@ NSURL *HaloValidateGameData(NSURL *selection, NSError **error) {
     return root;
 }
 
+static NSString *copiedFileHash(NSURL *file);
+
 NSURL *HaloImportDiscImage(NSURL *image, NSURL *supportDirectory,
                           xiso_progress_proc progress, void *context, NSError **error) {
     /* A new directory for every import. Failed imports never replace working data. */
@@ -149,13 +151,28 @@ NSURL *HaloImportDiscImage(NSURL *image, NSURL *supportDirectory,
                           URLByAppendingPathComponent:NSUUID.UUID.UUIDString isDirectory:YES];
     if (![NSFileManager.defaultManager createDirectoryAtURL:destination withIntermediateDirectories:YES
                                                 attributes:nil error:error]) return nil;
+    BOOL scoped = [image startAccessingSecurityScopedResource];
+    NSURL *privateImage = [destination URLByAppendingPathComponent:@"disc.iso"];
+    if (progress) progress(context, "Copying and verifying disc image", 0, 1);
+    NSString *digest = copiedFileHash(image);
+    BOOL copied = digest && [NSFileManager.defaultManager copyItemAtURL:image toURL:privateImage error:error];
+    BOOL verified = copied && [digest isEqual:copiedFileHash(privateImage)];
+    if (scoped) [image stopAccessingSecurityScopedResource];
     char detail[512] = {0};
-    BOOL extracted = xiso_extract_maps(image.fileSystemRepresentation, destination.fileSystemRepresentation,
+    BOOL extracted = verified && xiso_extract_maps(privateImage.fileSystemRepresentation, destination.fileSystemRepresentation,
                                       progress, context, detail, sizeof(detail));
     NSURL *validated = extracted ? HaloValidateGameData(destination, error) : nil;
+    if (validated) {
+        NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:privateImage.path error:error];
+        NSDictionary *record = @{@"version": @1, @"sha256": digest,
+            @"size": attributes[NSFileSize] ?: @0, @"originalName": image.lastPathComponent};
+        if (!attributes || ![record writeToURL:[destination URLByAppendingPathComponent:@"integrity.plist"] atomically:YES]) validated = nil;
+        [destination setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
+    }
     if (!validated) {
         [NSFileManager.defaultManager removeItemAtURL:destination error:nil];
-        if (!extracted && error) *error = failure([NSString stringWithUTF8String:detail] ?: @"The disc image could not be read.");
+        if (error) *error = failure(!verified ? @"Could not copy and verify the disc image. Check available storage and try again."
+            : (*detail ? [NSString stringWithUTF8String:detail] : @"Could not save the private game data."));
     }
     return validated;
 }

@@ -815,11 +815,15 @@ int p2p_lobby_browsing(void)
 	return lobby.browsing;
 }
 
-/* the order shown: the most players first; then those joining has not
-failed, the open ones, and by name */
+/* Prefer games that can be joined, then the most players, then name. */
 static int listing_order(const void *first, const void *second)
 {
 	const struct p2p_listing *a = first, *b = second;
+	int a_joinable = a->open && !a->failed && a->player_count < a->maximum_player_count;
+	int b_joinable = b->open && !b->failed && b->player_count < b->maximum_player_count;
+
+	if (a_joinable != b_joinable)
+		return b_joinable - a_joinable;
 
 	if (a->player_count != b->player_count)
 		return b->player_count - a->player_count;
@@ -832,20 +836,27 @@ static int listing_order(const void *first, const void *second)
 
 int p2p_lobby_games(struct p2p_listing *games, int maximum_count)
 {
+	struct p2p_listing found[MAXIMUM_GAMES];
 	int count = 0;
 	int index;
 
+	if (maximum_count <= 0)
+		return 0;
 	pthread_mutex_lock(&p2p_lock);
-	for (index = 0; index < MAXIMUM_GAMES && count < maximum_count; index++)
+	for (index = 0; index < MAXIMUM_GAMES; index++)
 	{
 		if (!lobby.games[index].used)
 			continue;
-		games[count] = lobby.games[index].listing;
-		games[count].failed = (unsigned char)identifier_failed(games[count].identifier);
+		found[count] = lobby.games[index].listing;
+		found[count].failed = (unsigned char)identifier_failed(found[count].identifier);
 		count++;
 	}
 	pthread_mutex_unlock(&p2p_lock);
-	qsort(games, (size_t)count, sizeof(*games), listing_order);
+	/* Rank every listing before truncating to the caller's visible rows. */
+	qsort(found, (size_t)count, sizeof(*found), listing_order);
+	if (count > maximum_count)
+		count = maximum_count;
+	memcpy(games, found, (size_t)count * sizeof(*games));
 	return count;
 }
 

@@ -50,6 +50,14 @@ jobs:
         run: python3 tools/test_macos_runtime.py --standalone
       - name: Signed iOS instruction image
         run: python3 tools/test_ios_runtime.py
+      - name: iOS ISO importer safety checks
+        run: |
+          python3 tools/ios_xiso_test.py
+          python3 -m unittest tools.test_config_defaults
+      - name: iOS controller routing
+        run: |
+          python3 -m pip install pytest
+          python3 -m pytest tools/test_ios_controller_routing.py -q
       - name: Controls, rendering and workload verification
         run: python3 -m unittest tools.test_input_bindings tools.test_visibility_queries tools.test_geometry_cache tools.test_presentation tools.test_macos_preflight tools.test_macos_benchmark
       - name: Version 11 network protocol

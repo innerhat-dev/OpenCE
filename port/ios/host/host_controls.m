@@ -1,158 +1,257 @@
-/* UIKit controls drive SDL's virtual gamepad and the existing Xbox input path. */
+#include "../../apple/host_debug.h"
+/* UIKit controls feed a standard SDL gamepad. The first hardware controller
+   shares player one with touch by default. Optional separate-player mode keeps
+   touch on player one and gives hardware controllers their own ports. */
 #import <UIKit/UIKit.h>
-#import <GameController/GameController.h>
 #include <SDL3/SDL.h>
 #include "host.h"
-static SDL_Joystick *touch_pad;
-@interface HaloStick : UIView
-@property int axis;
-@property(strong) UIView *thumb;
+#import "host_orientation.h"
+#include <math.h>
+
+static SDL_Joystick *touch_joystick;
+static SDL_JoystickID touch_id, primary_hardware;
+static SDL_Gamepad *primary_gamepad;
+static BOOL separate_players;
+static NSString *const controllerChanged = @"HaloControllerChanged";
+
+static void button_state(int button, BOOL down) {
+    if(touch_joystick) SDL_SetJoystickVirtualButton(touch_joystick,button,down);
+}
+static void axis_state(int axis, float value) {
+    if(touch_joystick) SDL_SetJoystickVirtualAxis(touch_joystick,axis,(Sint16)(fmaxf(-1,fminf(1,value))*32767));
+}
+void host_ios_touch_initialize(void) {
+    separate_players=[NSUserDefaults.standardUserDefaults boolForKey:@"HaloSeparateTouchPlayer"];
+    SDL_VirtualJoystickDesc desc;
+    SDL_INIT_INTERFACE(&desc);
+    desc.type=SDL_JOYSTICK_TYPE_GAMEPAD;
+    desc.naxes=SDL_GAMEPAD_AXIS_COUNT;
+    desc.nbuttons=SDL_GAMEPAD_BUTTON_COUNT;
+    desc.axis_mask=(1u<<SDL_GAMEPAD_AXIS_COUNT)-1;
+    desc.button_mask=(1u<<SDL_GAMEPAD_BUTTON_COUNT)-1;
+    desc.name="Halo Touch Controls";
+    touch_id=SDL_AttachVirtualJoystick(&desc);
+    touch_joystick=SDL_OpenJoystick(touch_id);
+    if(!touch_joystick)host_fatal("Could not initialize touch controls: %s",SDL_GetError());
+    axis_state(SDL_GAMEPAD_AXIS_LEFT_TRIGGER,-1);
+    axis_state(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,-1);
+}
+int host_ios_gamepads(uint32_t *out,int capacity) {
+    int count=0,used=0;SDL_JoystickID *ids=SDL_GetGamepads(&count);
+    SDL_JoystickID next=0;
+    for(int i=0;i<count;i++)if(ids[i]!=touch_id) {
+        if(!next || ids[i]==primary_hardware)next=ids[i];
+        if(ids[i]==primary_hardware)break;
+    }
+    if(next!=primary_hardware) {
+        if(primary_gamepad)SDL_CloseGamepad(primary_gamepad);
+        primary_gamepad=next?SDL_OpenGamepad(next):NULL;
+        primary_hardware=primary_gamepad?next:0;
+        host_logf(HOST_LOG_INFO,"controller: %s",primary_gamepad?SDL_GetGamepadName(primary_gamepad):"disconnected; using touch");
+        void (^announce)(void)=^{[NSNotificationCenter.defaultCenter postNotificationName:controllerChanged object:nil];};
+        if(NSThread.isMainThread)announce();else dispatch_async(dispatch_get_main_queue(),announce);
+    }
+    if(capacity>0 && touch_id)out[used++]=touch_id;
+    for(int i=0;i<count;i++) {
+        if(ids[i]==touch_id || (!separate_players && ids[i]==primary_hardware))continue;
+        if(used<capacity)out[used++]=ids[i];
+    }
+    SDL_free(ids);return used;
+}
+int host_ios_gamepad_type(SDL_Gamepad *pad) {
+    /* Keep the shared touch/hardware controller in the first recognized port. */
+    return SDL_GetGamepadID(pad)==touch_id?SDL_GAMEPAD_TYPE_XBOX360:SDL_GetGamepadType(pad);
+}
+int host_ios_gamepad_axis(SDL_Gamepad *pad,int axis) {
+    if(halo_debug_is_presented())return 0;
+    int value=SDL_GetGamepadAxis(pad,axis);
+    if(SDL_GetGamepadID(pad)==touch_id && !separate_players && primary_hardware) {
+        int physical=SDL_GetGamepadAxis(primary_gamepad,axis);
+        if(abs(physical)>abs(value))value=physical;
+    }
+    return value;
+}
+int host_ios_gamepad_button(SDL_Gamepad *pad,int button) {
+    if(halo_debug_is_presented())return 0;
+    return SDL_GetGamepadButton(pad,button) ||
+        (SDL_GetGamepadID(pad)==touch_id && !separate_players && primary_hardware &&
+         SDL_GetGamepadButton(primary_gamepad,button));
+}
+void host_ios_touch_reset(void) {
+    for(int i=0;i<SDL_GAMEPAD_BUTTON_COUNT;i++)button_state(i,NO);
+    for(int i=0;i<SDL_GAMEPAD_AXIS_COUNT;i++)axis_state(i,i>=SDL_GAMEPAD_AXIS_LEFT_TRIGGER?-1:0);
+}
+
+@interface HaloButton : UIButton
+@property(nonatomic) int gameButton;
+@property(nonatomic) int gameAxis;
+@end
+@implementation HaloButton
+- (void)sendDown:(BOOL)down {
+    self.highlighted=down;
+    if(self.gameAxis>=0)axis_state(self.gameAxis,down?1:-1);
+    else button_state(self.gameButton,down);
+}
+- (BOOL)beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    [super beginTrackingWithTouch:touch withEvent:event];[self sendDown:YES];return YES;
+}
+- (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    [super endTrackingWithTouch:touch withEvent:event];[self sendDown:NO];
+}
+- (void)cancelTrackingWithEvent:(UIEvent *)event {
+    [super cancelTrackingWithEvent:event];[self sendDown:NO];
+}
+- (BOOL)accessibilityActivate {
+    [self sendDown:YES];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,150*NSEC_PER_MSEC),dispatch_get_main_queue(),^{[self sendDown:NO];});
+    return YES;
+}
+@end
+
+@interface HaloStick : UIControl
+@property(nonatomic) int firstAxis;
+@property(nonatomic) CGPoint position;
+@property(nonatomic,copy) NSString *caption;
 @end
 @implementation HaloStick
-- (instancetype)initWithFrame:(CGRect)frame {
-    if ((self = [super initWithFrame:frame])) {
-        self.backgroundColor = [UIColor colorWithWhite:0 alpha:0.18];
-        self.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.45].CGColor;
-        self.layer.borderWidth = 1; self.layer.cornerRadius = frame.size.width / 2;
-        self.thumb = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 46, 46)];
-        self.thumb.backgroundColor = [UIColor colorWithWhite:1 alpha:0.25];
-        self.thumb.layer.cornerRadius = 23; self.thumb.userInteractionEnabled = NO;
-        [self addSubview:self.thumb];
-        self.thumb.center = CGPointMake(frame.size.width / 2, frame.size.height / 2);
-        self.isAccessibilityElement = YES;
-    }
-    return self;
-}
 - (void)updateTouch:(UITouch *)touch {
-    CGPoint p = [touch locationInView:self];
-    CGFloat radius = self.bounds.size.width / 2, travel = radius - 23;
-    CGFloat x = (p.x - radius) / travel, y = (p.y - radius) / travel;
-    CGFloat length = hypot(x, y);
-    if (length > 1) { x /= length; y /= length; }
-    self.thumb.center = CGPointMake(radius + x * travel, radius + y * travel);
-    SDL_SetJoystickVirtualAxis(touch_pad, self.axis, (Sint16)(x * 32767));
-    SDL_SetJoystickVirtualAxis(touch_pad, self.axis + 1, (Sint16)(y * 32767));
+    CGPoint p=[touch locationInView:self];CGFloat radius=self.bounds.size.width*.34;
+    CGFloat x=(p.x-self.bounds.size.width/2)/radius,y=(p.y-self.bounds.size.height/2)/radius;
+    CGFloat length=hypot(x,y);if(length>1){x/=length;y/=length;}
+    self.position=CGPointMake(x,y);axis_state(self.firstAxis,x);axis_state(self.firstAxis+1,y);
+    [self setNeedsDisplay];
 }
-- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event { (void)event; [self updateTouch:touches.anyObject]; }
-- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event { (void)event; [self updateTouch:touches.anyObject]; }
-- (void)reset {
-    self.thumb.center = CGPointMake(self.bounds.size.width / 2, self.bounds.size.height / 2);
-    SDL_SetJoystickVirtualAxis(touch_pad, self.axis, 0);
-    SDL_SetJoystickVirtualAxis(touch_pad, self.axis + 1, 0);
+- (BOOL)beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {[self updateTouch:touch];return YES;}
+- (BOOL)continueTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {[self updateTouch:touch];return YES;}
+- (void)reset {self.position=CGPointZero;axis_state(self.firstAxis,0);axis_state(self.firstAxis+1,0);[self setNeedsDisplay];}
+- (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {[self reset];}
+- (void)cancelTrackingWithEvent:(UIEvent *)event {[self reset];}
+- (void)drawRect:(CGRect)rect {
+    CGRect circle=CGRectInset(self.bounds,2,2);
+    [[UIColor colorWithWhite:0 alpha:.2]setFill];UIBezierPath *path=[UIBezierPath bezierPathWithOvalInRect:circle];[path fill];
+    [[UIColor colorWithWhite:1 alpha:.5]setStroke];path.lineWidth=1.5;[path stroke];
+    CGFloat size=self.bounds.size.width,r=size*.34;
+    CGRect knob=CGRectMake(size/2+self.position.x*r-21,size/2+self.position.y*r-21,42,42);
+    [[UIColor colorWithWhite:1 alpha:.25]setFill];[[UIBezierPath bezierPathWithOvalInRect:knob]fill];
+    NSDictionary *attrs=@{NSFontAttributeName:[UIFont systemFontOfSize:10 weight:UIFontWeightSemibold],NSForegroundColorAttributeName:[UIColor colorWithWhite:1 alpha:.8]};
+    CGSize text=[self.caption sizeWithAttributes:attrs];
+    [self.caption drawAtPoint:CGPointMake((size-text.width)/2,size-20) withAttributes:attrs];
 }
-- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event { (void)touches; (void)event; [self reset]; }
-- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event { [self touchesEnded:touches withEvent:event]; }
 @end
+
 @interface HaloControls : UIView
-@property(strong) HaloStick *moveStick;
-@property(strong) HaloStick *lookStick;
-@property(strong) NSMutableArray<UIButton *> *buttons;
+@property(nonatomic,strong) HaloStick *moveStick;
+@property(nonatomic,strong) HaloStick *lookStick;
+@property(nonatomic,strong) NSMutableArray<HaloButton *> *buttons;
 @end
+static __weak HaloControls *activeControls;
+void host_ios_touch_focus(void) {[activeControls becomeFirstResponder];}
 @implementation HaloControls
-- (UIButton *)button:(NSString *)title input:(int)input {
-    UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
-    [button setTitle:title forState:UIControlStateNormal];
-    button.titleLabel.font = [UIFont boldSystemFontOfSize:14];
-    button.backgroundColor = [UIColor colorWithWhite:0 alpha:0.3];
-    button.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.5].CGColor;
-    button.layer.borderWidth = 1; button.layer.cornerRadius = 22; button.tag = input;
-    [button addTarget:self action:@selector(down:) forControlEvents:UIControlEventTouchDown | UIControlEventTouchDragEnter];
-    [button addTarget:self action:@selector(up:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside | UIControlEventTouchCancel | UIControlEventTouchDragExit];
-    [self addSubview:button]; [self.buttons addObject:button];
-    return button;
+- (BOOL)canBecomeFirstResponder {return YES;}
+- (void)motionEnded:(UIEventSubtype)motion withEvent:(UIEvent *)event {
+    if(motion==UIEventSubtypeMotionShake)halo_debug_present();
+    else [super motionEnded:motion withEvent:event];
+}
+- (void)openGraphicsDebug:(id)sender {(void)sender;halo_debug_present();}
+- (void)buildMenuWithBuilder:(id<UIMenuBuilder>)builder {
+    [super buildMenuWithBuilder:builder];
+    if(builder.system==UIMenuSystem.mainSystem) {
+        UIKeyCommand *command=[UIKeyCommand commandWithTitle:@"Graphics Debug…" image:nil action:@selector(openGraphicsDebug:) input:@"d" modifierFlags:UIKeyModifierCommand|UIKeyModifierShift propertyList:nil];
+        [builder insertSiblingMenu:[UIMenu menuWithTitle:@"Debug" image:nil identifier:@"halo.graphics-debug" options:0 children:@[command]] beforeMenuForIdentifier:UIMenuWindow];
+    }
+}
+- (HaloButton *)addButton:(NSString *)title label:(NSString *)label button:(int)button axis:(int)axis {
+    HaloButton *b=[HaloButton buttonWithType:UIButtonTypeCustom];b.gameButton=button;b.gameAxis=axis;
+    [b setTitle:title forState:UIControlStateNormal];b.titleLabel.font=[UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
+    b.backgroundColor=[UIColor colorWithWhite:0 alpha:.28];b.layer.borderColor=[UIColor colorWithWhite:1 alpha:.5].CGColor;b.layer.borderWidth=1;
+    b.accessibilityLabel=label;b.exclusiveTouch=NO;[self addSubview:b];[self.buttons addObject:b];return b;
 }
 - (instancetype)initWithFrame:(CGRect)frame {
-    if ((self = [super initWithFrame:frame])) {
-        self.multipleTouchEnabled = YES; self.buttons = [NSMutableArray new];
-        self.moveStick = [[HaloStick alloc] initWithFrame:CGRectMake(0, 0, 126, 126)];
-        self.moveStick.axis = SDL_GAMEPAD_AXIS_LEFTX; self.moveStick.accessibilityLabel = @"Move";
-        self.lookStick = [[HaloStick alloc] initWithFrame:CGRectMake(0, 0, 126, 126)];
-        self.lookStick.axis = SDL_GAMEPAD_AXIS_RIGHTX; self.lookStick.accessibilityLabel = @"Look";
-        [self addSubview:self.moveStick]; [self addSubview:self.lookStick];
-        [self button:@"A" input:SDL_GAMEPAD_BUTTON_SOUTH].accessibilityLabel = @"A: Jump or confirm";
-        [self button:@"B" input:SDL_GAMEPAD_BUTTON_EAST].accessibilityLabel = @"B: Melee or back";
-        [self button:@"X" input:SDL_GAMEPAD_BUTTON_WEST].accessibilityLabel = @"X: Reload or interact";
-        [self button:@"Y" input:SDL_GAMEPAD_BUTTON_NORTH].accessibilityLabel = @"Y: Switch weapon";
-        [self button:@"Fire" input:100 + SDL_GAMEPAD_AXIS_RIGHT_TRIGGER];
-        [self button:@"Grenade" input:100 + SDL_GAMEPAD_AXIS_LEFT_TRIGGER];
-        [self button:@"Pause" input:SDL_GAMEPAD_BUTTON_START];
-        [self button:@"Light" input:SDL_GAMEPAD_BUTTON_LEFT_SHOULDER];
-        [self button:@"Type" input:SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER].accessibilityLabel = @"Switch grenade type";
-        [self button:@"Crouch" input:SDL_GAMEPAD_BUTTON_LEFT_STICK];
-        [self button:@"Zoom" input:SDL_GAMEPAD_BUTTON_RIGHT_STICK];
-        [self button:@"Back" input:SDL_GAMEPAD_BUTTON_BACK];
-    }
+    if(!(self=[super initWithFrame:frame]))return nil;
+    self.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
+    self.multipleTouchEnabled=YES;self.buttons=[NSMutableArray array];
+    self.moveStick=[[HaloStick alloc]init];self.moveStick.firstAxis=SDL_GAMEPAD_AXIS_LEFTX;self.moveStick.caption=@"MOVE";
+    self.lookStick=[[HaloStick alloc]init];self.lookStick.firstAxis=SDL_GAMEPAD_AXIS_RIGHTX;self.lookStick.caption=@"LOOK";
+    for(HaloStick *s in @[self.moveStick,self.lookStick]){s.backgroundColor=UIColor.clearColor;s.isAccessibilityElement=YES;s.accessibilityLabel=s.caption;[self addSubview:s];}
+    [self addButton:@"A" label:@"A — Jump or select" button:SDL_GAMEPAD_BUTTON_SOUTH axis:-1];
+    [self addButton:@"B" label:@"B — Melee or back" button:SDL_GAMEPAD_BUTTON_EAST axis:-1];
+    [self addButton:@"X" label:@"X — Reload or use" button:SDL_GAMEPAD_BUTTON_WEST axis:-1];
+    [self addButton:@"Y" label:@"Y — Switch weapon" button:SDL_GAMEPAD_BUTTON_NORTH axis:-1];
+    [self addButton:@"FIRE" label:@"Fire" button:0 axis:SDL_GAMEPAD_AXIS_RIGHT_TRIGGER];
+    [self addButton:@"GRENADE" label:@"Throw grenade" button:0 axis:SDL_GAMEPAD_AXIS_LEFT_TRIGGER];
+    [self addButton:@"↑" label:@"Menu up" button:SDL_GAMEPAD_BUTTON_DPAD_UP axis:-1];
+    [self addButton:@"↓" label:@"Menu down" button:SDL_GAMEPAD_BUTTON_DPAD_DOWN axis:-1];
+    [self addButton:@"←" label:@"Menu left" button:SDL_GAMEPAD_BUTTON_DPAD_LEFT axis:-1];
+    [self addButton:@"→" label:@"Menu right" button:SDL_GAMEPAD_BUTTON_DPAD_RIGHT axis:-1];
+    [self addButton:@"PAUSE" label:@"Pause or start" button:SDL_GAMEPAD_BUTTON_START axis:-1];
+    [self addButton:@"CROUCH" label:@"Crouch" button:SDL_GAMEPAD_BUTTON_LEFT_STICK axis:-1];
+    [self addButton:@"ZOOM" label:@"Zoom" button:SDL_GAMEPAD_BUTTON_RIGHT_STICK axis:-1];
+    [self addButton:@"LIGHT" label:@"Flashlight" button:SDL_GAMEPAD_BUTTON_LEFT_SHOULDER axis:-1];
+    [self addButton:@"SWAP G" label:@"Switch grenade" button:SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER axis:-1];
+    [[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(reset) name:UIApplicationWillResignActiveNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(controllerChanged) name:controllerChanged object:nil];
+    [self controllerChanged];
     return self;
 }
+- (void)controllerChanged {
+    BOOL connected=primary_hardware!=0;
+    [self setControlsHidden:connected && !separate_players];
+}
+- (void)setControlsHidden:(BOOL)hidden {
+    [self reset];
+    self.moveStick.hidden=self.lookStick.hidden=hidden;
+    for(UIView *button in self.buttons)button.hidden=hidden;
+}
+- (void)reset {host_ios_touch_reset();[self.moveStick reset];[self.lookStick reset];}
 - (void)layoutSubviews {
-    [super layoutSubviews];
-    CGRect safe = UIEdgeInsetsInsetRect(self.bounds, self.safeAreaInsets);
-    CGFloat left = CGRectGetMinX(safe) + 18, right = CGRectGetMaxX(safe) - 40;
-    CGFloat bottom = CGRectGetMaxY(safe) - 14, top = CGRectGetMinY(safe) + 12;
-    self.moveStick.frame = CGRectMake(left, bottom - 126, 126, 126);
-    self.lookStick.frame = CGRectMake(right - 254, bottom - 126, 126, 126);
-    CGPoint points[] = {{right-50,bottom-44},{right,bottom-94},{right-100,bottom-94},{right-50,bottom-144},
-        {right-45,top+32},{left+45,top+32},{CGRectGetMidX(safe),top+12},
-        {left+158,top+12},{right-158,top+12},{left+158,bottom-20},{right-254,bottom-160},
-        {CGRectGetMidX(safe)-85,top+12}};
-    for (NSUInteger i = 0; i < self.buttons.count; i++) {
-        UIButton *button = self.buttons[i]; CGFloat width = i < 4 ? 44 : 70;
-        button.frame = CGRectMake(points[i].x-width/2, points[i].y-22, width, 44);
-    }
-}
-- (void)down:(UIButton *)button {
-    button.alpha = 0.65;
-    if (button.tag >= 100) SDL_SetJoystickVirtualAxis(touch_pad, (int)button.tag - 100, 32767);
-    else SDL_SetJoystickVirtualButton(touch_pad, (int)button.tag, true);
-}
-- (void)up:(UIButton *)button {
-    button.alpha = 1;
-    if (button.tag >= 100) SDL_SetJoystickVirtualAxis(touch_pad, (int)button.tag - 100, -32768);
-    else SDL_SetJoystickVirtualButton(touch_pad, (int)button.tag, false);
+    [super layoutSubviews];CGRect r=UIEdgeInsetsInsetRect(self.bounds,self.safeAreaInsets);
+    CGFloat left=r.origin.x+16,right=CGRectGetMaxX(r)-16,bottom=CGRectGetMaxY(r)-12,top=r.origin.y+10;
+    CGFloat stick=MIN(136,r.size.height*.32),s=44,gap=4;
+    self.moveStick.frame=CGRectMake(left,bottom-stick,stick,stick);
+    self.lookStick.frame=CGRectMake(right-3*s-20-stick,bottom-stick,stick,stick);
+    // Four face buttons in the traditional diamond.
+    CGPoint face[4]={{right-2*s-gap,bottom-s},{right-s,bottom-2*s-gap},{right-3*s-2*gap,bottom-2*s-gap},{right-2*s-gap,bottom-3*s-2*gap}};
+    for(int i=0;i<4;i++)self.buttons[i].frame=CGRectMake(face[i].x,face[i].y,s,s);
+    self.buttons[4].frame=CGRectMake(right-84,top+55,84,48);
+    self.buttons[5].frame=CGRectMake(left,top+55,90,48);
+    CGFloat d=34,dx=left+stick+12,dy=bottom-3*d;
+    self.buttons[6].frame=CGRectMake(dx+d,dy,d,d);
+    self.buttons[7].frame=CGRectMake(dx+d,dy+2*d,d,d);
+    self.buttons[8].frame=CGRectMake(dx,dy+d,d,d);
+    self.buttons[9].frame=CGRectMake(dx+2*d,dy+d,d,d);
+    self.buttons[10].frame=CGRectMake(CGRectGetMidX(r)-38,top,76,34);
+    self.buttons[11].frame=CGRectMake(left,bottom-stick-42,74,34);
+    self.buttons[12].frame=CGRectMake(right-3*s-20-stick,bottom-stick-42,74,34);
+    self.buttons[13].frame=CGRectMake(right-180,top+55,80,36);
+    self.buttons[14].frame=CGRectMake(left+104,top+55,80,36);
+    for(UIButton *b in self.buttons){b.layer.cornerRadius=MIN(b.bounds.size.width,b.bounds.size.height)/2;b.titleLabel.adjustsFontSizeToFitWidth=YES;}
 }
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
-    for (UIView *view in self.subviews)
-        if (!view.hidden && [view pointInside:[view convertPoint:point fromView:self] withEvent:event]) return YES;
+    for(UIView *view in self.subviews)if(!view.hidden && [view pointInside:[self convertPoint:point toView:view] withEvent:event])return YES;
     return NO;
 }
-- (void)reset {
-    [self.moveStick reset]; [self.lookStick reset];
-    for (UIButton *button in self.buttons) [self up:button];
-}
 @end
-static HaloControls *controls;
-static void refresh_controls(void) {
-    BOOL physical = NO;
-    for (GCController *controller in GCController.controllers)
-        if (controller.extendedGamepad) physical = YES;
-    const char *setting = SDL_getenv("HALO_TOUCH_CONTROLS");
-    if (setting) physical = !SDL_atoi(setting);
-    controls.hidden = physical; [controls reset];
-    host_logf(HOST_LOG_INFO, "Touch controls %s; %lu system controllers",
-        physical ? "hidden" : "visible", (unsigned long)GCController.controllers.count);
+
+void host_ios_touch_attach(SDL_Window *window) {
+    UIWindow *native=(__bridge UIWindow *)SDL_GetPointerProperty(SDL_GetWindowProperties(window),SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER,NULL);
+    /* Retire SDL's temporary launch window before entering the non-returning
+       game loop. Its fade animation can otherwise keep accessibility/input
+       attached to the launch controller on recent scene-based iOS versions. */
+    for(UIWindow *candidate in native.windowScene.windows) {
+        if(candidate!=native && [NSStringFromClass(candidate.rootViewController.class) hasPrefix:@"SDLLaunch"])
+            candidate.hidden=YES;
+    }
+    [native makeKeyAndVisible];
+    host_ios_require_landscape(native);
+    UIView *root=native.rootViewController.view;
+    HaloControls *controls=[[HaloControls alloc]initWithFrame:root.bounds];
+    [root addSubview:controls];
+    activeControls=controls;
+    [controls becomeFirstResponder];
+    [UIMenuSystem.mainSystem setNeedsRebuild];
+    if([NSProcessInfo.processInfo.environment[@"HALO_IOS_TEST_DEBUG_UI"] boolValue])
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC*3),dispatch_get_main_queue(),^{[native.rootViewController motionEnded:UIEventSubtypeMotionShake withEvent:nil];});
+    host_logf(HOST_LOG_INFO,"touch controls attached, %.0fx%.0f",root.bounds.size.width,root.bounds.size.height);
 }
-void host_ios_controls_initialize(SDL_Window *window) {
-    if (controls) return;
-    SDL_VirtualJoystickDesc descriptor;
-    SDL_INIT_INTERFACE(&descriptor);
-    descriptor.type = SDL_JOYSTICK_TYPE_GAMEPAD;
-    descriptor.naxes = SDL_GAMEPAD_AXIS_COUNT; descriptor.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
-    descriptor.axis_mask = (1u << SDL_GAMEPAD_AXIS_COUNT) - 1;
-    descriptor.button_mask = (1u << SDL_GAMEPAD_BUTTON_COUNT) - 1;
-    descriptor.name = "Halo OG Touch Controls";
-    SDL_JoystickID id = SDL_AttachVirtualJoystick(&descriptor);
-    touch_pad = SDL_OpenJoystick(id);
-    if (!touch_pad) { host_logf(HOST_LOG_WARN, "Touch controls: %s", SDL_GetError()); return; }
-    UIWindow *native = (__bridge UIWindow *)SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER, NULL);
-    UIView *view = native.rootViewController.view;
-    controls = [[HaloControls alloc] initWithFrame:view.bounds];
-    controls.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [view addSubview:controls];
-    for (NSNotificationName name in @[GCControllerDidConnectNotification, GCControllerDidDisconnectNotification])
-        [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue
-            usingBlock:^(NSNotification *notification) { (void)notification; refresh_controls(); }];
-    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:NSOperationQueue.mainQueue
-        usingBlock:^(NSNotification *notification) { (void)notification; [controls reset]; }];
-    refresh_controls();
-    host_logf(HOST_LOG_INFO, "Touch controls ready (%u)", id);
-}
+
+void host_ios_controls_initialize(SDL_Window *window) { host_ios_touch_initialize(); host_ios_touch_attach(window); }

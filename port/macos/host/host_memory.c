@@ -20,6 +20,9 @@ static uint32_t generation[PAGES];
 static uint32_t serial = 1;
 static pthread_mutex_t memory_lock = PTHREAD_MUTEX_INITIALIZER;
 static int initialized;
+#ifdef HALO_IOS
+uintptr_t host_ios_arena;
+#endif
 /* Four Xbox 4 KB pages share one Darwin 16 KB page. Preserve the access
  * required by neighboring allocations when a single Xbox page changes. */
 static unsigned char xbox_protection[HALO_GUEST_WINDOW_SIZE / 4096];
@@ -63,13 +66,34 @@ static void occupy(uint32_t a, size_t n) { memset(used + a / PAGE, 1, rounded(n)
 int host_memory_initialize(uint32_t image_base, uint32_t image_size) {
     if (initialized)
         return 0;
+#ifdef HALO_IOS
+    vm_address_t address = 0;
+    // Reserve only: no physical backing until touched. Never replace mappings.
+    kern_return_t error = vm_map(mach_task_self(), &address, HALO_ARENA_SIZE,
+        UINT64_C(0xffffffff), VM_FLAGS_ANYWHERE, MACH_PORT_NULL, 0, FALSE,
+        VM_PROT_NONE, VM_PROT_READ | VM_PROT_WRITE, VM_INHERIT_NONE);
+    if (error != KERN_SUCCESS) {
+        host_logf(HOST_LOG_ERROR, "Aligned guest arena reservation, size 0x%llx: %s (kern=%d)",
+            (unsigned long long)HALO_ARENA_SIZE, mach_error_string(error), error);
+        return -1;
+    }
+    if (!address || (address & UINT64_C(0xffffffff))) {
+        vm_deallocate(mach_task_self(), address, HALO_ARENA_SIZE);
+        return -1;
+    }
+    host_ios_arena = address;
+    host_logf(HOST_LOG_INFO, "Dynamic guest arena: 0x%llx, size 0x%llx",
+        (unsigned long long)address, (unsigned long long)HALO_ARENA_SIZE);
+#else
     // Unlike MAP_FIXED, mach_vm_allocate with VM_FLAGS_FIXED never replaces
     // an existing mapping. Darwin may disregard mmap hints for a large arena.
     vm_address_t address = HALO_MACOS_BIAS;
     kern_return_t error =
         vm_allocate(mach_task_self(), &address, HALO_ARENA_SIZE, VM_FLAGS_FIXED);
     if (error != KERN_SUCCESS) {
-        host_logf(HOST_LOG_ERROR, "Guest arena reservation: %s", mach_error_string(error));
+        host_logf(HOST_LOG_ERROR, "Guest arena reservation at 0x%llx, size 0x%llx: %s (kern=%d)",
+            (unsigned long long)HALO_MACOS_BIAS, (unsigned long long)HALO_ARENA_SIZE,
+            mach_error_string(error), error);
         vm_address_t occupied = HALO_MACOS_BIAS;
         vm_size_t length = 0;
         vm_region_basic_info_data_64_t info;
@@ -85,6 +109,7 @@ int host_memory_initialize(uint32_t image_base, uint32_t image_size) {
     }
     if (mprotect((void *)address, HALO_ARENA_SIZE, PROT_NONE))
         return -1;
+#endif
     occupy(0, 0x1000000);
     occupy(HALO_GUEST_WINDOW_BASE, HALO_GUEST_WINDOW_SIZE);
     occupy(image_base, image_size);

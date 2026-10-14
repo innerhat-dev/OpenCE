@@ -28,7 +28,7 @@ def build_app(platform, args):
     run(cmake, '-S', 'port/ios', '-B', directory, '-G', 'Xcode',
         '-DCMAKE_SYSTEM_NAME=iOS', f'-DCMAKE_OSX_SYSROOT={sdk}',
         '-DCMAKE_OSX_ARCHITECTURES=arm64', '-DCMAKE_OSX_DEPLOYMENT_TARGET=26.0',
-        f'-DHALO_BUNDLE_MAPS={"OFF" if args.no_bundle_maps else "ON"}',
+
         f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}',
         f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}')
     settings = ['-jobs', str(args.jobs)]
@@ -53,7 +53,7 @@ def main():
     p.add_argument('--guest-only', action='store_true')
     p.add_argument('--host-only', action='store_true', help='Reuse the compiled game image')
     p.add_argument('--platform', choices=['simulator', 'device', 'both'], default='simulator')
-    p.add_argument('--no-bundle-maps', action='store_true', help='Install game files separately through Files/Finder')
+    p.add_argument('--no-bundle-maps', action='store_true', help='Compatibility option: game data is always imported after installation')
     p.add_argument('--team', help='Apple development team ID for device signing')
     p.add_argument('--bundle-id', default='local.halo.ce-universal.ios',
                    help='Unique reverse-DNS app identifier registered to your development team')
@@ -66,16 +66,19 @@ def main():
     if args.plugin_only:
         build_plugin()
         return
-    if not args.host_only:
-        run(sys.executable, 'configure.py', '--ios', '--android-guest-llvm-bin', 'build/macos/toolchain/bin',
-            '--android-guest-gl-include', 'build/macos/toolchain/gl', '--pgo', 'off')
-        ninja = shutil.which('ninja') or ROOT / 'build/macos/toolchain/venv/bin/ninja'
-        if not Path(ninja).is_file():
-            raise RuntimeError('Install Ninja and run tools/macos_setup.py first; see docs/apple-build.md')
-        run(ninja, f'-j{args.jobs}', 'ios_guest')
-        run(sys.executable, 'tools/ios_embed.py', BUILD / 'halo_guest.elf', BUILD / 'embed')
-    if not args.guest_only:
-        for platform in (['simulator', 'device'] if args.platform == 'both' else [args.platform]):
+    for platform in (['simulator', 'device'] if args.platform == 'both' else [args.platform]):
+        # Keep platform artifacts separate, even though both use a dynamic arena.
+        os.environ['HALO_IOS_SIMULATOR'] = '1' if platform == 'simulator' else '0'
+        guest = ROOT / ('build/ios-simulator' if platform == 'simulator' else 'build/ios')
+        if not args.host_only:
+            run(sys.executable, 'configure.py', '--ios', '--android-guest-llvm-bin', 'build/macos/toolchain/bin',
+                '--android-guest-gl-include', 'build/macos/toolchain/gl', '--pgo', 'off')
+            ninja = shutil.which('ninja') or ROOT / 'build/macos/toolchain/venv/bin/ninja'
+            if not Path(ninja).is_file():
+                raise RuntimeError('Install Ninja and run tools/macos_setup.py first; see docs/apple-build.md')
+            run(ninja, f'-j{args.jobs}', 'ios_guest')
+            run(sys.executable, 'tools/ios_embed.py', guest / 'halo_guest.elf', guest / 'embed')
+        if not args.guest_only:
             build_app(platform, args)
 
 if __name__ == '__main__':

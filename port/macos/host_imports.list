@@ -5,3 +5,5 @@ halo_map_download_request
 host_sdl_audio_device_count
 host_sdl_audio_device_name
 host_sdl_audio_device_id
+
+host_ios_metalfx_present

@@ -203,11 +203,15 @@ int main(int argc, const char **argv) {
         assert([[NSData dataWithContentsOfURL:settings] isEqual:unchanged]);
         NSURL *image = [test URLByAppendingPathComponent:@"disc.iso"];
         NSURL *imported = HaloImportDiscImage(image, support, progress, NULL, &error);
-        assert(imported && progressCalls == 2);
+        assert(imported && progressCalls >= 2);
+        NSURL *privateImage = [imported URLByAppendingPathComponent:@"disc.iso"];
+        assert([[NSData dataWithContentsOfURL:privateImage] isEqual:[NSData dataWithContentsOfURL:image]]);
+        NSDictionary *integrity = [NSDictionary dictionaryWithContentsOfURL:[imported URLByAppendingPathComponent:@"integrity.plist"]];
+        assert([integrity[@"sha256"] length] == 64);
         assert([preferences.dataPath isEqualToString:valid.path]);
         assert([[NSData dataWithContentsOfURL:[imported URLByAppendingPathComponent:@"maps/ui.map"]]
             isEqualToData:[NSData dataWithContentsOfURL:[valid URLByAppendingPathComponent:@"maps/ui.map"]]]);
-        assert([preferences selectDataRoot:imported iso:image error:&error]);
+        assert([preferences selectDataRoot:imported iso:privateImage error:&error]);
         before = [NSData dataWithContentsOfURL:settings];
         NSURL *imports = [support URLByAppendingPathComponent:@"Game Data"];
         NSUInteger count = [NSFileManager.defaultManager contentsOfDirectoryAtURL:imports
@@ -218,8 +222,11 @@ int main(int argc, const char **argv) {
                 includingPropertiesForKeys:nil options:0 error:nil].count == count);
             assert([[NSData dataWithContentsOfURL:settings] isEqualToData:before]);
         }
+        assert([NSFileManager.defaultManager removeItemAtURL:image error:&error]);
+        assert(HaloValidateGameData(imported, &error));
+        assert([NSData dataWithContentsOfURL:privateImage].length > 0);
         preferences = [[HaloPreferences alloc] initWithSupportDirectory:support];
-        assert(preferences.windowed && [preferences.isoPath isEqualToString:image.path]);
+        assert(preferences.windowed && [preferences.isoPath isEqualToString:privateImage.path]);
         assert([preferences.dataPath isEqualToString:imported.path]);
         saved = [NSJSONSerialization JSONObjectWithData:before options:0 error:nil];
         assert([saved[@"future_setting"] isEqualToString:@"preserve me"]);
@@ -236,7 +243,7 @@ int main(int argc, const char **argv) {
             assert(!HaloUpdateConfigurationIsValid(@{@"SUFeedURL":url, @"SUPublicEDKey":key}));
         assert(!HaloUpdateConfigurationIsValid(@{}));
         assert(!HaloUpdateConfigurationIsValid(@{@"SUFeedURL":@"https://example.com/feed.xml", @"SUPublicEDKey":@"invalid"}));
-        migrationFixtures(test, valid, image);
+        migrationFixtures(test, valid, privateImage);
         puts("Map validation, XISO import, failed-import rollback, persistent preferences and update configuration passed");
     }
     return 0;

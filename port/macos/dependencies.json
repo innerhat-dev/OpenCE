@@ -64,6 +64,11 @@
       "path": "KHR/khrplatform.h",
       "url": "https://raw.githubusercontent.com/KhronosGroup/EGL-Registry/db3425b8246136faccb5e2782b5694960bd6edf1/api/KHR/khrplatform.h",
       "sha256": "7b1e01aaa7ad8f6fc34b5c7bdf79ebf5189bb09e2c4d2e79fc5d350623d11e83"
+    },
+    {
+      "path": "EGL/eglext_angle.h",
+      "url": "https://raw.githubusercontent.com/google/angle/c053bf85793bbb83016b1196d04e5df3594b9bcc/include/EGL/eglext_angle.h",
+      "sha256": "85c92699d39526c9157c939e46e1a49c5016495713182d21ebd78fc1ef5292e4"
     }
   ]
 }

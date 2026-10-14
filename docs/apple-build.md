@@ -104,9 +104,9 @@ is not a prerequisite for these native builds.
 - [macOS: compile, launch, controls and performance](../port/macos/README.md#build).
   No Apple development account or special entitlement is needed.
 - [iPhone: compile, sign and install](../port/ios/README.md#build).
-  Use your own paid Apple development team, a unique bundle identifier and a
-  phone in Developer Mode. A Personal Team could not provision the required
-  Extended Virtual Addressing entitlement in testing.
+  Use your own Apple development team, a unique bundle identifier and a
+  phone in Developer Mode. Build 17 removes the Extended Virtual Addressing
+  requirement; Personal Team installation remains unverified.
 - [iOS simulator](../port/ios/README.md#simulator): useful for menu and touch
   checks without device signing; it does not establish device performance.
 
@@ -178,11 +178,36 @@ and any files already present in the new directory.
 Device signing settings belong in your local Xcode account and ignored build
 directory. Pass your team ID and bundle identifier on the command line; do not
 hardcode your team, certificate name, device IDs or provisioning profile into
-source files. The checked-in entitlement file contains only a capability flag,
-not an identity or secret.
+source files. The checked-in entitlement file is empty; no special memory
+capability, identity or secret belongs there.
 
-iPhone apps bundle your maps by default. `--no-bundle-maps` leaves them out,
-but does not turn a locally built app into an approved redistributable package.
-Keep compiled apps, logs and provisioning profiles local. When contributing
-source, inspect `git diff --cached --name-only` and `git diff --cached` before
-committing; ignore rules cannot prevent an explicit `git add -f`.
+iPhone apps never bundle maps or disc images. Users import their own data after
+installation. Keep signing credentials and profiles local; publish only the
+unsigned public artifacts after checking their contents.
+
+### iOS guest address bounds
+
+Build 17 uses `vm_map` to reserve a 4-GiB-aligned, 2304-MiB virtual region in
+the normal process address space. The compiler and import stubs recover its
+base from the guest stack's upper 32 bits; host services use the selected base.
+The executable image remains separately signed and its indirect-call delta
+lives in the arena. The previous 448-GiB fixed address and Extended Virtual
+Addressing requirement are removed. See [design, attribution and validation](apple-ios-dynamic-arena.md).
+
+### iPhone/iPad graphics and diagnostics
+
+Shake the device to open Graphics & Diagnostics, including with a hardware
+controller. Metal (ANGLE) remains the default; native Apple OpenGL ES is an
+alternative. Driver and render-resolution changes take effect on relaunch.
+Choose 480p, 720p (default), 900p, 1080p or native, with a 30/60/120 FPS render
+limit (default 60). Smooth motion restores the older Apple build's rendering
+interpolation, without changing the original 30-Hz game simulation.
+
+MetalFX spatial upscaling and the FPS overlay can be toggled live; upscaling
+is available only with the active Metal renderer. Ordinary game-console chatter
+is hidden; logs are retained. Share Play-session Report opens the system share
+sheet (AirDrop or Save to Files) with bounded log excerpts, settings, the last
+ten minutes of half-second timing summaries and shader diagnostics. It does
+not include maps, the ISO or saves. First-use GPU-stall capture is opt-in because
+its GPU synchronization changes performance. Normal timing capture avoids that
+synchronization.

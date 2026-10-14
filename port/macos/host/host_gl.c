@@ -10,15 +10,49 @@ already have host types by then. Only strings need copying back.
 
 #include <EGL/egl.h>
 #include <GLES3/gl32.h>
+#ifdef HALO_APPLE_GRAPHICS
+#include "../../apple/host_gl_dispatch.h"
+#endif
 #include <dlfcn.h>
 #include <string.h>
 
 void *host_gl_bridge(const char *name);
+#ifdef HALO_IOS
+extern unsigned int host_sdl_ios_default_framebuffer(void);
+static void native_bind_framebuffer(GLenum target, GLuint framebuffer) {
+    /* EAGL's window drawable is an SDL-owned FBO, not framebuffer zero. */
+    glBindFramebuffer(target, framebuffer ? framebuffer : host_sdl_ios_default_framebuffer());
+}
+static void unsupported_gles_entry(void) {
+    host_fatal("The selected OpenGL ES driver was asked to use an unsupported optional feature.");
+}
+#endif
 void *host_gl_resolve(const char *name) {
+#ifdef HALO_IOS
+    if (!halo_graphics_metal() && !strcmp(name,"glBindFramebuffer"))
+        return (void *)native_bind_framebuffer;
+#endif
     void *profile = host_perf_resolve(name);
     if (profile) return profile;
+#ifdef HALO_APPLE_GRAPHICS
+    extern void *halo_debug_gl_resolve(const char *);
+    void *diagnostics = halo_debug_gl_resolve(name);
+    if (diagnostics) return diagnostics;
+#endif
     void *bridge = host_gl_bridge(name);
+#ifdef HALO_APPLE_GRAPHICS
+    void *driver = bridge ? bridge : halo_graphics_proc(name);
+#ifdef HALO_IOS
+    /* ES 3.1/3.2 calls stay in the import table, but capability checks exclude
+       them on Apple's ES 3.0 driver. Keep a fail-fast entry if that regresses. */
+    if (!driver && !halo_graphics_metal() &&
+        (!strcmp(name,"glMemoryBarrier") || !strcmp(name,"glDrawElementsBaseVertex")))
+        return (void *)unsupported_gles_entry;
+#endif
+    return driver;
+#else
     return bridge ? bridge : (void *)eglGetProcAddress(name);
+#endif
 }
 
 void host_gl_get_string(uint32_t name, int index, char *buffer, uint32_t size) {

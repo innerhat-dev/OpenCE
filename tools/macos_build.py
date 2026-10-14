@@ -72,13 +72,14 @@ def build_host():
     if not companion.exists():
         companion.symlink_to(companion_target)
     mbedtls = ROOT / "port/third_party/mbedtls"
-    flags = ["-arch", "arm64", "-mmacosx-version-min=14.0", "-O2", "-g", "-DHALO_MACOS=1", "-D_DARWIN_C_SOURCE",
+    flags = ["-arch", "arm64", "-mmacosx-version-min=14.0", "-O2", "-g", "-DHALO_MACOS=1", "-DHALO_APPLE_GRAPHICS=1", "-D_DARWIN_C_SOURCE",
              "-Wall", "-Wextra", "-Wno-unused-function", "-Wno-unused-parameter",
              "-I.", "-Iport/macos/host", "-Iport/macos/native", "-Iport/android/include", "-Iport/linux/src",
              f"-I{SDL / 'include'}", f"-I{GL}",
              f"-I{MINIUPNPC_DIR / 'include'}", f"-I{MINIUPNPC_DIR / 'src'}", *MINIUPNPC_DEFINES]
     sources = sorted((ROOT / "port/macos/host").glob("*.c"))
     sources += sorted((ROOT / "port/macos/native").glob("*.m"))
+    sources += [ROOT / "port/apple" / name for name in ("host_gl_diagnostics.c", "host_graphics.c", "host_debug.m", "host_metalfx.m", "host_shader_cache.m")]
     sources += [ROOT / "port/linux/src/xiso.c", ROOT / "port/linux/src/posix_dtls.c"]
     sources += miniupnpc_sources()
     sources += sorted((mbedtls / "library").glob("*.c"))
@@ -95,7 +96,7 @@ def build_host():
     run("clang", "-arch", "arm64", "-mmacosx-version-min=14.0", *objects, f"-L{SDL / 'lib'}", "-lSDL3",
         *(f"-F{directory}" for directory in frameworks),
         "-framework", "libEGL", "-framework", "libGLESv2",
-        f"-F{sparkle.parent}", "-framework", "Sparkle", "-framework", "Cocoa",
+        f"-F{sparkle.parent}", "-framework", "Sparkle", "-framework", "Cocoa", "-framework", "Metal", "-framework", "MetalFX", "-framework", "CoreVideo", "-framework", "QuartzCore", "-framework", "IOSurface",
         f"-Wl,-rpath,{sparkle.parent}",
         *(f"-Wl,-rpath,{directory}" for directory in frameworks), "-o", BUILD / "halo")
 

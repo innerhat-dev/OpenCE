@@ -8,6 +8,9 @@ import sys
 def main():
     llvm = Path(os.environ.get('HALO_MACOS_LLVM_BIN', '/opt/homebrew/opt/llvm/bin'))
     args = sys.argv[1:]
+    simulator = '--simulator' in args
+    if simulator:
+        args.remove('--simulator')
     mac_check = '--mac-check' in args
     if mac_check:
         args.remove('--mac-check')
@@ -17,9 +20,9 @@ def main():
     output = Path(args[output_index])
     ir = output.with_suffix('.ll')
     args[output_index] = str(ir)
-    subprocess.run([llvm / 'clang', *args, '-emit-llvm', '-femulated-tls', '-DHALO_MACOS=1', '-DHALO_IOS=1'], check=True)
+    subprocess.run([llvm / 'clang', *args, '-emit-llvm', '-femulated-tls', '-DHALO_MACOS=1', '-DHALO_IOS=1', *(['-DHALO_IOS_SIMULATOR=1'] if simulator else [])], check=True)
     rebased = ir.with_suffix('.rebased.ll')
-    pipeline = 'halo-rebase-ios-mac-check' if mac_check else 'halo-rebase-ios'
+    pipeline = 'halo-rebase-ios-mac-check' if mac_check or simulator else 'halo-rebase-ios'
     subprocess.run([llvm / 'opt', '-load-pass-plugin=build/ios/guest_rebase.dylib',
                     '-emulated-tls', '-passes=lower-emutls,' + pipeline + ',verify', '-S', ir, '-o', rebased], check=True)
     subprocess.run([llvm / 'llc', '-O2', '-mtriple=arm64_32-apple-watchos',

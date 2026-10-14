@@ -176,6 +176,24 @@ static const struct config_setting config_settings[] =
 		"of each vertex shows across curved surfaces; false lights each vertex,\n"
 		"as the Xbox does." },
 
+	{ "display.viewmodel_shield", _config_boolean, "false", "HALO_VIEWMODEL_SHIELD", _environment_value, _platform_all,
+		"The energy shield's flare on the first-person arms too, as on the body\n"
+		"(the stock game draws it on the body only)." },
+	{ "display.first_person_legs", _config_boolean, "false", "HALO_FIRST_PERSON_LEGS", _environment_value, _platform_all,
+		"Your own legs in first person, seen looking down: your body as others\n"
+		"see it, drawn from the waist down, moving as it moves." },
+	{ "display.shield_glow", _config_boolean, "false", "HALO_SHIELD_GLOW", _environment_value, _platform_all,
+		"Energy shields light what is around them as they flare, as plasma\n"
+		"does, in the shield's own color." },
+	{ "display.shield_glow_intensity", _config_string, "\"default\"", "HALO_SHIELD_GLOW_INTENSITY", _environment_value, _platform_all,
+		"How far the shield glow reaches: \"default\" or \"light_show\" (three\n"
+		"times as far, and at full strength from a third of the flare)." },
+	{ "display.shield_color", _config_string, "\"default\"", "HALO_SHIELD_COLOR", _environment_value, _platform_all,
+		"Your energy shield's color, as this machine draws it: \"default\" (the\n"
+		"shield's own) or a multiplayer armor color: white, black, red, blue,\n"
+		"gray, yellow, green, pink, purple, cyan, cobalt, orange, teal, sage,\n"
+		"brown, tan, maroon or salmon." },
+
 	{ "audio.enabled", _config_boolean, "true", "HALO_NO_AUDIO", _environment_set_is_false, _platform_all,
 		"Play sound." },
 	{ "audio.volume", _config_real, "1.0", "HALO_VOLUME", _environment_value, _platform_all,
@@ -235,7 +253,7 @@ static const struct config_setting config_settings[] =
 		"The touch controls' swipe aiming gets a controller's aim assist: the\n"
 		"aim slows over a target and follows a moving one. false: none, as a\n"
 		"mouse (the bullets' own autoaim stays)." },
-	{ "input.mouse_sensitivity", _config_real, "1.0", "HALO_MOUSE_SENSITIVITY", _environment_value, _platform_desktop,
+	{ "input.mouse_sensitivity", _config_real, "0.1", "HALO_MOUSE_SENSITIVITY", _environment_value, _platform_desktop,
 		"How far the view turns for the mouse's movement." },
 	{ "input.invert_mouse", _config_boolean, "false", "HALO_MOUSE_INVERT", _environment_set_is_true, _platform_desktop,
 		"Moving the mouse forward looks down." },
@@ -298,7 +316,7 @@ static const struct config_setting config_settings[] =
 #include "input_bindings.def"
 #undef BINDING
 
-	{ "game.console_log", _config_string, "\"important\"", NULL, _environment_value, _platform_all,
+	{ "game.console_log", _config_string, "\"important\"", "HALO_CONSOLE_LOG", _environment_value, _platform_all,
 		"What the game's console shows on screen of what it logs: \"important\"\n"
 		"(bans, players dropped for cheating, what refuses a command, and the\n"
 		"asserts that stop the game), \"all\" (every line, the game's own\n"
@@ -321,23 +339,6 @@ static const struct config_setting config_settings[] =
 		"as CUSTOM SINGLEPLAYER and CUSTOM MULTIPLAYER. Their tags are checked\n"
 		"as the game's own maps' are before they run; false refuses them\n"
 		"(docs/custom_edition_caches.md)." },
-	{ "display.viewmodel_shield", _config_boolean, "false", "HALO_VIEWMODEL_SHIELD", _environment_value, _platform_all,
-		"The energy shield's flare on the first-person arms too, as on the body\n"
-		"(the stock game draws it on the body only)." },
-	{ "display.first_person_legs", _config_boolean, "false", "HALO_FIRST_PERSON_LEGS", _environment_value, _platform_all,
-		"Your own legs in first person, seen looking down: your body as others\n"
-		"see it, drawn from the waist down, moving as it moves." },
-	{ "display.shield_glow", _config_boolean, "false", "HALO_SHIELD_GLOW", _environment_value, _platform_all,
-		"Energy shields light what is around them as they flare, as plasma\n"
-		"does, in the shield's own color." },
-	{ "display.shield_glow_intensity", _config_string, "\"default\"", "HALO_SHIELD_GLOW_INTENSITY", _environment_value, _platform_all,
-		"How far the shield glow reaches: \"default\" or \"light_show\" (three\n"
-		"times as far, and at full strength from a third of the flare)." },
-	{ "display.shield_color", _config_string, "\"default\"", "HALO_SHIELD_COLOR", _environment_value, _platform_all,
-		"Your energy shield's color, as this machine draws it: \"default\" (the\n"
-		"shield's own) or a multiplayer armor color: white, black, red, blue,\n"
-		"gray, yellow, green, pink, purple, cyan, cobalt, orange, teal, sage,\n"
-		"brown, tan, maroon or salmon." },
 
 	{ "paths.data", _config_string, "\"\"", "HALO_DATA_ROOT", _environment_value, _platform_desktop,
 		"The folder holding the game data's maps folder; empty looks in the\n"
@@ -414,6 +415,28 @@ static const struct config_setting config_settings[] =
 		_platform_all,
 		"Hosting: the minutes a player kicked by a vote cannot join again (1 to\n"
 		"1440)." },
+	{ "network.map_share", _config_boolean, "true", "HALO_NET_MAP_SHARE", _environment_value, _platform_all,
+		"Hosting: send a player who joins without the game's Custom Edition map\n"
+		"the map (from custom_maps), and the resource maps it needs that the\n"
+		"player lacks (bitmaps.map, sounds.map, loc.map). The game's other\n"
+		"players help (network.map_seed)." },
+	{ "network.map_share_upload", _config_integer, "1024", "HALO_NET_MAP_SHARE_UPLOAD", _environment_value,
+		_platform_all,
+		"Hosting: the most kilobytes a second the host sends of maps (16 to\n"
+		"65536), so that the game's own traffic keeps the rest of the upload." },
+	{ "network.map_seed", _config_boolean, "true", "HALO_NET_MAP_SEED", _environment_value, _platform_all,
+		"Playing in another's game: help send its map to players who join\n"
+		"without it, as a torrent's peers do (the pieces this machine has, at\n"
+		"most network.map_seed_upload)." },
+	{ "network.map_seed_upload", _config_integer, "256", "HALO_NET_MAP_SEED_UPLOAD", _environment_value,
+		_platform_all,
+		"Playing in another's game: the most kilobytes a second this machine\n"
+		"sends of maps to other players (16 to 65536)." },
+	{ "network.map_download", _config_boolean, "true", "HALO_NET_MAP_DOWNLOAD", _environment_value, _platform_all,
+		"Joining a game on a Custom Edition map this machine does not have:\n"
+		"download it (and the resource maps it needs) from the game's players\n"
+		"into custom_maps, if its host shares it (network.map_share); false\n"
+		"leaves the game, saying which map is missing." },
 	{ "network.coop_public", _config_boolean, "false", "HALO_NET_COOP_PUBLIC", _environment_value, _platform_all,
 		"Whether an online co-op game (Create Game > Internet, a SINGLEPLAYER\n"
 		"map) starts as PUBLIC or, false, PRIVATE: Server Setup's LISTING in\n"

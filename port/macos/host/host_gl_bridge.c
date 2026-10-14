@@ -1,5 +1,8 @@
 /* Darwin packs stack arguments; the Android guest bridge widens each slot. */
 #include <GLES3/gl32.h>
+#ifdef HALO_APPLE_GRAPHICS
+#include "../../apple/host_gl_dispatch.h"
+#endif
 #include <string.h>
 static void bridge_glCopyImageSubData(GLuint a0, GLenum a1, GLint a2, GLint a3, GLint a4, GLint a5,
                                       GLuint a6, GLenum a7, long long a8, long long a9,

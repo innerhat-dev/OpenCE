@@ -188,7 +188,7 @@ static void migrationProgress(void *context, const char *file, unsigned long lon
     item(statusMenu, @"Enter Full Screen", @selector(toggleFullscreen:), @"");
     item(statusMenu, @"Settings…", @selector(showSettings:), @",");
     [statusMenu addItem:NSMenuItem.separatorItem];
-    item(statusMenu, @"Choose Disc Image…", @selector(selectImage:), @"");
+    item(statusMenu, @"Choose Halo ISO…", @selector(selectImage:), @"");
     item(statusMenu, @"Choose Maps Folder…", @selector(selectFolder:), @"");
     item(statusMenu, @"Open Saves Folder", @selector(openSaves:), @"");
     item(statusMenu, @"Edit Controls and Advanced Settings…", @selector(openConfig:), @"");
@@ -317,7 +317,7 @@ static void migrationProgress(void *context, const char *file, unsigned long lon
     label(content, @"Game Data", NSMakeRect(24, 235, 472, 22), NO).font = [NSFont boldSystemFontOfSize:13];
     self.dataLabel = label(content, @"No maps selected", NSMakeRect(24, 206, 472, 20), YES);
     self.sourceLabel = label(content, @"", NSMakeRect(24, 182, 472, 20), YES);
-    button(content, @"Choose Disc Image…", @selector(selectImage:), NSMakeRect(20, 143, 183, 32));
+    button(content, @"Choose Halo ISO…", @selector(selectImage:), NSMakeRect(20, 143, 183, 32));
     button(content, @"Choose Maps Folder…", @selector(selectFolder:), NSMakeRect(211, 143, 193, 32));
     label(content, @"Changes to game data take effect when Halo OG next opens.", NSMakeRect(24, 116, 472, 19), YES).font = [NSFont systemFontOfSize:11];
     self.automaticUpdatesButton = [NSButton checkboxWithTitle:@"Automatically check for updates"
@@ -561,7 +561,7 @@ static void migrationProgress(void *context, const char *file, unsigned long lon
     host_sdl_release_mouse();
     NSOpenPanel *panel = NSOpenPanel.openPanel;
     panel.title = @"Choose Your Xbox Halo Disc Image";
-    panel.message = @"The app imports only the maps from your local disc image.";
+    panel.message = @"The app verifies and keeps a private copy of your ISO/XISO for future launches.";
     panel.canChooseDirectories = NO;
     panel.canChooseFiles = YES;
     panel.allowsMultipleSelection = NO;
@@ -578,7 +578,7 @@ static void migrationProgress(void *context, const char *file, unsigned long lon
 - (void)importImage:(NSURL *)image completion:(void (^)(BOOL))completion {
     NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 470, 130)
         styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
-    window.title = @"Importing Halo OG Maps";
+    window.title = @"Importing Halo Disc Image";
     window.level = NSFloatingWindowLevel;
     NSTextField *progressLabel = label(window.contentView, @"Reading disc image…", NSMakeRect(24, 78, 422, 22), NO);
     NSProgressIndicator *bar = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(24, 48, 422, 18)];
@@ -598,7 +598,7 @@ static void migrationProgress(void *context, const char *file, unsigned long lon
             self.importing = NO;
             [window orderOut:self];
             NSError *selectionError = error;
-            BOOL succeeded = imported && [self.preferences selectDataRoot:imported iso:image error:&selectionError];
+            BOOL succeeded = imported && [self.preferences selectDataRoot:imported iso:[imported URLByAppendingPathComponent:@"disc.iso"] error:&selectionError];
             if (!succeeded) {
                 if (imported) [NSFileManager.defaultManager removeItemAtURL:imported error:nil];
                 showError(selectionError);
@@ -640,7 +640,7 @@ static void migrationProgress(void *context, const char *file, unsigned long lon
     [self showSettings:nil];
     NSOpenPanel *panel = NSOpenPanel.openPanel;
     panel.title = @"Choose Your Xbox Halo Disc Image";
-    panel.message = @"The app imports only the maps from your local disc image.";
+    panel.message = @"The app verifies and keeps a private copy of your ISO/XISO for future launches.";
     panel.canChooseDirectories = NO;
     panel.canChooseFiles = YES;
     panel.allowsMultipleSelection = NO;
@@ -749,7 +749,7 @@ int host_menu_prepare(const char *support, const char *fallback, char *data, siz
             NSAlert *alert = [[NSAlert alloc] init];
             alert.messageText = @"Choose your Halo OG game data";
             alert.informativeText = @"Use your own original Xbox Halo disc image or extracted maps folder. The app does not include game data.";
-            [alert addButtonWithTitle:@"Choose Disc Image…"];
+            [alert addButtonWithTitle:@"Choose Halo ISO…"];
             [alert addButtonWithTitle:@"Choose Maps Folder…"];
             [alert addButtonWithTitle:@"Quit"];
             NSModalResponse answer = [alert runModal];

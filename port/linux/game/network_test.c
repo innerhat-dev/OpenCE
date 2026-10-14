@@ -946,7 +946,8 @@ void network_test_update(
 		}
 		count = p2p_lobby_games(games, NUMBEROF(games));
 		/* (the first that can be joined: no password, not failed) */
-		while (count > 0 && (!games[0].invite[0] || games[0].failed))
+		while (count > 0 && (!games[0].invite[0] || games[0].failed || !games[0].open ||
+			games[0].player_count >= games[0].maximum_player_count))
 		{
 			memmove(games, games + 1, sizeof(*games) * (count - 1));
 			count--;

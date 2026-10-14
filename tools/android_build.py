@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .linux_build import (LINUX_PROFILE, MINIUPNPC_DEFINES, MINIUPNPC_DIR, MUSL_MATH_DIR, XDK_INCLUDE,
+from .linux_build import (LINUX_PROFILE, MINIUPNPC_DEFINES, MINIUPNPC_DIR, MUSL_MATH_DIR, STB_VORBIS_SOURCE, XDK_INCLUDE,
                           compile_launcher, configuration_defines, game_defines_and_includes, game_sources,
                           miniupnpc_sources, musl_math_sources, opus_cflags, opus_sources, pgo_mode, pgo_profile,
                           profile_use_flags, updater_defines, xdk_headers)
@@ -238,7 +238,8 @@ def android_configure_inputs() -> List[Path]:
 def generate_android_build(n: Writer, sln: Any) -> None:
     macos = getattr(sln, "macos", False)
     ios = getattr(sln, "ios", False)
-    build_root = Path("build/ios") if ios else Path("build/macos") if macos else BUILD
+    ios_simulator = ios and os.environ.get("HALO_IOS_SIMULATOR") == "1"
+    build_root = Path("build/ios-simulator" if ios_simulator else "build/ios") if ios else Path("build/macos") if macos else BUILD
     config_path = LINUX_DIR / "port.json"
     if not config_path.is_file() or not (PORT_DIR / "host").is_dir():
         return
@@ -289,6 +290,8 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     config: Dict[str, Any] = json.loads(config_path.read_text(encoding="utf-8"))
 
     guest_cc = getattr(sln, "android_guest_cc", None) or "clang"
+    if ios_simulator:
+        guest_cc += " --simulator"
 
     guest_dir = build_root / "guest"
     obj_dir = guest_dir / "obj"
@@ -374,10 +377,10 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     imports_s = gen_dir / "imports.s"
     host_table_c = build_root / "host" / "host_import_table.c"
     host_imports_list = PORT_DIR / "host_imports.list"
-    platform_imports = [Path("port/macos/host_imports.list")] if macos else []
+    platform_imports = [Path("port/macos/host_imports.list")] if macos else [Path("port/ios/host_imports.list")] if ios else []
     n.rule(
         name="android_imports",
-        command=f"{python} tools/android_imports.py {'--ios ' if ios else ''}--host-table {host_table_c} {imports_s} $in",
+        command=f"{python} tools/android_imports.py {'--ios ' if ios else ''}{'--simulator ' if ios_simulator else ''}--host-table {host_table_c} {imports_s} $in",
         description="ANDROID IMPORTS",
     )
     n.build(outputs=[imports_s, host_table_c], rule="android_imports",
@@ -415,7 +418,7 @@ def generate_android_build(n: Writer, sln: Any) -> None:
         platform = "ios" if ios else "macos"
         n.rule(name="macos_rebase_plugin", command=f"{python} tools/{platform}_build.py --plugin-only",
                description="MACOS COMPILER PASS")
-        plugin = build_root / "guest_rebase.dylib"
+        plugin = (Path("build/ios") if ios else build_root) / "guest_rebase.dylib"
         n.build(outputs=plugin, rule="macos_rebase_plugin",
                 inputs=[Path("port/macos/compiler/guest_rebase.cpp")],
                 implicit=[Path(f"tools/{platform}_build.py")])
@@ -483,6 +486,7 @@ def generate_android_build(n: Writer, sln: Any) -> None:
         objects.append(guest_object(source, cflags))
     for source in sorted(Path(config["game_sources"]).glob("*.c")):
         objects.append(guest_object(source, game_cflags))
+    objects.append(guest_object(STB_VORBIS_SOURCE, game_cflags))
 
     # the platform layer shared with Linux, and the guest runtime
     platform_cflags = " ".join([

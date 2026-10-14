@@ -229,6 +229,9 @@ def test_menus_are_well_formed():
 
     root = MENUS.parent.parent.parent
     tags = root / "port/linux/game/menu_tags.c"
+    string_limit = int(re.search(r"#define MAXIMUM_STRINGS (\d+)", tags.read_text())[1])
+    functions_text = (root / "port/linux/game/menu_functions.c").read_text()
+    assert string_limit == int(re.search(r"#define MAXIMUM_STRINGS (\d+)", functions_text)[1])
     events = c_strings(tags, "event_names[] =", "};")
     flags = c_strings(tags, "widget_flag_names[] =", "};")
     functions = set(c_strings(root / "source/interface/ui_widget_event_handler_functions.c", '\t{\n\t\t"NULL",', "}"))
@@ -249,9 +252,9 @@ def test_menus_are_well_formed():
             where = f"{path.name}: <{element.tag} {element.get('name', '')}>"
             assert element.tag in MENU_ATTRIBUTES, where
             assert set(element.attrib) <= MENU_ATTRIBUTES[element.tag], where
-            # (the platforms that show it: menu_files.c's MENU_PLATFORM)
+            # menu_files.c accepts one platform name, not a whitespace list.
             assert element.get("platform") is None or \
-                set(element.get("platform").split()) <= {"desktop", "android", "web"}, where
+                element.get("platform") in {"desktop", "android"}, where
             # (menu_files.c's whole numbers, which the tags keep in shorts,
             # its true/false attributes, and no text but whitespace outside
             # <string>s)
@@ -287,6 +290,8 @@ def test_menus_are_well_formed():
                     assert len(children) in (0, 1, 3), where
                 if element.get("strings") or "items_from_strings" in element.get("list_flags", ""):
                     assert element.get("type") == "spinner" and not children, where
+                if element.get("strings"):
+                    assert len(element.get("strings").split("|")) <= string_limit, where
                 if element.get("setting"):
                     assert len(element.get("strings").split("|")) == len(element.get("values").split("|")), where
                 for attribute in ("bitmap", "header_bitmap", "footer_bitmap"):

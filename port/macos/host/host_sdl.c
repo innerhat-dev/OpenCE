@@ -11,6 +11,10 @@ SDL's stream lock recursively from a different thread.
 */
 
 #include "host.h"
+#ifdef HALO_APPLE_GRAPHICS
+#include "../../apple/host_debug.h"
+#include "../../apple/host_graphics.h"
+#endif
 #ifndef HALO_IOS
 #include "../native/host_menu.h"
 #include "../../linux/include/native_input_events.h"
@@ -161,6 +165,9 @@ static SDL_HitTestResult SDLCALL window_hit_test(SDL_Window *window, const SDL_P
 uint32_t host_sdl_create_window(const char *title, int width, int height, int64_t flags) {
     const char *windowed = SDL_getenv("HALO_WINDOWED");
     SDL_WindowFlags mode = SDL_WINDOW_METAL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+#ifdef HALO_IOS
+    if (!halo_graphics_metal()) mode = (mode & ~SDL_WINDOW_METAL) | SDL_WINDOW_OPENGL;
+#endif
     metal_window_hidden = (flags & SDL_WINDOW_HIDDEN) != 0;
     if (metal_window_hidden) mode |= SDL_WINDOW_HIDDEN;
     else if (!windowed || !SDL_atoi(windowed)) mode |= SDL_WINDOW_FULLSCREEN;
@@ -192,7 +199,7 @@ uint32_t host_sdl_create_window(const char *title, int width, int height, int64_
 #endif
         int w, h;
         SDL_GetWindowSizeInPixels(metal_window, &w, &h);
-        host_logf(HOST_LOG_INFO, "Metal drawable %dx%d (%s)", w, h,
+        host_logf(HOST_LOG_INFO, "%s drawable %dx%d (%s)", halo_graphics_metal() ? "Metal" : "OpenGL", w, h,
                   (mode & SDL_WINDOW_FULLSCREEN) ? "borderless fullscreen" : "windowed");
     }
     return handle_new(_handle_window, metal_window);
@@ -268,13 +275,32 @@ int host_sdl_set_relative_mouse(uint32_t window, int enabled) {
     return object ? SDL_SetWindowRelativeMouseMode(object, enabled != 0) : 0;
 }
 
+#ifdef HALO_IOS
+unsigned int host_sdl_ios_default_framebuffer(void) {
+    return (unsigned int)SDL_GetNumberProperty(SDL_GetWindowProperties(metal_window),
+        SDL_PROP_WINDOW_UIKIT_OPENGL_FRAMEBUFFER_NUMBER, 0);
+}
+#endif
 int host_sdl_gl_set_attribute(int attribute, int value) {
+#ifdef HALO_IOS
+    if (!halo_graphics_metal()) return SDL_GL_SetAttribute(attribute, value);
+#endif
     if (attribute == SDL_GL_CONTEXT_MINOR_VERSION)
         requested_minor = value;
     return 1;
 }
 uint32_t host_sdl_gl_create_context(uint32_t window) {
     SDL_Window *object = handle_get(window, _handle_window);
+#ifdef HALO_IOS
+    if (!halo_graphics_metal()) {
+        SDL_GLContext native = object ? SDL_GL_CreateContext(object) : NULL;
+        if (!native) return 0;
+        halo_debug_initialize();
+        extern void host_ios_controls_initialize(SDL_Window *);
+        host_ios_controls_initialize(object);
+        return handle_new(_handle_context, native);
+    }
+#endif
     if (!object || requested_minor > 0) {
         SDL_SetError("ANGLE Metal uses ES 3.0");
         return 0;
@@ -289,7 +315,7 @@ uint32_t host_sdl_gl_create_context(uint32_t window) {
         return 0;
     }
     const EGLint configAttributes[] = {EGL_SURFACE_TYPE,
-                                       metal_window_hidden ? EGL_PBUFFER_BIT : EGL_WINDOW_BIT,
+                                       metal_window_hidden ? EGL_PBUFFER_BIT : EGL_WINDOW_BIT | EGL_PBUFFER_BIT,
                                        EGL_RENDERABLE_TYPE,
                                        EGL_OPENGL_ES3_BIT,
                                        EGL_RED_SIZE,
@@ -301,13 +327,17 @@ uint32_t host_sdl_gl_create_context(uint32_t window) {
                                        EGL_ALPHA_SIZE,
                                        8,
                                        EGL_DEPTH_SIZE,
-                                       24,
+                                       0,
                                        EGL_STENCIL_SIZE,
-                                       8,
+                                       0,
                                        EGL_NONE};
     EGLConfig config;
     if (!eglChooseConfig(metal_display, configAttributes, &config, 1, &count) || !count)
         return 0;
+#ifdef HALO_APPLE_GRAPHICS
+    extern void halo_graphics_attach(EGLDisplay, EGLConfig);
+    halo_graphics_attach(metal_display, config);
+#endif
     eglBindAPI(EGL_OPENGL_ES_API);
     const EGLint contextAttributes[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
     metal_context = eglCreateContext(metal_display, config, EGL_NO_CONTEXT, contextAttributes);
@@ -328,6 +358,9 @@ uint32_t host_sdl_gl_create_context(uint32_t window) {
         return 0;
     }
     eglMakeCurrent(metal_display, metal_surface, metal_surface, metal_context);
+#if defined(HALO_APPLE_GRAPHICS) && !defined(HALO_IOS)
+    halo_debug_install_menu();
+#endif
 #if defined(HALO_IOS) && !defined(HALO_IOS_MAC_CHECK)
     // Attach controls after SDL has installed the Metal view, otherwise
     // the drawable can cover the controller's UIKit overlay.
@@ -337,18 +370,37 @@ uint32_t host_sdl_gl_create_context(uint32_t window) {
     return handle_new(_handle_context, metal_context);
 }
 int host_sdl_gl_make_current(uint32_t window, uint32_t context) {
+#ifdef HALO_IOS
+    if (!halo_graphics_metal()) return SDL_GL_MakeCurrent(handle_get(window, _handle_window), handle_get(context, _handle_context));
+#endif
     (void)window;
     return eglMakeCurrent(metal_display, metal_surface, metal_surface,
                           handle_get(context, _handle_context));
 }
 int host_sdl_gl_set_swap_interval(int interval) {
+#ifdef HALO_IOS
+    if (!halo_graphics_metal()) return SDL_GL_SetSwapInterval(interval);
+#endif
     metal_swap_interval = interval;
     return eglSwapInterval(metal_display, interval);
 }
 int host_sdl_gl_swap_window(uint32_t window) {
     (void)window;
     uint64_t start = SDL_GetTicksNS();
-    int result = eglSwapBuffers(metal_display, metal_surface);
+    int result;
+#ifdef HALO_IOS
+    result = halo_graphics_metal() ? (halo_metalfx_take_presented() ? 1 : eglSwapBuffers(metal_display, metal_surface)) : SDL_GL_SwapWindow(handle_get(window, _handle_window));
+    static uint64_t last_frame;
+    int limit = halo_debug_frame_limit();
+    uint64_t now = SDL_GetTicksNS();
+    uint64_t period = limit > 0 ? 1000000000ull / limit : 0;
+    if (last_frame && now - last_frame < period) SDL_DelayNS(period - (now - last_frame));
+    now = SDL_GetTicksNS();
+    if (last_frame) halo_debug_frame((now-last_frame)/1e6);
+    last_frame = now;
+#else
+    result = eglSwapBuffers(metal_display, metal_surface);
+#endif
     host_perf_frame((SDL_GetTicksNS() - start) / 1e6);
     if (metal_window_hidden && metal_swap_interval > 0) {
         uint64_t elapsed = SDL_GetTicksNS() - start;
@@ -416,6 +468,10 @@ int host_sdl_show_simple_message_box(uint32_t flags, const char *title, const ch
 /* ---------- gamepads */
 
 int host_sdl_get_gamepads(uint32_t *ids, int capacity) {
+#if defined(HALO_IOS) && !defined(HALO_IOS_MAC_CHECK)
+    extern int host_ios_gamepads(uint32_t *, int);
+    return host_ios_gamepads(ids, capacity);
+#endif
     int count = 0, index;
     SDL_JoystickID *list = SDL_GetGamepads(&count);
 
@@ -452,21 +508,42 @@ void host_sdl_close_gamepad(uint32_t gamepad) {
 }
 
 int host_sdl_gamepad_axis(uint32_t gamepad, int axis) {
+#ifdef HALO_APPLE_GRAPHICS
+    if (halo_debug_is_presented()) return 0;
+#endif
     SDL_Gamepad *object = handle_get(gamepad, _handle_gamepad);
 
+#if defined(HALO_IOS) && !defined(HALO_IOS_MAC_CHECK)
+    extern int host_ios_gamepad_axis(SDL_Gamepad *, int);
+    return object ? host_ios_gamepad_axis(object, axis) : 0;
+#else
     return object ? SDL_GetGamepadAxis(object, (SDL_GamepadAxis)axis) : 0;
+#endif
 }
 
 int host_sdl_gamepad_button(uint32_t gamepad, int button) {
+#ifdef HALO_APPLE_GRAPHICS
+    if (halo_debug_is_presented()) return 0;
+#endif
     SDL_Gamepad *object = handle_get(gamepad, _handle_gamepad);
 
+#if defined(HALO_IOS) && !defined(HALO_IOS_MAC_CHECK)
+    extern int host_ios_gamepad_button(SDL_Gamepad *, int);
+    return object ? host_ios_gamepad_button(object, button) : 0;
+#else
     return object ? SDL_GetGamepadButton(object, (SDL_GamepadButton)button) : 0;
+#endif
 }
 
 int host_sdl_gamepad_type(uint32_t gamepad) {
     SDL_Gamepad *object = handle_get(gamepad, _handle_gamepad);
 
+#if defined(HALO_IOS) && !defined(HALO_IOS_MAC_CHECK)
+    extern int host_ios_gamepad_type(SDL_Gamepad *);
+    return object ? host_ios_gamepad_type(object) : SDL_GAMEPAD_TYPE_UNKNOWN;
+#else
     return object ? SDL_GetGamepadType(object) : SDL_GAMEPAD_TYPE_UNKNOWN;
+#endif
 }
 
 int host_sdl_rumble_gamepad(uint32_t gamepad, uint32_t low, uint32_t high, uint32_t milliseconds) {
@@ -699,3 +776,9 @@ uint32_t host_sdl_audio_device_id(int recording, const char *name) {
     SDL_free(devices);
     return found;
 }
+
+#ifndef HALO_IOS
+void *host_macos_game_window(void) {
+    return metal_window ? SDL_GetPointerProperty(SDL_GetWindowProperties(metal_window), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, NULL) : NULL;
+}
+#endif

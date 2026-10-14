@@ -28,6 +28,7 @@ Conventions carried over from the Xbox:
 #include "main/console.h"
 #ifdef HALO_MACOS
 #include "../../macos/renderer_config.h"
+extern int host_ios_metalfx_present(unsigned int texture, unsigned int width, unsigned int height, unsigned int output_width, unsigned int output_height);
 #endif
 
 #include <SDL3/SDL.h>
@@ -189,6 +190,13 @@ static void screen_mode_choose(long *width, float scale[2])
 		*width = 1600;
 	*width &= ~1L;
 	scale[0] = scale[1] = 1.0f;
+#ifdef HALO_IOS
+    const char *render_height = getenv("HALO_IOS_RENDER_HEIGHT");
+    int height = render_height ? atoi(render_height) : 720;
+    if (height < 480) height = 480;
+    if (height > 2160) height = 2160;
+    scale[0] = scale[1] = height / 480.0f;
+#endif
 #else
 	long display_width, display_height;
 
@@ -5720,6 +5728,11 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		}
 		x = (window_width - width) / 2;
 		y = (window_height - height) / 2;
+#ifdef HALO_MACOS
+        if (!host_ios_metalfx_present(back_buffer->target.texture, back_buffer->target.gl_width,
+            back_buffer->target.gl_height, width, height))
+#endif
+        {
 		/* Creating an FBO binds both read and draw targets. Resolve it before
 		   selecting the window, including on the first/loading frame. */
 		read_framebuffer = framebuffer_get(back_buffer->target.texture, 0);
@@ -5732,6 +5745,7 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		/* row 0 of the render target is the top of the picture */
 		glBlitFramebuffer(0, 0, (GLint)back_buffer->target.gl_width, (GLint)back_buffer->target.gl_height,
 			x, y + height, x + width, y, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        }
 		platform_video_swap();
 		gl_check_errors("present");
 		xgpu_gl_state_invalidate();

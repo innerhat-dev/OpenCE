@@ -1,6 +1,9 @@
 /* Opt-in frame and driver diagnostics. No per-draw work when disabled. */
 #include "host.h"
 #include <GLES3/gl3.h>
+#ifdef HALO_APPLE_GRAPHICS
+#include "../../apple/host_gl_dispatch.h"
+#endif
 #include <SDL3/SDL.h>
 #include <mach/mach.h>
 #include <stdio.h>

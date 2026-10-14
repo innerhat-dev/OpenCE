@@ -6,12 +6,14 @@
 <key>CFBundleName</key><string>Halo OG</string>
 <key>CFBundleDisplayName</key><string>Halo OG</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.1.0</string>
-<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleShortVersionString</key><string>0.2.0</string>
+<key>CFBundleVersion</key><string>18</string>
+<key>HaloRequiresExtendedVirtualAddressing</key><false/>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>MinimumOSVersion</key><string>26.0</string>
 <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string><string>metal</string></array>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
+<key>UISupportedInterfaceOrientations~ipad</key><array><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
 <key>UIRequiresFullScreen</key><true/>
 <key>CADisableMinimumFrameDurationOnPhone</key><true/>
 <key>UIStatusBarHidden</key><true/>
@@ -20,5 +22,6 @@
 <key>UIFileSharingEnabled</key><true/>
 <key>UIApplicationSupportsIndirectInputEvents</key><true/>
 <key>LSSupportsOpeningDocumentsInPlace</key><true/>
+<key>NSMicrophoneUsageDescription</key><string>Use your microphone when you enable multiplayer voice chat.</string>
 <key>NSLocalNetworkUsageDescription</key><string>Find Halo games on your local network.</string>
 </dict></plist>
