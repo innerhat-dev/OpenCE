@@ -1,6 +1,7 @@
 /* Immutable wire bytes with their current logical extent. Allocation capacity
  * never extends a command or record range. The caller owns the backing storage
  * for the entire view lifetime, including synchronous GPU completion. */
+#ifdef HALO_MACOS_NATIVE_METAL
 #ifndef HALO_METAL_PACKET_VIEW_H
 #define HALO_METAL_PACKET_VIEW_H
 #include <cstddef>
@@ -34,4 +35,5 @@ private:
     const uint8_t *const bytes_;
     const size_t count_;
 };
+#endif
 #endif

@@ -1,5 +1,6 @@
 /* Learned startup work only. Full emitted bytes and all compiler/pipeline
  * contracts are retained; fingerprints never authorize a cache hit. */
+#ifdef HALO_MACOS_NATIVE_METAL
 #ifndef HALO_METAL_WARMUP_CACHE_H
 #define HALO_METAL_WARMUP_CACHE_H
 #include "metal_function_cache.h"
@@ -122,4 +123,5 @@ struct HaloMetalWarmupCache {
         result = std::move(candidate); return true;
     }
 };
+#endif
 #endif

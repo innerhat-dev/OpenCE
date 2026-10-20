@@ -3,6 +3,7 @@
  * streams/uploads. Validation precedes mutation. GPU failure poisons the
  * context until shutdown, rather than presenting an incomplete frame.
  */
+#ifdef HALO_MACOS_NATIVE_METAL
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -1824,3 +1825,4 @@ extern "C" void host_metal_shutdown(void) {
         if (owned_view) host_sdl_native_metal_release();
     }
 }
+#endif

@@ -1,5 +1,6 @@
 /* Exact emitted-source function cache. Keys include every compile contract;
  * the owner scopes successful function values to one Metal device/context. */
+#ifdef HALO_MACOS_NATIVE_METAL
 #ifndef HALO_METAL_FUNCTION_CACHE_H
 #define HALO_METAL_FUNCTION_CACHE_H
 #include <cstddef>
@@ -59,4 +60,5 @@ public:
     size_t sourceBytes() const { return sourceBytes_; }
     const Entries &entries() const { return entries_; }
 };
+#endif
 #endif

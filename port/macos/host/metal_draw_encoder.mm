@@ -1,3 +1,4 @@
+#ifdef HALO_MACOS_NATIVE_METAL
 #import "metal_draw_encoder.h"
 #include "metal_compact_vertex.h"
 #include <chrono>
@@ -511,3 +512,4 @@ struct BindingRequirement {
     }
 }
 @end
+#endif

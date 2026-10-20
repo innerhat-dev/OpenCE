@@ -3,6 +3,7 @@
  * resource lifetimes, synchronization and presentation. This module only
  * validates and encodes draws against existing attachments using LOAD/STORE.
  */
+#ifdef HALO_MACOS_NATIVE_METAL
 #ifndef HALO_METAL_DRAW_ENCODER_H
 #define HALO_METAL_DRAW_ENCODER_H
 #import <Foundation/Foundation.h>
@@ -97,4 +98,5 @@ typedef NS_ENUM(NSInteger, HaloMetalDrawError) {
 - (void)removePipelinesForVertexFunction:(id<MTLFunction>)vertex
                       fragmentFunction:(id<MTLFunction>)fragment;
 @end
+#endif
 #endif

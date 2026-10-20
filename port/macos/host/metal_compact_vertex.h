@@ -1,5 +1,6 @@
 /* Validate the immutable compact input before a vertex function may read it.
  * Offsets are relative to this buffer slice, never guest addresses. */
+#ifdef HALO_MACOS_NATIVE_METAL
 #ifndef HALO_METAL_COMPACT_VERTEX_H
 #define HALO_METAL_COMPACT_VERTEX_H
 #include "../include/halo_metal_vertex_input.h"
@@ -63,4 +64,5 @@ inline bool halo_metal_compact_vertices_valid(const void *data, size_t byte_coun
     }
     return true;
 }
+#endif
 #endif
