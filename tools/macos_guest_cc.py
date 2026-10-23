@@ -17,7 +17,10 @@ def main():
     args[output_index] = str(ir)
     subprocess.run([str(llvm / "clang"), *args, "-emit-llvm", "-DHALO_MACOS=1"], check=True)
     rebased = ir.with_suffix(".rebased.ll")
-    subprocess.run([str(llvm / "opt"), "-load-pass-plugin=build/macos/guest_rebase.dylib",
+    # The Metal renderer writes its pass plugin beside the Metal guest build.
+    metal = any(arg == "-DHALO_MACOS_NATIVE_METAL=1" for arg in args)
+    plugin = Path("build/macos-metal/guest_rebase.dylib" if metal else "build/macos/guest_rebase.dylib")
+    subprocess.run([str(llvm / "opt"), f"-load-pass-plugin={plugin}",
                     "-passes=halo-rebase,verify", "-S", str(ir), "-o", str(rebased)], check=True)
     subprocess.run([str(llvm / "llc"), "-O2", "-mtriple=arm64_32-apple-watchos",
                     "-aarch64-neon-syntax=generic", "-emulated-tls", str(rebased),
